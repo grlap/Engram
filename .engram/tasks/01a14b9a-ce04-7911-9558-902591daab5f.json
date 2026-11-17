@@ -28,33 +28,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "Overtaken. This asked for one joint brief, concurred by Engram architects and TermAl design owners. The architects are gone, Greg ruled TermAl out of sync (43498a6e #635), and he chose the separate data branch (#655, #657), with designs on w-09c87a312e95 and w-4eabb205c7b2 and docs/features/git-task-sync.md. Its acceptance as written was not met and isn't claimed. Cross-host work continues under w-c5d58ec64202. Cancelled under Greg's word, 43498a6e #683.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "5d9a9b2ffed749c8bd53563314d1a1f8": {
-        "activity_id": "5d9a9b2ffed749c8bd53563314d1a1f8",
-        "task_id": "01a14b9a-ce04-7911-9558-902591daab5f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "5d9a9b2ffed749c8bd53563314d1a1f8"
-      },
-      "f23058d3fd4a413d8335296889dc77b8": {
-        "activity_id": "f23058d3fd4a413d8335296889dc77b8",
-        "task_id": "01a14b9a-ce04-7911-9558-902591daab5f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "bf4e02f38d3845f9aae8805ddcd0ca89"
-      }
-    }
-  }
+  "completion": null
 }

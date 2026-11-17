@@ -1,0 +1,27 @@
+{
+  "id": "01a1e737-af54-7930-8110-1fbe42af6694",
+  "external_ref": null,
+  "title": "Replace the deprecated atomic update in the local Git child reaper",
+  "outcome": "The local Git child reaper uses the supported atomic update API while keeping the same bounded slot reservation and release behavior.",
+  "acceptance": [
+    "Replace the deprecated AtomicUsize::fetch_update in the local Git child reaper without changing the reservation limit, ordering or slot release behavior; focused query tests and strict macOS Clippy verify the correction."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "lint"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

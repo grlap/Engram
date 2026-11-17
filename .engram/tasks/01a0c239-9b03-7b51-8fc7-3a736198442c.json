@@ -31,57 +31,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "Obsolete on Greg's word (Asistant #239): root gating and its recovery are gone, so this catalog of delivered gating evidence has no further use. Its recorded notes stay readable as history; TermAl's own items are TermAl's to dispose.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "32ac501aa3434b38b84e863e97722be8": {
-        "activity_id": "32ac501aa3434b38b84e863e97722be8",
-        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "79f1aa7f7b8f4348b89bf2c6ec2e2512"
-      },
-      "6e762ec3b1a04360a577fb21a70f3000": {
-        "activity_id": "6e762ec3b1a04360a577fb21a70f3000",
-        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "6e762ec3b1a04360a577fb21a70f3000"
-      },
-      "83f07a766b5b48d0a06bc1c373d5d811": {
-        "activity_id": "83f07a766b5b48d0a06bc1c373d5d811",
-        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "37bb9ba2d064444c9f1a18855fb1dca5"
-      },
-      "bc2fe88e38624c1c84c976cf6d5e176b": {
-        "activity_id": "bc2fe88e38624c1c84c976cf6d5e176b",
-        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "bc2fe88e38624c1c84c976cf6d5e176b"
-      }
-    }
-  }
+  "completion": null
 }

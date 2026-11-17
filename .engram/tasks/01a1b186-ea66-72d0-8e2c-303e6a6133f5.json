@@ -29,21 +29,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "v2 scopes dropped: Greg removed watcher events from EO credit (Asistant #390); TermAl no longer needs scopes and v1 stays. Both coordinators withdrew v2 (Engram Fable #1200, TermAl Fable2 #6745). Candidate a9019bdc remains unlanded. Cancellation resumed explicitly by Fable #1210 after the global pause.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "43c1410d4a7b4de6a22fe2a827f7e1b3": {
-        "activity_id": "43c1410d4a7b4de6a22fe2a827f7e1b3",
-        "task_id": "01a1b186-ea66-72d0-8e2c-303e6a6133f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "677fc411e2f347a1a651809c68024a94"
-      }
-    }
-  }
+  "completion": null
 }

@@ -5,12 +5,24 @@
   },
   "profile": {
     "include_notes": false,
-    "origin_machine": "central"
+    "origin_machine": null
   },
   "folder_exchange": {
     "complete": true,
     "export_basis": {
-      "inventory_fingerprint": "23f7afdfe7b745fd16212829d6d8dc0a3f06ac9c53b9ab803e180d8acd96deb0"
+      "inventory_fingerprint": "68cae161b721e42f0c36b5145eb7a14c0083a068048625101537862ac0ea5b13"
+    },
+    "incremental": {
+      "format": "engram-task-sync-folder-incremental-v1",
+      "inventory_root": "eb8501691cfb618fd11e7e1842ba0d48e321cacd796a6167c278a79d73e60930",
+      "task_count": 2169,
+      "cut": {
+        "position": 229234,
+        "anchor": {
+          "object_kind": "work_event",
+          "object_id": "eb88a63524e34e3881c91759441769b1"
+        }
+      }
     }
   },
   "memory_profile": "engram-project-memories-v1"

@@ -1,0 +1,29 @@
+{
+  "id": "01a1e9d1-5e87-7c43-9c98-a9b1c45730d3",
+  "external_ref": null,
+  "title": "List the four missing rebuildable task-sync projections in the projection inventory docs",
+  "outcome": "List the four missing rebuildable task-sync projections in the projection inventory docs",
+  "acceptance": [
+    "docs/spec.md's projection inventory (around lines 474-484 at eecabd6a) and docs/features/sqlite-store.md's (around lines 380-391) list work_task_sync_source_heads, work_task_sync_graph_identity_members, work_items_replacement_reverse and work_completion_seals_work as rebuildable projections, with what each derives from, consistent with storage/work/schema.rs's rebuildable set",
+    "The docs link check passes on the changed tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "documentation",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

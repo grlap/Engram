@@ -1,0 +1,29 @@
+{
+  "id": "01a1eb60-b78b-79c2-b9c8-96a3f857f50e",
+  "external_ref": null,
+  "title": "Upgrade DL560's Engram build past 50862fce with a planned projection-repair cutover",
+  "outcome": "Upgrade DL560's Engram build past 50862fce with a planned projection-repair cutover",
+  "acceptance": [
+    "DL560's installed engram is a landed master at or after 8c0a435b, with the old binary kept as a backup",
+    "Every live DL560 store (Questly, Engram, TermAl, PhoenixCodeNav and any other) reports ready with the new build after a planned cutover: old-build consumers stopped, engram doctor --repair-projections run with the new build, TermAl lane timing agreed with Opus2"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "dl560",
+    "install",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

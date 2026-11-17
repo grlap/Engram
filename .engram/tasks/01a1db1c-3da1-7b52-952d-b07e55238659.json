@@ -27,21 +27,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "fd87c01d597a423597b6de4000203393": {
-        "activity_id": "fd87c01d597a423597b6de4000203393",
-        "task_id": "01a1db1c-3da1-7b52-952d-b07e55238659",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "cfb88f152370476d997a0c6d2970e30f"
-      }
-    }
-  }
+  "completion": null
 }

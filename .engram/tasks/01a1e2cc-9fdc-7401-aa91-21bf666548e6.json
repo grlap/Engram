@@ -1,0 +1,30 @@
+{
+  "id": "01a1e2cc-9fdc-7401-aa91-21bf666548e6",
+  "external_ref": null,
+  "title": "Simplify the macOS Git process cleanup to kill-group, deadline and a typed failure, removing the sysctl verifier and its unsafe helper",
+  "outcome": "Simplify the macOS Git process cleanup to kill-group, deadline and a typed failure, removing the sysctl verifier and its unsafe helper",
+  "acceptance": [
+    "After w-6bbabe3a062b lands, the macOS runner's cleanup on cancellation, deadline, drop and root exit kills Git's process group with killpg under the existing reserved process group and bounded deadline. It reports a typed failure naming the group and the error when cleanup can't be confirmed, and never reports success it can't observe. It no longer decodes kinfo_proc records through sysctl.",
+    "The separate macOS-only crate holding the unsafe sysctl call is removed, so Engram again contains no unsafe code; Linux behaviour and every Windows guarantee are unchanged",
+    "w-6bba's acceptance text is narrowed to match, citing Greg's direction, and the existing cleanup tests on the Mac and Linux still pass, with the fork-storm test asserting the typed outcome rather than an enumeration proof"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "continuous",
+    "greg-directed",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

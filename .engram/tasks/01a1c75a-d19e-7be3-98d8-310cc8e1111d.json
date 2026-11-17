@@ -14,28 +14,19 @@
   "labels": [],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "96da6e54ec834f13816fac550d8ca22a": {
-        "activity_id": "96da6e54ec834f13816fac550d8ca22a",
-        "task_id": "01a1c75a-d19e-7be3-98d8-310cc8e1111d",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "96da6e54ec834f13816fac550d8ca22a"
-      }
+  "completion": {
+    "summary": "Source-membership projection derivation stays within the ledger's admitted capacity. Landed in eecabd6a on origin/master and installed. An independent acceptance evaluation (delegation-f6281ef8, Codex, independent_session, recorded 17:51:01Z) passed 2/2 criteria on the eecabd6a tree in the closure-310c-7284 worktree.",
+    "completed_at": "2026-11-17T17:51:14.192071300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
     }
   }
 }

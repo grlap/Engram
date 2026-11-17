@@ -1,0 +1,30 @@
+{
+  "id": "01a1e3d4-4d8a-7951-b316-9e2cc07537a0",
+  "external_ref": null,
+  "title": "Make migration import of the 2.3 GB Engram store finish in minutes, not more than an hour",
+  "outcome": "Make migration import of the 2.3 GB Engram store finish in minutes, not more than an hour",
+  "acceptance": [
+    "The slow phase of `migration import` on a copy of the live Engram store is identified from measured evidence: which step, which statement or index maintenance, and how its time grows with row count",
+    "`migration import` of that store's export completes on Central in a bounded time recorded on the item, with every row, id and link preserved and readiness reporting the new store ready",
+    "No row is skipped, batched away or dropped to gain speed, and an interrupted import leaves no partial target store"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "migration",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

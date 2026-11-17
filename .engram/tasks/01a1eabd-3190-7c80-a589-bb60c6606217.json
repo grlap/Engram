@@ -1,0 +1,29 @@
+{
+  "id": "01a1eabd-3190-7c80-a589-bb60c6606217",
+  "external_ref": null,
+  "title": "Align Engram's AGENTS.md and CLAUDE.md deletion guidance with the non-forced Codex cleanup rule TermAl adopted",
+  "outcome": "Align Engram's AGENTS.md and CLAUDE.md deletion guidance with the non-forced Codex cleanup rule TermAl adopted",
+  "acceptance": [
+    "Engram's AGENTS.md and CLAUDE.md no longer show rm -f or rm -rf as the recommended form, and state the non-forced Codex cleanup-deletion rule (Codex as executor, prior target checks, non-forced forms, stop-and-report on refusal or failure, forced removal only with Greg's recorded authorization for that case)",
+    "The change lands under the authority-text procedure: both coordinators concur on the exact wording, Greg is sent the wording and its consequence, and the final-diff audit is recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "cleanup",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

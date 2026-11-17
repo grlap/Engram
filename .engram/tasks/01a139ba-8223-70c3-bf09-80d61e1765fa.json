@@ -32,21 +32,5 @@
       "actor_id": "greg/codex",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "fcfd0cbf28a04297af6c9838f5b19ba7": {
-        "activity_id": "fcfd0cbf28a04297af6c9838f5b19ba7",
-        "task_id": "01a139ba-8223-70c3-bf09-80d61e1765fa",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "23a2cdfb9c09483eb1aa4565f1cc5e5a"
-      }
-    }
   }
 }

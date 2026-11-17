@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-central-slot-2",
+    "revision_id": "ac231808595b424db8f6ac49ae2ab047",
+    "previous": "e93adad5e0bf4a6eab098f743e3aaca8",
+    "body_sha256": "708bb786dfd1332b8b8ef51606ec06f1b737bb8b9b3c7e57487edbbc2599197d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T06:35:07.340847500Z"
+    }
+  },
+  "body": "CONTINUATION of rules-central-slot, which is at its size limit; read both. REV 18 (2026-11-16 06:33Z, Engram::Fable ruling, on Fable2's request ebe242f7 #8129). If an Engram FULL on Central has already FAILED its verdict but is still running, the rev 16 no-spawn rule is relaxed for READ-ONLY LLM sessions only (reviewers, evaluators, explorers):\n- at most TWO at a time, in Opus2's queue order;\n- each starts only on its own pre-spawn census showing FV of at least 16,777,216 KiB;\n- new spawns hold if FV drops below 10 GiB;\n- no cargo and no other process action; the failed FULL keeps running untouched for its owner's diagnosis.\nA FULL whose verdict is still open keeps rev 16 in full. First applied to the Merger's w-43ed FULL test-05ba3980, which failed 3 tests in task_sync::exchange::tests::windows::data_branch.\n\nRev 2 (06:35Z, Engram::Fable, to Opus2 28ccc255 #1012). Under the failed-FULL relaxation, a THIRD concurrent read-only session is allowed when its pre-spawn census shows FV of at least 20,971,520 KiB. The per-spawn floor of at least 16 GiB and the hold below 10 GiB are unchanged. Priority: Greg-flagged P0 work (dd205) goes ahead of P2 pairs."
+}

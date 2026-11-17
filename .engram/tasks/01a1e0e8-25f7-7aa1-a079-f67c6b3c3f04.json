@@ -1,0 +1,33 @@
+{
+  "id": "01a1e0e8-25f7-7aa1-a079-f67c6b3c3f04",
+  "external_ref": null,
+  "title": "Persist READY integration handoffs instead of expiring mailbox custody offers",
+  "outcome": "A complete READY package enters the existing integration owner's durable work queue and wakes that owner, so restart or an expired mailbox offer never requires a manual re-offer or another evidence assembly.",
+  "acceptance": [
+    "A complete READY package stays durably findable by its integration owner without an expiring custody offer: the author labels the item ready-to-land after its immutable READY manifest note and before offering or releasing, and the owner's queue is engram work ls --label ready-to-land (procedure recorded in project memory rules-merger-role, READY QUEUE BY LABEL)",
+    "Recovery after disconnect, restart, an expired offer or a lapsed author claim reads the queue by label and the package by its manifest note, with no repeated evidence assembly or manual re-offer; existing landing authority and integration checks stay unchanged",
+    "Return or abandonment while open is recorded by a reason note followed by removing the label, and completed items keep the label outside the open listing; the procedure states explicitly that wake, redelivery and landing refusal of an abandoned manifest stay procedural (the Merger's admission decision), not enforced",
+    "A recorded measurement on a scratch store (100, 10k and 100k completed labelled items with a fixed small pending set, plus an open-unlabelled growth control) shows the label queue query's work and query plan; if it grows with history rather than the pending set, the query is fixed in place with a counting regression test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "integration",
+    "optimization"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

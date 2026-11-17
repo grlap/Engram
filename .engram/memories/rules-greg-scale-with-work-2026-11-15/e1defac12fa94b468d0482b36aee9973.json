@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-scale-with-work-2026-11-15",
+    "revision_id": "e1defac12fa94b468d0482b36aee9973",
+    "previous": null,
+    "body_sha256": "8d06fbd179f4f5b0f7834092de7b9ebb563af317c636b622d16d8faad5bfd7e1",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T20:35:01.140426300Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 20:34Z, relayed by Engram::Asistant (mailbox 43498a6e #1299, message 41ec6baf), verbatim: „super! to jest normalne, ze znajdujemy inneficencies ALE prosilbym zespoly o nie tworzenie systemow co nieskaluja sie z liczba wykonywanej pracy. inny przyklad do sync, ktory powien byc incremental, a nie byl...”\nJOINT DESIGN REQUIREMENT, for both projects (Asistant's brief, a paraphrase):\n- Routine operations work in proportion to the changes or the actually pending work, NOT to the whole growing history.\n- Where a full read is genuinely needed, state the reason and a measurable bound.\n- Kimi works with both teams to apply this: review the existing hot paths and take the matching measurements. No added procedural gates.\n- Report concrete results. Sync and EO stay first.\nToday's examples: Central's history-scanning causal pull, now being replaced by a pending set (TermAl w-05ff); incremental task-sync (dd205), which should have been proportional from the start; and the w-ea4a design, where a projection index was rejected in favour of a forward-only root-feed append.\nHow Engram::Fable applies it: any new design or review brief names its cost model (what grows the work) and refuses history-proportional routine paths unless a reason and a bound are recorded."
+}

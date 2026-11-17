@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-delegation-worktrees-in-repo-2026-11-16",
+    "revision_id": "5374c0a8a3ef4ab898b2066b2518a20d",
+    "previous": "4d59d60f93fb451d934ae7b17b0e1665",
+    "body_sha256": "955b23196099fbd97b5ecb5c993cc428e2887574686dacf31a85c9b7faaa379e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T16:59:50.806225600Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 16:58Z, relayed by Engram::Asistant (mailbox 43498a6e #1376, message 932859a8), verbatim: „Jakis koszmar. Przeciez mamy reguly aby uzywac tylko katalogu repo.” This was about 40 GiB of TermAl delegation worktrees and their builds under C:\\Users\\grzeg\\.termal\\delegations.\nAsistant's direction text (paraphrase of Greg's intent, not his words): new delegation worktrees, their target/ and test data are created inside the relevant repository (for example .worktrees/ or target/), never by default in ~/.termal/delegations. Host tests must not write to the real ~/.termal. Agree a safe, portable default path, a folder for exceptions, and proper cleanup. Assign the fix without slowing EO or sync. Do not remove or move existing data without the required consent and an owner check.\nTermAl owns the fix: w-eb21094eba5a, delegation worktrees default to ~/.termal and are never removed (owner Opus3, P0); and w-26abac74c80a, TermAl tests leak into the real ~/.termal. Engram's ten leftover worktrees are tracked on w-efc9bb5bd5f7 and are removed only on Greg's explicit yes.\nINTERIM RULE (rev 2, agreed with Fable2 ebe242f7 #8142), until w-eb21094eba5a lands: an Engram session that spawns an isolated-worktree (writable) TermAl delegation MUST pass an explicit worktree path inside the Engram repo, under C:/github/Personal/Engram/.worktrees/, which Git ignores. Spawning without a path, which uses TermAl's default of ~/.termal/delegations, is not allowed. The spawning parent removes that worktree and its target/ when the delegation's work is harvested, per the repo cleanup rules. Read-only delegations are unaffected."
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1e0b5-3df3-7a83-9b49-00b23d9b2a06",
+  "external_ref": null,
+  "title": "Add the test-builder branch preparation and push bullet to Engram's AGENTS.md and CLAUDE.md, mirroring TermAl",
+  "outcome": "Add the test-builder branch preparation and push bullet to Engram's AGENTS.md and CLAUDE.md, mirroring TermAl",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (kept identical) gain the exact bullet concurred by both coordinators and sent to Greg, next to the author-test-refs bullet, and nothing else in the authority section changes",
+    "Both coordinators' concurrence on the exact wording, the wording sent to Greg with its consequence, and a passed final-diff audit are recorded on this item before landing",
+    "It lands together with or after TermAl's builder implementation (TermAl w-6831e8936a44), and the link check passes on the changed tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

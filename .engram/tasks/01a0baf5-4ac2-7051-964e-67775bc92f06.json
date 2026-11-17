@@ -27,45 +27,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "Obsolete on Greg's word (Asistant #239): turn-gated control no longer exists, so there is nothing to enable. Doctor's own time on the live store, its third criterion, would be a new item if it still matters.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "81634ce7f1c54c948fed6869dc31aea5": {
-        "activity_id": "81634ce7f1c54c948fed6869dc31aea5",
-        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "b755ba959ff04d13914e1248cf269717"
-      },
-      "c3a56438d48e44cbb3732cbb9bdb6b4e": {
-        "activity_id": "c3a56438d48e44cbb3732cbb9bdb6b4e",
-        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "c3a56438d48e44cbb3732cbb9bdb6b4e"
-      },
-      "f30cd9684fd444b6bf908ee6a4b9d367": {
-        "activity_id": "f30cd9684fd444b6bf908ee6a4b9d367",
-        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "f30cd9684fd444b6bf908ee6a4b9d367"
-      }
-    }
-  }
+  "completion": null
 }

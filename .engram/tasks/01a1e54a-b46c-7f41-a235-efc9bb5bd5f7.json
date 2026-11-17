@@ -1,0 +1,36 @@
+{
+  "id": "01a1e54a-b46c-7f41-a235-efc9bb5bd5f7",
+  "external_ref": null,
+  "title": "Remove Engram's ten finished delegation worktrees under the TermAl delegations folder, after Greg's word",
+  "outcome": "Remove Engram's ten finished delegation worktrees under the TermAl delegations folder, after Greg's word",
+  "acceptance": [
+    "Greg's yes is quoted verbatim on this item with its Asistant mailbox and sequence before anything is removed",
+    "For each of the ten Engram worktrees under C:/Users/grzeg/.termal/delegations/<id>/worktree, the delegation is confirmed ended and its status checked; every unique commit, uncommitted or untracked work and needed result is preserved before removal",
+    "Remove only the ten authorized worktrees with git worktree remove from C:/github/Personal/Engram; use --force only after full preservation is verified, do not prune, and remove a delegation parent folder non-recursively only if empty. Retain repository branches and record each removal, recovered bytes, preservation paths and anything left with its reason."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed exactly the ten authorized finished Engram delegation worktrees and their empty parents, preserving unique source, refs and needed results. Independent acceptance67fd8c97ede64b5589a9a31c54dda6c3 passes3/3 on acceptance r2, no findings. Removed29,292,874,407logicalfilebytes/27.281115GiB; observed free-space delta23,914,094,592B is not claimed as exclusively causal. Shared archive retained for six open tasks under their recorded retention needs. No product edit/build/install.",
+    "completed_at": "2026-11-16T17:56:46.637398400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1e0da-2343-7821-a49d-3e341483dbd2",
+  "external_ref": null,
+  "title": "Track every commit-held export of a task since the last import, so incremental task-sync never needs the discarded-write rules",
+  "outcome": "Track every commit-held export of a task since the last import, so incremental task-sync never needs the discarded-write rules",
+  "acceptance": [
+    "The folder head records the fingerprints of this host's commit-held writes since its last import, and an incoming document equal to any of them is taken as this host's own",
+    "The rule that reads a discarded task at its export's base commit is replaced or justified by that record, with a regression for export, commit, export, discard, import, export"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

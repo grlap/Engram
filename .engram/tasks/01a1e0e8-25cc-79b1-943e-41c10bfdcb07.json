@@ -1,0 +1,32 @@
+{
+  "id": "01a1e0e8-25cc-79b1-943e-41c10bfdcb07",
+  "external_ref": null,
+  "title": "Queue independent acceptance evaluation from settled evidence instead of manual turn and slot handoffs",
+  "outcome": "When an item's required evidence is ready, the host durably schedules its independent acceptance evaluation and resumes the requester with the result, without a manual next-turn request or per-evaluation coordinator placement message.",
+  "acceptance": [
+    "A qualifying evidence settlement durably queues the item's required independent acceptance evaluation and resumes the requester on the recorded result, without a manual next-turn request or placement mailbox exchange",
+    "Independent evaluation, evidence basis, capacity limits and existing refusal authority remain unchanged; a capacity wait reports its reason and release condition"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

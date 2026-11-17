@@ -1,0 +1,27 @@
+{
+  "id": "01a1e064-7250-7993-b5f3-7ea028041477",
+  "external_ref": null,
+  "title": "Give an existing data branch the .engram/.gitattributes line-ending rule that enablement promises",
+  "outcome": "Give an existing data branch the .engram/.gitattributes line-ending rule that enablement promises",
+  "acceptance": [
+    "A data branch created by data-init and exported to (as Engram's engram-data at b4f0025d) gains the documented '.engram/** text eol=lf' attribute through a supported step, or the docs say how an operator adds it",
+    "On a Windows checkout with core.autocrlf=true, staging a memory-including export no longer warns LF will be replaced by CRLF, and a no-op re-export after a fresh checkout leaves git status clean"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

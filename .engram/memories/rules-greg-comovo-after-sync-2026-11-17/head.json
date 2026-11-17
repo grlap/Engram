@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-comovo-after-sync-2026-11-17",
+  "head": {
+    "state": "active",
+    "chain": [
+      "c3c1b55de82a493e85b4c3d08a2c3a64",
+      "9cb6a862eeb047a4a37a65e849759f8a",
+      "92008c72d2e148ab99ed3431b31ae0f6"
+    ]
+  }
+}

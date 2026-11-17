@@ -1,0 +1,28 @@
+{
+  "id": "01a1e1e5-3985-7d40-8cc9-fb93bc41d39d",
+  "external_ref": null,
+  "title": "Refuse or name memory keys a task-sync export still publishes after removing the task they retire with",
+  "outcome": "Refuse or name memory keys a task-sync export still publishes after removing the task they retire with",
+  "acceptance": [
+    "An export that removes task T from the exchange while the committed memory component holds a key that retires with T either refuses, naming the key, T and a remedy, or no longer publishes the key without its target, so that a fresh receiving host never meets memory_retiring_target_missing for it. A CLI behaviour test proves it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "memory",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

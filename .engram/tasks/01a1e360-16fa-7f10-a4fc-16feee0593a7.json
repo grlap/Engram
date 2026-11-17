@@ -1,0 +1,30 @@
+{
+  "id": "01a1e360-16fa-7f10-a4fc-16feee0593a7",
+  "external_ref": null,
+  "title": "Document native history locators and their complete detail response",
+  "outcome": "The CLI agent guide and local work protocol describe native history detail locators, response shape, and return-window navigation accurately.",
+  "acceptance": [
+    "docs/features/cli-agent-usage.md and docs/features/local-work-protocol.md state that native history events accept their bare record id or unique prefix through show --note.",
+    "The feature docs distinguish complete native transition reason or blocker text without a member field from inherited event/completion member responses.",
+    "The feature docs explain record-family navigation: history detail returns to --history while native, inherited, and shared note detail returns to --notes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

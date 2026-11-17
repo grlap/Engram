@@ -36,33 +36,5 @@
       "actor_id": "greg/claude",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "634299c3df3d4f0cbb184fd33c17e9b9": {
-        "activity_id": "634299c3df3d4f0cbb184fd33c17e9b9",
-        "task_id": "01a1091b-0d83-78f3-a30c-14ce2b2dc934",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "634299c3df3d4f0cbb184fd33c17e9b9"
-      },
-      "97e208dca8fc45eb8bc20ed05609a449": {
-        "activity_id": "97e208dca8fc45eb8bc20ed05609a449",
-        "task_id": "01a1091b-0d83-78f3-a30c-14ce2b2dc934",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "06e0f17459c3468aa99e98d6e22cbe4f"
-      }
-    }
   }
 }

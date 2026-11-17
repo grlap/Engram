@@ -31,45 +31,5 @@
       "actor_id": "greg/codex",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "068dca27bf7c42b298c6bb0c5a02098f": {
-        "activity_id": "068dca27bf7c42b298c6bb0c5a02098f",
-        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "068dca27bf7c42b298c6bb0c5a02098f"
-      },
-      "3c6caaee4b0a4ff39b68a3fd8ab826d0": {
-        "activity_id": "3c6caaee4b0a4ff39b68a3fd8ab826d0",
-        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "7fd1e29a71e147c7a8c010e37b815e0e"
-      },
-      "68b8f1bf6e9a43a48453fe01670cd074": {
-        "activity_id": "68b8f1bf6e9a43a48453fe01670cd074",
-        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "68b8f1bf6e9a43a48453fe01670cd074"
-      }
-    }
   }
 }

@@ -1,0 +1,39 @@
+{
+  "id": "01a1ea9e-c29c-7073-aab1-02098e071635",
+  "external_ref": null,
+  "title": "Let task-sync export and import carry tasks imported from an external source, so Comovo's Beads-imported tasks sync between hosts",
+  "outcome": "Let task-sync export and import carry tasks imported from an external source, so Comovo's Beads-imported tasks sync between hosts",
+  "acceptance": [
+    "A project whose tasks were imported from an external source with an immutable source snapshot exports through task sync; export no longer refuses consistent Imported items, and still refuses an inconsistent origin and snapshot pair",
+    "An empty peer imports those documents with the same work ids and external references, holds them as ordinary tasks without a source snapshot, and re-exports identical shared documents",
+    "The original host keeps each item's Imported origin and its exact source snapshot through repeat exchanges in both directions, and a mixed graph of imported and native parents and prerequisites round-trips",
+    "The task-sync documentation describes externally imported tasks as shared planning documents whose source snapshot stays host-local"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "comovo",
+    "greg-directed",
+    "ready-to-land",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and pushed Comovo imported-task task-sync support on master at 02f95ccdac79fdd8bf4d504d0e8deba19ad5c711; installed the exact build (fingerprint f373dacad01dd5398b235f68da94cb92c9ab88822195f11e4bc53de6d0d40705) and confirmed all six live stores report ready. Independent acceptance evaluation e693e32db3084af1925177ea1d6f6378 passed 4/4. No TermAl restart was performed.",
+    "completed_at": "2026-11-17T20:29:27.051388500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

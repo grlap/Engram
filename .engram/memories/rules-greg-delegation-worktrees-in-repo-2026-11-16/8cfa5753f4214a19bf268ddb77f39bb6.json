@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-delegation-worktrees-in-repo-2026-11-16",
+    "revision_id": "8cfa5753f4214a19bf268ddb77f39bb6",
+    "previous": "7dd289233a8941f69b67616917e9274d",
+    "body_sha256": "029661f4d9844977f80115076005969fa0c3a6267c9e8d08af4a988ac4645e8b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:03:43.434673100Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 16:58Z, relayed by Engram::Asistant (mailbox 43498a6e #1376, message 932859a8), verbatim: „Jakis koszmar. Przeciez mamy reguly aby uzywac tylko katalogu repo.” This was about 40 GiB of TermAl delegation worktrees and their builds under C:\\Users\\grzeg\\.termal\\delegations.\nGREG, about 17:00Z, via Asistant (43498a6e #1379), verbatim: „+ kimi. Nie może tak być że zespół sobie coś uznał. Prosze o doprecyzowanie reguły. Umieszczenie jej w skillach.”\nGREG, about 17:02Z, via Asistant (43498a6e #1382, message 92f9a3ef), verbatim: „Nie. Testy takze powinny byc w folderze repro. Juz widze gdzie to idzie. Testy termal nie moga uzywac 'produkcyjnego' folderu!”\nScope per Asistant: all work stays PHYSICALLY inside the right repository's folder: isolated worktrees, target/, test data, fake HOME, fixtures, stores, artefacts and scratch. A Git worktree in the user profile is no exception, and test runs are no exception either. Real host state under ~/.termal or ~/.engram is for the product only, never a default or accidental test location. Keep the existing tool and install actions the instructions already allow, and add no new exceptions by the team's own judgment. Kimi compares both repos' wording independently. The always-loaded instructions stay the authority boundary; the skills carry the procedure, written by their owners. No Greg quotes in files, no containers or watchers, no extra gates, and no deletion of existing data without established authorization. Reports to Greg in Polish.\nTracking: rule text and skill on w-2e8b0c1296b5. Engram test-run leaks into the system temp on w-e3375fd6d801. TermAl product and test fixes are TermAl w-eb21094eba5a (owner Opus3, P0) and w-26abac74c80a. Engram's ten leftover worktrees are on w-efc9bb5bd5f7, removed only on Greg's explicit yes.\nINTERIM RULE (rev 4, Fable2 ebe242f7 #8144: the running TermAl host refuses an isolated-worktree path inside the repo): in BOTH projects, until w-eb21094eba5a lands, NO isolated-worktree (writable) TermAl delegations at all. Writers use their own .worktrees/ inside the repo. Read-only reviewers and explorers continue as before."
+}

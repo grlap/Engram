@@ -1,0 +1,30 @@
+{
+  "id": "01a1eadd-ba1f-7dd3-8ef9-4f790d4f4dfa",
+  "external_ref": null,
+  "title": "Report spawn failures and close task-sync fixture stores before deleting their homes",
+  "outcome": "Unblock the integrated Windows gate by finishing native-spawn diagnostic records and closing fixture database handles before removing their homes.",
+  "acceptance": [
+    "A native spawn refusal completes its owned diagnostic record as spawn while preserving RunError::Spawn; cancellation/dropped futures retain their truthful classifications and the existing spawn-failure assertion stays strict.",
+    "Shared folder test fixtures drop both cached-service stores before their temporary home, with a Windows regression proving the whole fixture directory is absent after drop and no cleanup audit is suppressed.",
+    "Focused Windows diagnostics and fixture-drop regression checks pass on the exact repaired package, with no rerun-to-green, ignored assertion, delete retry or relaxed temp audit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "gate",
+    "windows"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate prepared during queued ownership correction: Merger#410/message03f5e126-f417-4ab3-b859-40f3eab03885 relays Fable#2195 assigning Eprime and existingw-f4b31d0dfde6 fixes solelytoEngram::Opus and directingCoder-MacosFixSolto standdown. Both defects remain owed under6bba+f4b3; no fix/test/completion claim. Untestedsourcecandidatead793e45 retainedonlyforcoordinatoradopt/discarddecision, provenanceonbothopenitems. No registeredrun,review or push exists. Withdrawmynewfocusedslotrequest1632; returnB668originalqueue.",
+  "completion": null
+}

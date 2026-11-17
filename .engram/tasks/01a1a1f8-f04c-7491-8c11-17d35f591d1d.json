@@ -33,33 +33,5 @@
       "actor_id": "greg/codex",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "59ea08fcf72f4bdf91bd1d5fbd0d8b59": {
-        "activity_id": "59ea08fcf72f4bdf91bd1d5fbd0d8b59",
-        "task_id": "01a1a1f8-f04c-7491-8c11-17d35f591d1d",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "2061a394db0a4cd7a47d2478e40c4c5c"
-      },
-      "da492f684732467b982c44a400c0d6a6": {
-        "activity_id": "da492f684732467b982c44a400c0d6a6",
-        "task_id": "01a1a1f8-f04c-7491-8c11-17d35f591d1d",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "59ea08fcf72f4bdf91bd1d5fbd0d8b59"
-      }
-    }
   }
 }

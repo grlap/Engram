@@ -1,0 +1,27 @@
+{
+  "id": "01a1e571-8f89-7263-8098-eb63d3be6057",
+  "external_ref": null,
+  "title": "Keep a committed task-sync push start's dispatch when the managed custody fence fails after commit",
+  "outcome": "Keep a committed task-sync push start's dispatch when the managed custody fence fails after commit",
+  "acceptance": [
+    "When fence_managed_custody fails after the producing-origin effect has committed (a recover_pending_journal rename or sync failure, or a non-contention lock failure), the caller still gets the committed result and a first PushStarted is still dispatched once; a test injects that failure after commit and observes the dispatch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-task-sync",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-explicit-result-handoff-2026-11-15",
+    "revision_id": "748cc86f280340cba267acdb37e7b3d3",
+    "previous": null,
+    "body_sha256": "ffe2d8d0b4ee0fc9f614a598715ea980c50e7f2264593eef308b0b8931fe00ba",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T20:23:47.753455400Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 20:23Z, relayed by Engram::Asistant (mailbox 43498a6e #1294, message 1781a0cb), verbatim: „To jest absurd. Przeciez to mozna przekazac sesja do sesji. Exicit a nie szukac w historii.\nCo wiecej rest runner moze wyslac powiadomienie + Kimi.\nTo jest jakis absurd.”\nMeaning: a remote test result is handed over EXPLICITLY, session to session, bound to the existing request, instead of being found by scanning history. The test runner can send a notification.\nAsistant's brief, a paraphrase: Kimi investigates independently with both teams: an explicit result handover bound to the existing request between sessions, a notification from the test runner, and durable recovery after a disconnect or restart without browsing the whole history. Establish what already exists and why the path scans, remove unnecessary orchestration, give concrete causes of failure, and add no new gates. Work runs in parallel with sync and EO, and results are reported.\nContext: Kimi's credit-chain analysis (c15db92c #204) found Central's causal pull scans mailbox rows and saved settlements (test_run_causal_completion_batch.rs)."
+}

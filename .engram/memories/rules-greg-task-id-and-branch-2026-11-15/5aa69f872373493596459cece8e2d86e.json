@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-task-id-and-branch-2026-11-15",
+    "revision_id": "5aa69f872373493596459cece8e2d86e",
+    "previous": null,
+    "body_sha256": "eb43d1c8d76600c8007a54a0cfe67a203c8ed2b554409580cc497e0adc9bebe8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T19:27:07.797345900Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 19:26Z, relayed by Engram::Asistant (mailbox 43498a6e #1284, message ebe469ac), verbatim: „Process jest zbyt ciezki. Za duzo krokow dla agentow. Zawsze ktos cos pomysli. Generalnie co potrzebujemy id taska i branch. Tak? + kimi. Powtorze odrzucenie musi dawac powod.”\nAsistant's brief, a paraphrase: Kimi analyses with both teams the target MINIMAL agent interface. The agent gives a task id and a branch; the system itself recognises and binds the actual execution, source_id/commit, host and result, keeping the existing safeguards. Check the cases where extra input is truly needed, and why. Make a concrete end-to-end simplification proposal: no new protocols and no more manual steps. Every refusal or hold gives its reason and a possible remedy. Separate facts from design, and report the plan and its owners. Sync and EO continue.\nContext the same evening: Kimi's credit-chain analysis (c15db92c #204) found a passing remote run lost because factual placement and credit authority share one field, with silent Option/bool stops."
+}

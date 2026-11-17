@@ -1,0 +1,29 @@
+{
+  "id": "01a1e299-24bb-7e01-946b-98d57cd8c8c6",
+  "external_ref": null,
+  "title": "Assess acceptance-only freshness for imported evaluation and seal reuse",
+  "outcome": "Determine whether imported evaluation and native-seal reuse should compare acceptance-relevant state independently of unrelated planning metadata, using the existing task-sync evidence owner.",
+  "acceptance": [
+    "Reproduce or rule out rejection of a valid native evaluation-before-label completion during imported evaluation or seal reuse, and record the exact governing comparison and evidence.",
+    "Propose the smallest acceptance-specific reuse judgment in the existing owner, or document why the stricter planning comparison must stay; explicitly assess persisted use-decision compatibility before implementation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1e297-02ed-70a0-8048-b7f90e2ad60c",
+  "external_ref": null,
+  "title": "Let a history entry's advertised locator read its complete body",
+  "outcome": "Let a history entry's advertised locator read its complete body",
+  "acceptance": [
+    "When `show REF --history` prints an entry with a locator and a clipped summary (for example a cancel or reject reason), `show REF --note LOCATOR` (or the remedy the history entry names) returns that entry's complete body",
+    "If a history locator is deliberately not readable through `--note`, the history entry prints the exact supported command that does read it, and the refusal for a wrong route names that command instead of only 'does not belong to this item'",
+    "A behaviour test covers a reject reason longer than the history clip, read back in full through the advertised route"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "ready-to-land",
+    "refusal-explains"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

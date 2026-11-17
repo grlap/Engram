@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-second-integrator-route-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "b65a95f8f24b4a3eafa03830ff57aa7a",
+      "f888e76db1a24ec1b6e0caa7d22af954",
+      "2a4fbc58128e4854b94e05dbc342d5dd",
+      "739ec84469a143f6b6f1a0bfdde856af",
+      "b62349994b184d49822993b3bd00e0e4"
+    ]
+  }
+}

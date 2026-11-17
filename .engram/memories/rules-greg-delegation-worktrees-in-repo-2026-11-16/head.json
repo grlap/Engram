@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-delegation-worktrees-in-repo-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "4d59d60f93fb451d934ae7b17b0e1665",
+      "5374c0a8a3ef4ab898b2066b2518a20d",
+      "5331f0eb9982452eae6b7cac92c0c507",
+      "7dd289233a8941f69b67616917e9274d",
+      "8cfa5753f4214a19bf268ddb77f39bb6"
+    ]
+  }
+}

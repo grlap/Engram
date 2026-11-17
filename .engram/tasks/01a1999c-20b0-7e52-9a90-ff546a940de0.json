@@ -26,21 +26,5 @@
   "blockers": [],
   "superseded_by": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
   "disposal_reason": "Withdrawn on 2026-11-02 at 00:19Z as a misreading of Greg. Evaluation stays and is being repaired on Execution Observability under the P0 w-89f3b3eeb688. This proposal to delete it conflicts with that direction.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "eb2c0704a60b4bb7bc551d95bcd36db9": {
-        "activity_id": "eb2c0704a60b4bb7bc551d95bcd36db9",
-        "task_id": "01a1999c-20b0-7e52-9a90-ff546a940de0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "7eea1dcf011b4d89b4f7820ad8b31a45"
-      }
-    }
-  }
+  "completion": null
 }

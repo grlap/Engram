@@ -20,28 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "44d542eb8ad74ad693d765a8781667d3": {
-        "activity_id": "44d542eb8ad74ad693d765a8781667d3",
-        "task_id": "01a1be51-83c4-7652-86e2-de7a7b6f7cac",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "44d542eb8ad74ad693d765a8781667d3"
-      }
+  "completion": {
+    "summary": "Delivered evidence C core applicability for imported evaluations and foreign native completion proofs. Fresh independent Claude18394 evaluation25a54f18c1604d23a8db1d11dc0ac0dd, acceptance r1/cut489, all4 criteria PASS/stale=null on clean89e269f6/treea0cf0c04. Full original3637-byte output/native verdicts read. Manifest d15afa6533d24dcd80b096e41c6ebe48 binds unchanged C code/49 tests to original AACB full4235 PASS; no new tests or source changes, no new final-tree gate/landing claim. Operational limits and C4 code-layout judgment retained. END/released evaluator slot. Closure-only worktree cleanup follows; next reuse365c/597d assessed separately and any ordinary-sync gap reported.",
+    "completed_at": "2026-11-16T02:48:46.288748300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

@@ -1,0 +1,29 @@
+{
+  "id": "01a1e600-297b-7f61-9de6-d9f4d48f0a66",
+  "external_ref": null,
+  "title": "Align GitHub CI with advisory Clippy and blocking compilation",
+  "outcome": "Align GitHub CI with advisory Clippy and blocking compilation",
+  "acceptance": [
+    "The CI quality job uses an uncapped all-target/all-feature compile check and the agreed capped Clippy command, so Clippy warnings alone do not turn CI red while compiler failures still fail the job.",
+    "Retain the existing formatting and test failure behavior; verify the command behavior through meaningful existing fixtures or the smallest applicable probe, without adding a Markdown-content test."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review-low",
+    "test-infrastructure"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

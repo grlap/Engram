@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-current-memories-only-2026-11-15",
+    "revision_id": "c0b7c9ba8c0844f8adc12ec94dce636f",
+    "previous": null,
+    "body_sha256": "c7d7486b5739dcc38dd225347e320744887373c48c14717b6339412f5f2d8d26",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T20:46:26.044876600Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 20:46Z, relayed by Engram::Asistant (mailbox 43498a6e #1303, message 0bead8bb), verbatim: „co do memories, stare wersje NIE powinny byc pokazywa, bo to psuje info agentowi, z czasem moze mu sie pomieszac”.\nREQUIREMENT, for both projects (Asistant's brief, a paraphrase):\n- Ordinary listing, search, recovery and reads for an agent show ONLY the current, valid version of a memory.\n- Earlier versions don't enter the ordinary agent context. History appears only on a deliberate, explicit choice.\n- The request does NOT ask for history deletion or a sync-format change.\n- Check Engram and TermAl, including after sync; name every violation and fix it. Kimi checks independently. Sync and EO continue.\nFable's first read of master 50862fce: memory query search joins memory_heads on the head version with status active (project_memory/read.rs:344–365), so it shows only current versions. Listing shows the current first line. `memories KEY --full` shows the current revision, but its next hints offer `--revision N-1`, which is a nudge toward old versions to review. Not yet checked: the global `search` verb, recovery and peek digests, and TermAl's injected context."
+}

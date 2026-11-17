@@ -1,0 +1,33 @@
+{
+  "id": "01a1eb1a-f022-75b3-b311-cc21f3746008",
+  "external_ref": null,
+  "title": "Keep custody of the Unix task-sync Git child from OS creation through async setup, ending and reaping its group when setup fails",
+  "outcome": "Keep custody of the Unix task-sync Git child from OS creation through async setup, ending and reaping its group when setup fails",
+  "acceptance": [
+    "On macOS and Linux, an error after the Git child exists but before its async setup completes (pipe conversion or reactor registration, SIGCHLD setup) ends the child's process group, reaps the root and returns a typed failure; Tree::spawn no longer treats every spawn error as 'no child exists'",
+    "A regression test injects a setup failure after the real child exists and shows by member enumeration that no in-group process survives and the result is a typed failure, never success",
+    "The round-1 Windows trace fix (a failed spawn finishes its test trace with 'spawn') is preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "ready-to-land",
+    "review",
+    "sync",
+    "unix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

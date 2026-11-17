@@ -1,0 +1,26 @@
+{
+  "id": "01a1eb60-de2a-7fe0-8732-659dd4cb7537",
+  "external_ref": null,
+  "title": "Sync check: prerequisite closed on DL560",
+  "outcome": "Sync check: prerequisite closed on DL560",
+  "acceptance": [
+    "DL560 completes this item in its throwaway store and publishes the completion through engram-data"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "sync-check"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

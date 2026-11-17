@@ -1,0 +1,27 @@
+{
+  "id": "01a1e1d0-85da-76d2-bf13-b19e7bbeb30c",
+  "external_ref": null,
+  "title": "List memory listing metadata in projection repair inventories",
+  "outcome": "The storage and normative specification inventories identify the rebuildable memory-list metadata table and its repair/import lifecycle.",
+  "acceptance": [
+    "docs/features/sqlite-store.md Rebuildable and durable projections and docs/spec.md projection inventory include project_memory_list_metadata beside project_memory_state, consistently with schema classification and implemented repair/import behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

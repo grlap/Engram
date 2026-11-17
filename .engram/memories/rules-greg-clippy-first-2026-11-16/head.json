@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-clippy-first-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "0bdffd6433bc44e8bca6c74a43634957",
+      "8b7e7f0e1eaf44399bb4c51608794879",
+      "5aeb89f942804ee290ff4f2222bdf9de"
+    ]
+  }
+}

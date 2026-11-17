@@ -1,0 +1,27 @@
+{
+  "id": "01a1e383-29bd-7a32-ae5d-f02f3133db66",
+  "external_ref": null,
+  "title": "Name only the working exit when an incremental import refuses a task that links to another project's absent task",
+  "outcome": "Name only the working exit when an incremental import refuses a task that links to another project's absent task",
+  "acceptance": [
+    "When the incoming folder holds a task whose parent, prerequisite or replacement names another project's task and that task's file is absent from the folder, the incremental task_sync_id_collision refusal names only the exit that works there (remove the linking tasks from the folder and commit), or states that the --rebuild exit applies only while the named task is still in the folder; a test covers that link-only state and shows the named exit succeeds",
+    "The task_sync_id_collision row of the refusal-codes table in docs/features/task-planning-text.md also covers a task whose parent, prerequisite or replacement names a task another project holds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

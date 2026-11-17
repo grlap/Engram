@@ -24,21 +24,5 @@
   "blockers": [],
   "superseded_by": "01a14639-5bce-7660-bb6b-76d10475fdcc",
   "disposal_reason": "Same defect (clippy::unused_async off Windows in src/task_sync/exchange/mod.rs execute/execute_config). Greg's direction of 2026-10-16 (Advisor #1511) forbids a lint allowance, which this item's criterion 1 still permits; w-76d10475fdcc carries the current no-allow criteria and active work (Opus, fixed tree, non-Windows clippy evidence). Filing w-76d1 without first finding this item was Engram::Fable's error.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "f12e2c78412e424a92168ae22d15a3e0": {
-        "activity_id": "f12e2c78412e424a92168ae22d15a3e0",
-        "task_id": "01a13cc9-05a2-7673-b222-907866fd1902",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "93a9bdd62a4447ee8678e748f1dc4f60"
-      }
-    }
-  }
+  "completion": null
 }

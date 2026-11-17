@@ -24,21 +24,5 @@
   "blockers": [],
   "superseded_by": "01a082c9-a79c-7353-8d8d-af63029c7233",
   "disposal_reason": "Continue the separately authorized English-message correction after accepted parent completion; validation remains owed.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "5cc885d5f8e39ecf7b087d1594ca8a3145d57f0e68b4a81cc62c4a416e28918a": {
-        "activity_id": "5cc885d5f8e39ecf7b087d1594ca8a3145d57f0e68b4a81cc62c4a416e28918a",
-        "task_id": "01a082ba-6ac8-7363-bfe7-c279efd245db",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "133133e2f97c098f71b7fd8dcbd966c770e3cfa22f11a853290707b5c4993e0a"
-      }
-    }
-  }
+  "completion": null
 }

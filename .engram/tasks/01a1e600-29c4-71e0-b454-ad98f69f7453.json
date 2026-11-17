@@ -1,0 +1,29 @@
+{
+  "id": "01a1e600-29c4-71e0-b454-ad98f69f7453",
+  "external_ref": null,
+  "title": "Make the oversized Clippy JSON fixture detect loss of bounded parsing",
+  "outcome": "Make the oversized Clippy JSON fixture detect loss of bounded parsing",
+  "acceptance": [
+    "The oversized-record fixture fails if the bounded logical-line discard branch is removed, using a short later warning and a successful build-finished record so complete/truncated/count assertions are not satisfied for unrelated reasons.",
+    "Exercise skipping an oversized record and retaining a following valid diagnostic; preserve the raw log and meaningful count/completeness assertions without tests that read Markdown or merely pin implementation text."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "launcher-tests",
+    "review-low",
+    "test-quality"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

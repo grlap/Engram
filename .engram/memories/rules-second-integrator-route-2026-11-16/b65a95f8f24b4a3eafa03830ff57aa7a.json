@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-second-integrator-route-2026-11-16",
+    "revision_id": "b65a95f8f24b4a3eafa03830ff57aa7a",
+    "previous": null,
+    "body_sha256": "804571af84fee132d8b561785d3f6313165cda71fa6e841716059a5cb423fd1a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T16:16:01.092192700Z"
+    }
+  },
+  "body": "SECOND INTEGRATOR route (Engram::Fable ruling #4392, 2026-11-16 16:15Z, for Engram::Opus's integration batch; w-606e excluded, #4390). Engram::Opus is the integration owner for w-e999, w-b7f9, w-5e5f, w-8b9e, w-f2b4, w-f265, w-1970, w-f33a, w-a5b1 and the w-8732/w-2638/w-32d6 trio. For each integration candidate:\n1. Opus carries the READY packages onto current master under /review-changes 6a, builds a local candidate commit, and freezes it.\n2. Opus gets fresh focused compile and test evidence on that exact input (author-test ref run on s4/Mac).\n3. Opus sends the Merger the parent master, the recorded tree id, the freeze fingerprint and that evidence.\n4. The Merger creates the detached test-ref commit itself under AGENTS.md's Test refs bullet (parent master, tree = Opus's recorded tree id) and pushes refs/heads/test/<item>-<fp8>. The Merger performs only the push the rule reserves to it.\n5. The FULL on that test ref is the landing gate.\n6. Opus lands by fast-forwarding master to exactly that test-ref commit under the standing approval, with readiness and the acceptance evaluation (the w-e999 interim order: manifest, label, evaluation).\nRejected alternatives: (a) an author-test FULL plus a Merger re-push wastes a run; (c) a Central local FULL fails today on Central's w-fe6e defect."
+}

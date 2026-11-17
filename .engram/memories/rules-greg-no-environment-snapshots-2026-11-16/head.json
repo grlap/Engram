@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-environment-snapshots-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "ead42f1955224d6b861e46f277b76d9b",
+      "e3cb431bd4994484a12bd977f57ad94e"
+    ]
+  }
+}

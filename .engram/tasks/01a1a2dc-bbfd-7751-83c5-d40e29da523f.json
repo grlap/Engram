@@ -32,33 +32,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "1f30e9af4837413383bdcc34bfa7a9e3": {
-        "activity_id": "1f30e9af4837413383bdcc34bfa7a9e3",
-        "task_id": "01a1a2dc-bbfd-7751-83c5-d40e29da523f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "1f30e9af4837413383bdcc34bfa7a9e3"
-      },
-      "91ff8d5dfe814e7c8d6668fde0ccb8f2": {
-        "activity_id": "91ff8d5dfe814e7c8d6668fde0ccb8f2",
-        "task_id": "01a1a2dc-bbfd-7751-83c5-d40e29da523f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "91ff8d5dfe814e7c8d6668fde0ccb8f2"
-      }
-    }
-  }
+  "completion": null
 }

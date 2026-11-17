@@ -1,0 +1,28 @@
+{
+  "id": "01a1e14b-853c-7332-aede-79a1f2948223",
+  "external_ref": null,
+  "title": "Keep a non-conflicting own change to a task the complete import holds owed to the next export",
+  "outcome": "Keep a non-conflicting own change to a task the complete import holds owed to the next export",
+  "acceptance": [
+    "After a complete (rebuild) import holds another host's edit of a task that carries a note this host has not published yet, and the hold later resolves through an incremental import with no new local event on that task, the next export publishes the note. A CLI behaviour test proves it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

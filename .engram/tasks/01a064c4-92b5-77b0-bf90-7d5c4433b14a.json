@@ -25,21 +25,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "obsolete: filed against the completion-barrier/participant-revision design that was rejected and removed before landing (1d04b09 shipped the refusal-recompute fix without that machinery)",
-  "completion": null,
-  "activity": {
-    "central": {
-      "694f73fe6c7f6825c66e87e2a196b066d3b05e9fa31dacca8a4c84ff5c1c6f4e": {
-        "activity_id": "694f73fe6c7f6825c66e87e2a196b066d3b05e9fa31dacca8a4c84ff5c1c6f4e",
-        "task_id": "01a064c4-92b5-77b0-bf90-7d5c4433b14a",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "03ec28181b0b8c19357b245293c1ba4df2be4fd1c0952f79f3efcc6d4342c780"
-      }
-    }
-  }
+  "completion": null
 }

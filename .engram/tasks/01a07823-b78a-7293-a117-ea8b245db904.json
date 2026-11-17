@@ -29,33 +29,5 @@
       "actor_id": "grzeg",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "266500638f8b237666d05af913770bffe64a4ebfac54e78fc1e84529c014b1aa": {
-        "activity_id": "266500638f8b237666d05af913770bffe64a4ebfac54e78fc1e84529c014b1aa",
-        "task_id": "01a07823-b78a-7293-a117-ea8b245db904",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "grzeg",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "266500638f8b237666d05af913770bffe64a4ebfac54e78fc1e84529c014b1aa"
-      },
-      "30e522fdf092e220bf95fe1e903b02ff6858f5dab5e430e92f8568ca054fe269": {
-        "activity_id": "30e522fdf092e220bf95fe1e903b02ff6858f5dab5e430e92f8568ca054fe269",
-        "task_id": "01a07823-b78a-7293-a117-ea8b245db904",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "grzeg",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "b62aef80f49f58f70e4cfb6265460c6317a4cfdf22b0ad1df09ee5ea3b269738"
-      }
-    }
   }
 }

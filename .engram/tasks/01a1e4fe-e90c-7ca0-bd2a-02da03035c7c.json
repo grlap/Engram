@@ -1,0 +1,31 @@
+{
+  "id": "01a1e4fe-e90c-7ca0-bd2a-02da03035c7c",
+  "external_ref": null,
+  "title": "Cut the number of Git processes a task-sync command starts, so commands stay well inside their deadlines on Windows",
+  "outcome": "Cut the number of Git processes a task-sync command starts, so commands stay well inside their deadlines on Windows",
+  "acceptance": [
+    "The number of Git subprocesses started by each slow task-sync path (the memory sync refusal that took more than 10 s alone, the destination and Publisher::publish setups that hit their 60 s and 120 s limits) is measured on Windows, with per-call cost and total, from evidence rather than estimate",
+    "Each measured path starts a bounded number of Git processes that doesn't grow with unrelated repository or history size, and the task_sync_cli and destination suites finish on Central well inside their unchanged deadlines",
+    "No deadline is raised and no assertion is weakened; a test counts the Git processes a representative command starts and fails if the count regresses"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "gate",
+    "performance",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

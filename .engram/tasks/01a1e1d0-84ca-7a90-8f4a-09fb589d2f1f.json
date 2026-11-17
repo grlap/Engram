@@ -1,0 +1,29 @@
+{
+  "id": "01a1e1d0-84ca-7a90-8f4a-09fb589d2f1f",
+  "external_ref": null,
+  "title": "Narrow unfiltered memory listing SQL to the current project's heads",
+  "outcome": "Unfiltered project-memory listing avoids scanning heads belonging to other projects or scopes while preserving current rows, ordering and pagination.",
+  "acceptance": [
+    "The unfiltered candidate query uses the current project and project scope on memory_heads while retaining canonical binding validation",
+    "A meaningful SQL-work measurement shows that growing unrelated project/scope heads does not grow this project's page-selection work; returned rows and pagination remain unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "memory",
+    "performance",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

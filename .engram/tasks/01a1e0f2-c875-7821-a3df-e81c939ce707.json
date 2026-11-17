@@ -1,0 +1,34 @@
+{
+  "id": "01a1e0f2-c875-7821-a3df-e81c939ce707",
+  "external_ref": null,
+  "title": "Read current memory list heads without replaying every displayed revision",
+  "outcome": "Memory list pages read current head projections and stored revision metadata rather than every canonical version and assertion belonging to each displayed key.",
+  "acceptance": [
+    "An unfiltered or filtered memory list page reads only the selected keys' current projections and their stored revision metadata, not their complete canonical histories",
+    "Revision numbers, active state, retirement metadata and first-line rendering remain identical, including restored tombstones",
+    "A many-revision regression measures work proportional to the page size rather than total displayed history"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization",
+    "performance",
+    "project-memory",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

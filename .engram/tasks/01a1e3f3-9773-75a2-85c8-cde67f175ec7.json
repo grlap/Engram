@@ -1,0 +1,28 @@
+{
+  "id": "01a1e3f3-9773-75a2-85c8-cde67f175ec7",
+  "external_ref": null,
+  "title": "Check that every declared rebuildable work schema object is work-owned, and tie the projection-repair test to the readiness verdict",
+  "outcome": "Check that every declared rebuildable work schema object is work-owned, and tie the projection-repair test to the readiness verdict",
+  "acceptance": [
+    "A storage test asserts, for every entry of REBUILDABLE_WORK_SCHEMA_OBJECTS read at run time, that owns_schema_object claims its name, so a declared rebuildable object can never be classified as a durable core object",
+    "The projection-repair recovery test asserts store_open_refusal_kind(&error) == StoreOpenRefusalKind::ProjectionRepairRequired instead of only matching message text"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-robustness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

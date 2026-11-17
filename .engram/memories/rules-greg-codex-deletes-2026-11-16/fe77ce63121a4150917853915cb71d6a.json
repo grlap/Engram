@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-codex-deletes-2026-11-16",
+    "revision_id": "fe77ce63121a4150917853915cb71d6a",
+    "previous": "dca5a6c20005400d936f37f7b49bbff9",
+    "body_sha256": "a91dbae5ae393230de665742b886309c130a9999f5e514f0f42d80e451d669c3",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent",
+      "actor_context": "agent=kimi;model=kimi-code/k3.1-pro",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T18:29:58.773816Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 17:05Z, relayed by Engram::Asistant (mailbox 43498a6e #1385, message 55970ff1), verbatim: „Niech codex usuwa katologi. (Opus nie)”.\nAsistant's scope at the time, for the delegation-worktree cleanup: only a Codex session removes directories, never Opus. Before removal, verify each absolute path lies in the named folder, and confirm no active work or process. Preserve unique commits, uncommitted and untracked files, and needed results. Use the supported route (git worktree remove for worktrees); no global prune and no --force on unverified work. Leave and report anything that can't be fully preserved. Report what was removed, the space recovered, and what remains.\n\nCURRENT SHARED RULE (revision 2, 2026-11-17): Engram::Fable and Termal::Fable2 concurred on ONE cleanup text for both repositories, with two scope clarifications: Codex executes directory and worktree removal, while a single owned file stays with its owner under the same non-forced checks; a non-Codex owner hands Codex the exact targets directly. The agreed text uses non-forced forms, stop-and-report on failure or refusal, repository/link/retention checks and no new gate. It is recorded on TermAl w-e2a5af1634f0 note d9d6cd78 and Engram w-bb60c6606217; landing follows each repository's ordinary final-diff audit. Procedure detail and the exact shared rule are current in rules-post-completion-cleanup rev4; AGENTS.md becomes controlling when landed. Original source: Engram w-efc9bb5bd5f7 note 5a78379d."
+}

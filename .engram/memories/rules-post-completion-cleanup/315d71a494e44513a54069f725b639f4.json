@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-post-completion-cleanup",
+    "revision_id": "315d71a494e44513a54069f725b639f4",
+    "previous": "0f7fc9fb0d674a7da6fb7a36f40e4dfc",
+    "body_sha256": "a22b9325756852731037780891a205e2037295c992805c2db53356fc56ca7447",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T18:27:11.046625700Z"
+    }
+  },
+  "body": "POST-MERGE AND POST-CLOSURE CLEANUP. REV 4 (Engram::Fable, 2026-11-17): aligned with the ONE shared cleanup rule for Engram and TermAl (\"### Cleanup deletions\", landing via Engram w-bb60c6606217 and TermAl w-e2a5; Greg 43498a6e #1469 „reguły powinny być jedne”). Once landed, AGENTS.md is the authority; this memory keeps the procedure detail.\nWHO: the owner or integration owner (Merger/lander) is ACCOUNTABLE for cleanup after a successful merge and closure, as part of ordinary completion, without waiting for a reminder. Directory and worktree removal is EXECUTED by a Codex session, never Opus or Claude (memory rules-greg-codex-deletes-2026-11-16, Greg „Niech codex usuwa katologi. (Opus nie)”). A non-Codex owner hands Codex the exact owned targets. A single owned scratch or log file stays with its owner under the same checks.\nRETAIN only for a concrete, recorded and STILL ACTIVE need: record the exact task or use, the accountable owner and the event that ends retention. \"May be useful\" or an anonymous \"later\" is no reason. The coordinator's sweep enforces removal when the need ends.\nBEFORE REMOVAL, resolve each target to an absolute path inside the intended repository or worktree; no link may escape it. All runs must be terminal with their outcomes recovered; nothing pending depends on the root; no active claim or process, frozen input, shared resource or unique unpushed change needs it. Age, name or a released claim proves nothing. Otherwise stop and report the concrete blocker with owner, next action and release condition.\nEVIDENCE: if needed evidence exists only in the retiring root, copy just that to the main checkout's .evidence/, verify the copy and update citing tasks first. Engram notes, gates and seals stay the durable record. No routine manifest or whole-target archive.\nHOW: non-forced forms only. Use git worktree remove without --force for worktrees; git branch -d (never -D) only for a branch proven integrated with no unique unpushed commits and no other worktree using it; rm or rm -r without -f, or Remove-Item -LiteralPath (-Recurse, -Confirm:$false) without -Force. Never delete through an unchecked variable or a broad git clean.\nA prompt, an operational failure (on Windows, read-only files make Remove-Item without -Force fail) or a policy refusal STOPS the removal: report it to the coordinator, and never retry through another form, tool, interpreter or session. Forced removal needs Greg's recorded authorization for that exact case. Deleting outside the repository needs Greg's explicit word.\nRECORD the exact removals and the reclaimed space on the task. The closer of the last task a .logs/.evidence file serves removes it, or the coordinator's sweep does, once its need ends.\nThis adds no review, evaluation, FULL or approval gate."
+}

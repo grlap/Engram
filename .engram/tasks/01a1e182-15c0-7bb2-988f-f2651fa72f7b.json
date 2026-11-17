@@ -1,0 +1,29 @@
+{
+  "id": "01a1e182-15c0-7bb2-988f-f2651fa72f7b",
+  "external_ref": null,
+  "title": "Make the advisory decode-cost check independent of its test selection",
+  "outcome": "An isolated advisory cost check has the same meaningful verdict as the same check inside the broader memory suite, without hiding a history walk.",
+  "acceptance": [
+    "Reproduce and identify why project_memory_advisory_is_constant_decode_at_scale counts two decodes in isolation but zero inside the broader memory suite; distinguish a pre-existing issue from current-memory navigation changes",
+    "Repair the responsible test setup or implementation and retain a meaningful bound that detects canonical memory-history traversal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "ready-to-land",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

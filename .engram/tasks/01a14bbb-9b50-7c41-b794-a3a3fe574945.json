@@ -20,12 +20,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded as a duplicate. The automated Git exchange on Windows, macOS and Linux is w-6ea6f92ccffc (one command) plus w-6bbabe3a062b (macOS/Linux). Installing the right binary on each host is handled by procedure under rules-greg-dl560-engram-install-2026-11-06. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
   "completion": null
 }

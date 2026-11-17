@@ -1,0 +1,35 @@
+{
+  "id": "01a1e0f5-f2d7-7be2-ac99-19705ed20b35",
+  "external_ref": null,
+  "title": "Filter catalog candidates through existing readiness and label indexes before scanning project history",
+  "outcome": "Catalog candidate selection restricts lifecycle and label membership through existing indexes before reading candidate rows, so ls and the READY queue do not grow with completed project history.",
+  "acceptance": [
+    "The existing catalog query restricts candidates through work_items_ready or work_item_labels_lookup before candidate-row reads, without adding an index or requiring store repair",
+    "A fixed-pending VM-count regression stays flat as completed history grows, including the open-unlabelled control",
+    "Existing catalog filtering, ordering and continuation behavior remain unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "measured",
+    "optimization",
+    "performance",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

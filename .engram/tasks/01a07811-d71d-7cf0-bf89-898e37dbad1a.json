@@ -31,21 +31,5 @@
       "actor_id": "termal",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "ec181101a8f4d567c2e64f136b98fcc333ea5861250950cca8365549213eedfd": {
-        "activity_id": "ec181101a8f4d567c2e64f136b98fcc333ea5861250950cca8365549213eedfd",
-        "task_id": "01a07811-d71d-7cf0-bf89-898e37dbad1a",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "09c34d0d7176b0fb8b5bdb659da2966a74c53add0c3609cff0cfec073f94d88e"
-      }
-    }
   }
 }

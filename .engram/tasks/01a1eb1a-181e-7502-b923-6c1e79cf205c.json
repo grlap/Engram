@@ -1,0 +1,29 @@
+{
+  "id": "01a1eb1a-181e-7502-b923-6c1e79cf205c",
+  "external_ref": null,
+  "title": "Decide Linux task-sync exchange cleanup on /proc mounted hidepid=1: tolerate unreadable foreign pid entries or refuse with a stated reason",
+  "outcome": "Decide Linux task-sync exchange cleanup on /proc mounted hidepid=1: tolerate unreadable foreign pid entries or refuse with a stated reason",
+  "acceptance": [
+    "On Linux with /proc mounted hidepid=1, a task-sync Git exchange either completes its process-group cleanup (unreadable pid entries of other users are treated as not in Git's group) or refuses with a stated reason naming hidepid, never a generic member_enumeration cleanup failure on every exchange",
+    "A test covers a permission-denied /proc/<pid>/stat entry during member enumeration"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "linux",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

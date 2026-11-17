@@ -1,0 +1,29 @@
+{
+  "id": "01a1e293-5d96-7681-b9a7-cc20ab4628c6",
+  "external_ref": null,
+  "title": "Retry transient Unix group-cleanup failures within the original deadline",
+  "outcome": "Retry transient Unix group-cleanup failures within the original deadline",
+  "acceptance": [
+    "Transient macOS group-signal EPERM while members are exiting, and transient enumeration failures such as sysctl ENOMEM/EINTR, can be retried until the original cleanup deadline without reporting success before complete terminal-member verification.",
+    "Behavioral checks cover transient recovery and deadline exhaustion; permanent observation/ownership failures remain fail-closed and the group id stays reserved until proven safe to reap."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "process-cleanup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

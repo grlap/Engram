@@ -1,0 +1,31 @@
+{
+  "id": "01a1e54d-c481-7372-b3f7-2e8b0c1296b5",
+  "external_ref": null,
+  "title": "State plainly that all agent work, including delegation worktrees, builds, test data and scratch, stays physically inside the repository folder, and add the procedure to the repo skill",
+  "outcome": "State plainly that all agent work, including delegation worktrees, builds, test data and scratch, stays physically inside the repository folder, and add the procedure to the repo skill",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (kept identical) say that isolated or delegation worktrees, build output, test data and scratch are always created physically inside the repository folder, and that a Git worktree outside it is no exception because it points at the repository's .git; the existing tool and install exceptions stay, narrowed so that 'TermAl through its tools' covers only TermAl's own host state",
+    "The practical procedure (explicit in-repo path for an isolated-worktree delegation when permitted, removal by the spawning parent after harvest and retained use ends, test homes under target/) is added to the existing .claude/skills/coder-test-execution/SKILL.md and its existing .agents twin, with no new skill, Greg quotes in files, Markdown-reading test or new gate",
+    "The wording agrees with Kimi::Consultant's independent comparison of both repositories and the host behavior, and lands under the authority-text procedure: both coordinators' concurrence on the exact wording, the wording and its consequence sent to Greg before landing, and the final-diff audit recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "cleanup",
+    "greg-directed",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

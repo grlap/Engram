@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-clippy-first-2026-11-16",
+    "revision_id": "8b7e7f0e1eaf44399bb4c51608794879",
+    "previous": "0bdffd6433bc44e8bca6c74a43634957",
+    "body_sha256": "a546295d609a3dae20e2d623bd09f6ba5606ddc83970435a277b621b832c7a70",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:43:14.076350200Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 17:42Z, relayed by Engram::Asistant (mailbox 43498a6e #1392, message 5fc8c254), verbatim: „Korwa, kiedy wchodzi clippy? Po testach!!! + kimi”. Context: dd205's Windows-only Clippy error (incremental.rs:274) surfaced only at integration, after 18 review rounds and Mac/Linux runs, because no Windows Clippy had run on the coder's input.\nAsistant's clarification (43498a6e #1394): the goal is to catch Clippy errors on the right platform early without wasting long runs. It is NOT a new mandatory run before every focused test or review round. Don't serialize light tests or reviews, don't repeat Clippy when a current result covers the input, and add nothing for changes without Rust.\nOPERATING PRACTICE (rev 2, Engram::Fable, pending Kimi's check of the actual order in both projects): when a change touches platform-specific Rust code (cfg(windows), cfg(unix) or a platform-only module), the coder runs strict Clippy (`cargo clippy --all-targets --all-features -- -D warnings`) ONCE on that platform as soon as the change compiles locally. That comes before the first LONG run on the input: a review round of a large package, or a remote or full test run. Light focused tests and small reviews may run alongside. Rerun it only if the platform-specific code changed since. Shared-code-only changes keep their usual single-platform Clippy, and non-Rust changes get nothing new. On Central this is a short -j1 run that Opus2 prioritizes. The landing FULL is unchanged."
+}

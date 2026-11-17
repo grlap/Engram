@@ -19,7 +19,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
   "prerequisites": [
@@ -27,6 +27,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded (Engram::Fable, coordinator disposition, 2026-11-16 04:41Z, under rules-greg-close-senseless-tasks-2026-11-08). Criterion 2 rests on a fake host with TermAl responsibility, a model Greg ruled out (\"Termal nie powien byc zaangazowany w engram sync\", memory rules-greg-full-sync-is-full-exchange-2026-11-07 rev 2). Criterion 1's full-store conversion counts belong to the stage-1 migration cutover, which was itself closed as superseded (w-9bf54c91b725). Its fault-injection and crash-recovery matrix for the exchange is carried by w-004cb3ab6090 criterion 3 (crash recovery at each exchange boundary reuses the retained operation and ImportReceipt) and by the shipped atomicity and replay tests evaluated on w-a5e3d46b3a90. Nothing here is claimed as implemented or tested.",
   "completion": null
 }

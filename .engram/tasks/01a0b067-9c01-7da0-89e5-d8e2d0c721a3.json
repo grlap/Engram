@@ -28,21 +28,5 @@
   "blockers": [],
   "superseded_by": "01a0b088-cf8a-7502-a157-2cd1372b3329",
   "disposal_reason": "Greg rejected both the retained-originals design and my detachment patch for it: identity becomes a UUID and migration a plain JSON export and import with no rehashing, which removes the provenance tables entirely instead of slimming them. The measurements and consumer analysis recorded here remain the evidence for the replacement item.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "cb9c71837eb881557b8f8db284beb98d6933cef9eb099d06ae89b7769121fda4": {
-        "activity_id": "cb9c71837eb881557b8f8db284beb98d6933cef9eb099d06ae89b7769121fda4",
-        "task_id": "01a0b067-9c01-7da0-89e5-d8e2d0c721a3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "40899435e2f0bc39f185317fb52aaf827e4c76bd0b3985a77b88de488e8e3efa"
-      }
-    }
-  }
+  "completion": null
 }

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-clippy-first-2026-11-16",
+    "revision_id": "5aeb89f942804ee290ff4f2222bdf9de",
+    "previous": "8b7e7f0e1eaf44399bb4c51608794879",
+    "body_sha256": "a6fdea4c59c04580cd3039ebd6260323de2705b692a8dcad30b5049d58f369b0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:44:53.525804400Z"
+    }
+  },
+  "body": "CURRENT (rev 3). GREG, 2026-11-16 about 17:44Z, relayed by Engram::Asistant (mailbox 43498a6e #1396, message 258191f9), verbatim: „Nie. To niech to wejdzie. Clippy poprawione w następnej rundzie. Clippy nie powinno blokowac check-inu. Bledy clippy poprawione w następnej rundzie.” Asistant's scope: this applies to the current dd205 and to both projects. Clippy findings do NOT block a check-in or landing. They are recorded openly, given an owner, and fixed in the next round. They are not a new barrier before work. Existing checks of actual behavior (builds, tests) continue unchanged, and the decision is not extended to other kinds of errors. Kimi agrees a simple rule text with the authors and confirms the rollout, without asking Greg again.\nEARLIER (rev 1-2, 17:42Z, #1392/#1394): „Korwa, kiedy wchodzi clippy? Po testach!!! + kimi” led to a practice of running Clippy once on the right platform before the first long run. That practice remains a way to SEE Clippy findings early, but a Clippy failure no longer stops a test run, review or landing.\nPractice now: when a run's strict Clippy step reports findings, the run continues to the build and tests (a test build without -D warnings). The findings are filed as an owned next-round fix, and the landing goes ahead when every other required check passes. The rule text and launcher change are owned through Kimi with the authors. As a loosening of a landing condition it lands under the authority-text procedure, with this verbatim word as Greg's widening word."
+}

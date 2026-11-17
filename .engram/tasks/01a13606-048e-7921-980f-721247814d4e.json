@@ -19,7 +19,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
   "prerequisites": [
@@ -28,6 +28,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded by Greg's decision that TermAl has no part in Engram sync (memory rules-greg-full-sync-is-full-exchange-2026-11-07 rev 2: „Termal nie powien byc zaangazowany w engram sync”). Incoming changes to a task with a live local claim or run are held until it ends normally, with no TermAl G1–G3 attestation. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
   "completion": null
 }

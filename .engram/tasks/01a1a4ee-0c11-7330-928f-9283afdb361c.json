@@ -23,28 +23,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "8f87a47e0e9747cc8425ca5cb2109fd8": {
-        "activity_id": "8f87a47e0e9747cc8425ca5cb2109fd8",
-        "task_id": "01a1a4ee-0c11-7330-928f-9283afdb361c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "8f87a47e0e9747cc8425ca5cb2109fd8"
-      }
+  "completion": {
+    "summary": "Landed on master in eecabd6a as part of the dd205 restart set: the read-only complete-snapshot reader (src/task_sync/git/snapshot.rs) with its fixtures (src/task_sync/git/delta/tests/snapshot.rs), carried unchanged from e530. An independent evaluation (Codex session-18627, delegation-2a36c918) on the clean eecabd6a worktree found all 3 criteria passed. Closed by Engram::Opus as dd205 integrator per Fable #4432.",
+    "completed_at": "2026-11-17T15:22:30.601385Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
     }
   }
 }

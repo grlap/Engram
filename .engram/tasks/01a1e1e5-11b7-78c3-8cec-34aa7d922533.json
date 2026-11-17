@@ -1,0 +1,28 @@
+{
+  "id": "01a1e1e5-11b7-78c3-8cec-34aa7d922533",
+  "external_ref": null,
+  "title": "Let a task-sync export through when a key already committed retires with a task a held removal keeps out",
+  "outcome": "Let a task-sync export through when a key already committed retires with a task a held removal keeps out",
+  "acceptance": [
+    "When the committed memory component already holds a key K that retires with task T, and this host's last import holds another host's removal of T, an export with --include-memories that writes nothing new for K goes through, keeping K as committed and publishing unrelated task changes; a newly captured revision of K is still withheld. A CLI behaviour test proves it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "memory",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -35,21 +35,5 @@
       "actor_id": "greg/claude",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "f71456f4e74e448394e885f39154d7c4": {
-        "activity_id": "f71456f4e74e448394e885f39154d7c4",
-        "task_id": "01a1103b-970a-7c00-8537-6f0d61bdbf6d",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "3877c4fb9f4a4bd185dafe42ab2c0143"
-      }
-    }
   }
 }

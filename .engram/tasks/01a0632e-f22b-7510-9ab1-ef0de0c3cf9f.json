@@ -35,21 +35,5 @@
   ],
   "superseded_by": null,
   "disposal_reason": "Retired: a paused placeholder with a defaulted tautological criterion and no concrete defect or deliverable; any concrete finding lives under its own item. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "631edfb3094123c5214d243c4570f50594526ef95d604e935c7c65aa87ddcf32": {
-        "activity_id": "631edfb3094123c5214d243c4570f50594526ef95d604e935c7c65aa87ddcf32",
-        "task_id": "01a0632e-f22b-7510-9ab1-ef0de0c3cf9f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "99ee724c27fb0361e786f157bc933c518ba292badd658179e14352fe9fe357d1"
-      }
-    }
-  }
+  "completion": null
 }

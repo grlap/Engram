@@ -1,0 +1,29 @@
+{
+  "id": "01a1e10e-9d51-7362-b117-d9fc801d9166",
+  "external_ref": null,
+  "title": "Apply a new child and its ancestor's relation change from the same task-sync folder in one import instead of holding the child as ancestor_binding",
+  "outcome": "Apply a new child and its ancestor's relation change from the same task-sync folder in one import instead of holding the child as ancestor_binding",
+  "acceptance": [
+    "An import whose folder carries both an ancestor's relation change and a new descendant under it applies the ancestor change first and then the descendant in the same import, when both are admissible, with no ancestor_binding hold and no second import needed",
+    "Holds for genuinely blocked cases (engaged execution, a refused ancestor change) are unchanged and still name ancestor_binding with their reason",
+    "docs/features/task-folder-relations.md and task-planning-text.md describe the single-import behaviour in place of 'held for a later fresh import'"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -25,21 +25,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "review follow-up filed under the reviewed item became a required child by default; re-filed under the root so the shipped slice can close",
-  "completion": null,
-  "activity": {
-    "central": {
-      "1eafddb150e5851b2c184a422317cbdbcd3a19608538b217e1411c9d37803c0b": {
-        "activity_id": "1eafddb150e5851b2c184a422317cbdbcd3a19608538b217e1411c9d37803c0b",
-        "task_id": "01a065c6-e74b-7361-aef5-3af3adbfb896",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "4f2ca199db65766b511c5fab50c509dab7ab230410e486ce211cb79468c3d605"
-      }
-    }
-  }
+  "completion": null
 }

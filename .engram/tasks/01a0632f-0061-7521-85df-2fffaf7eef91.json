@@ -29,33 +29,5 @@
       "actor_id": "codex",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "3a98c179c5c80d63b3d94b043081fb8d1cf8cfe504af1741dafdd4cf130c6138": {
-        "activity_id": "3a98c179c5c80d63b3d94b043081fb8d1cf8cfe504af1741dafdd4cf130c6138",
-        "task_id": "01a0632f-0061-7521-85df-2fffaf7eef91",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "codex",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "61771c99a154b319fba06c4309bc96006b624c013eaa3464f841f760f648d1d5"
-      },
-      "7085513f8c032d7fdd5e8be30e7009a92780962a17ab4cc095a4b0f5efb27061": {
-        "activity_id": "7085513f8c032d7fdd5e8be30e7009a92780962a17ab4cc095a4b0f5efb27061",
-        "task_id": "01a0632f-0061-7521-85df-2fffaf7eef91",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "a7569ec23bfa6a8289251c5ce3d40eea4df5c80692c2cc1c6e4c19f836b310bf"
-      }
-    }
   }
 }

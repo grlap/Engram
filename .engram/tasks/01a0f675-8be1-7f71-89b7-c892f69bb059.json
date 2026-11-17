@@ -23,21 +23,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "Superseded by completed w-a4d4995fb07b (242249f8be183a369ff84a41da0797e9f2ef9686), which delivered and independently accepted the identical slow-call pending/partial documentation criterion. Current docs/features/cli-and-mcp.md1444–1451 matches. Authorized by Fable378, mailbox-message-19dcda5b-4303-4af0-b566-dc5a5176731d.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "a370bb566b2f4ee48fc48f0836f2c001": {
-        "activity_id": "a370bb566b2f4ee48fc48f0836f2c001",
-        "task_id": "01a0f675-8be1-7f71-89b7-c892f69bb059",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "7a452f5a8ae749bb8ed10c617d162641"
-      }
-    }
-  }
+  "completion": null
 }

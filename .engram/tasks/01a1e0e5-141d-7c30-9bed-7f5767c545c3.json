@@ -1,0 +1,29 @@
+{
+  "id": "01a1e0e5-141d-7c30-9bed-7f5767c545c3",
+  "external_ref": null,
+  "title": "Procedure optimization driven by Kimi: fewer agent steps, reused results, explained refusals",
+  "outcome": "Procedure optimization driven by Kimi: fewer agent steps, reused results, explained refusals",
+  "acceptance": [
+    "Kimi::Consultant keeps this as a standing role: every optimization it identifies is a tracker item with an owner, followed to deployment, and its status is reported to Greg",
+    "Each child or linked item removes agent steps or repetition, reuses existing results, or makes a refusal name its check, values and remedy, without weakening a safeguard or adding a gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "greg-directed",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate of Kimi::Consultant's epic w-89709bab749b ('Continuously simplify agent delivery procedures and remove repeated coordination work'), created at the same minute for the same Greg direction; Kimi holds that one, so the single optimization list lives there. My status note here (20:28Z) is mirrored to Kimi.",
+  "completion": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1e117-5072-7031-9817-be9b5fa14b80",
+  "external_ref": null,
+  "title": "A fresh retry of an ancestor_binding-held child refuses as task_sync_divergent_planning on an import-only host",
+  "outcome": "A fresh retry of an ancestor_binding-held child refuses as task_sync_divergent_planning on an import-only host",
+  "acceptance": [
+    "After an import exits 3 holding a new child as ancestor_binding (its ancestor's relation change applied), the documented 'fresh import can retry the child' path works on an import-only host: re-importing the same folder applies the child and exits 0, with a documented basis rule for that retry",
+    "The divergence check does not count a task absent both locally and in the basis (local=null) as a local planning change; a regression reproduces the DL560 case (60 applied, 1 held, then a retry) and passes",
+    "If a retry is genuinely refused, the refusal names the deciding comparison, the observed basis and local values, and a working remedy"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "refusal-explains",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

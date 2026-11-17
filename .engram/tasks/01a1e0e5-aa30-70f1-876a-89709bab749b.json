@@ -1,0 +1,29 @@
+{
+  "id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "external_ref": null,
+  "title": "Continuously simplify agent delivery procedures and remove repeated coordination work",
+  "outcome": "Recurring agent-workflow friction is converted into owned product or procedure changes, delivered and observed in subsequent work, with less elapsed time and human intervention while existing evidence and authority safeguards remain intact.",
+  "acceptance": [
+    "Every active optimization lane records its owner, current implementation stage, next observable outcome and concrete blocker or release condition in Engram; completed outcomes are judged by subsequent work rather than report volume."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

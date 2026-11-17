@@ -19,7 +19,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
   "prerequisites": [
@@ -27,6 +27,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded and not recoverable as written (Engram::Fable, coordinator disposition, 2026-11-16 04:28Z). Coder 11323 searched, within bounds, for the pre-cutover model-A census, the per-store copy migrations and Greg's pre-landing plan, and could not recover them; Opus and the Merger couldn't find them either (gap note a5fcc713 on this item). The model-A rows landed in 5e8f28dd on 2 Nov, and every live store has since been through later agreed cutovers (the AACB cutover of 12-13 Nov, with Greg's „tak jest OK”, and later installs), and runs the current schema with readiness ready. So the one-time migration this item planned is past and can't be redone meaningfully now. Closed under rules-greg-close-senseless-tasks-2026-11-08. This claims neither that the original census passed nor that it was run; no live action was taken.",
   "completion": null
 }

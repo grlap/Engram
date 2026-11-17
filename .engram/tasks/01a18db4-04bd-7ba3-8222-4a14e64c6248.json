@@ -27,21 +27,5 @@
   "blockers": [],
   "superseded_by": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
   "disposal_reason": "Consolidate concurrent intake on EngramFable's existing w-d7826c4f78ec. Fable has removed the design prerequisite (history16:47:24.723549700Z), so no cycle remains; architecture source findings and final joint plan belong in its notes. No source/check artifacts or separate executor here.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "2f9d63f5b9734685b454b9dd603aa0c3": {
-        "activity_id": "2f9d63f5b9734685b454b9dd603aa0c3",
-        "task_id": "01a18db4-04bd-7ba3-8222-4a14e64c6248",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "5469bbdaaf1443f2a44e4d9333c92cc4"
-      }
-    }
-  }
+  "completion": null
 }

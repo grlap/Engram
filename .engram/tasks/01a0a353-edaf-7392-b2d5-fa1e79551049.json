@@ -40,21 +40,5 @@
   ],
   "superseded_by": null,
   "disposal_reason": "Obsolete: its crash-boundary oracles target the coordinated prepare/activate/finalize/rollback upgrade state machine removed in 54285f2; the current migration is one-way export/import. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "86965b0d1d8804da1757494fe938506803b1e4918c67d9245df5e6ae2180a08e": {
-        "activity_id": "86965b0d1d8804da1757494fe938506803b1e4918c67d9245df5e6ae2180a08e",
-        "task_id": "01a0a353-edaf-7392-b2d5-fa1e79551049",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "e7845760cf754f168ee4551af16808eb"
-      }
-    }
-  }
+  "completion": null
 }

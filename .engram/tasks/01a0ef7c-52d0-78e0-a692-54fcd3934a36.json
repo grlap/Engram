@@ -34,21 +34,5 @@
       "actor_id": "greg/kimi",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "6433419e37104902a32887cfc070c8f7": {
-        "activity_id": "6433419e37104902a32887cfc070c8f7",
-        "task_id": "01a0ef7c-52d0-78e0-a692-54fcd3934a36",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/kimi",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "a2c468c102b2421b9424a6453d0f0975"
-      }
-    }
   }
 }

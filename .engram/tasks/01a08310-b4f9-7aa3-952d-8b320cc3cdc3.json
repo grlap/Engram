@@ -29,21 +29,5 @@
       "actor_id": "fable",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "74fbedb88ca7647428454086bfe894bd9ffd18dfc76e0c854d860175d44f4ed8": {
-        "activity_id": "74fbedb88ca7647428454086bfe894bd9ffd18dfc76e0c854d860175d44f4ed8",
-        "task_id": "01a08310-b4f9-7aa3-952d-8b320cc3cdc3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "cadbb975bb37c26c291cfb4863ae895bac9d65074c2c630b897a292dd624bc1f"
-      }
-    }
   }
 }

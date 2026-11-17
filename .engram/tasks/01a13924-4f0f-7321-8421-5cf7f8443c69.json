@@ -20,7 +20,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
   "child_requirement": "required",
   "prerequisites": [
@@ -30,6 +30,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded: built around capturing and fetching task data in the main checkout and code index. Greg moved task data off the code branch onto the orphan data branch (rules-greg-sync-data-off-code-branch-2026-11-08; w-4eabb205c7b2 completed). Fetch and capture for the data branch belong to the one-command item w-6ea6f92ccffc. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
   "completion": null
 }

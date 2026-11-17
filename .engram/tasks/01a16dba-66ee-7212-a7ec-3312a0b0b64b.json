@@ -25,33 +25,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "GREG DECISION (Advisor #2074, message cea2c02a, 2026-10-26T04:04:49Z): \"close/retire it as unexplained and not implemented. Do not re-scope or start a diagnostic replacement now. If the missing-rlib failure recurs, open a NEW item with fresh evidence and investigate that occurrence.\" Neither criterion is achievable: the cause evidence is lost, and inventory is not prevention before the Rust stage (explorer 14733, .evidence/w-3312a0b0b64b/design-b-explorer-5160.md SHA256 AC1003C3…A223). Nothing landed.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "0c68043e38aa479797f9005faf8b60bf": {
-        "activity_id": "0c68043e38aa479797f9005faf8b60bf",
-        "task_id": "01a16dba-66ee-7212-a7ec-3312a0b0b64b",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "eb593d666325447b99566690926ed2a0"
-      },
-      "7d4e5bb885234643ae5e0083c3c91c67": {
-        "activity_id": "7d4e5bb885234643ae5e0083c3c91c67",
-        "task_id": "01a16dba-66ee-7212-a7ec-3312a0b0b64b",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "d63777e0b00d43a9890d35458dbe29df"
-      }
-    }
-  }
+  "completion": null
 }

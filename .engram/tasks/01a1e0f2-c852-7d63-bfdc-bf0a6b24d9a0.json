@@ -1,0 +1,35 @@
+{
+  "id": "01a1e0f2-c852-7d63-bfdc-bf0a6b24d9a0",
+  "external_ref": null,
+  "title": "Make catalog continuation validation proportional to the page instead of the full filtered set",
+  "outcome": "Exploratory ls uses live keyset continuations with work proportional to the requested page, an explicitly historical first-page total and an honest project-change notice. Compact next ProjectCut navigation and claim --under retain their existing exact server-side behavior.",
+  "acceptance": [
+    "After the candidate-selection prerequisite, exploratory ls continuation pages seek after the carried ID or ready (priority, ID) tuple without a complete membership/count scan, including when the anchor was removed or reprioritized; a large-set counter and SQLite-work regression measures page-proportional work.",
+    "Exploratory ls does not refuse membership/order changes. It labels the first-page total historical, and project-head movement emits a notice that pages may differ and a fresh listing gives a newer view, without claiming proven filtered-membership changes.",
+    "Catalog/CLI documentation and behavioral tests state live-pagination limits: ID-order inserts before the anchor can be missed; ready-order movers can repeat or be missed. Compact next ProjectCut invalidation, project/filter/time guards, and claim --under selection remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1e0f5-f2d7-7be2-ac99-19705ed20b35"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

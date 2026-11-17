@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-central-chrome-kill-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "7a49e1c76feb4a3b913d27a044a1aa0b"
+    ]
+  }
+}

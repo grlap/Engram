@@ -30,33 +30,5 @@
       "actor_id": "termal",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "41823f93ea7f22b39acc6c144ecd0bd3c5cd5a0e30012f486f5ff924be322748": {
-        "activity_id": "41823f93ea7f22b39acc6c144ecd0bd3c5cd5a0e30012f486f5ff924be322748",
-        "task_id": "01a07f70-4360-7072-a599-2a4748f426a0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "be04f3a6d564743c81ba9da9fcbfe2b846395813b4523c00d01b291db3f346f7"
-      },
-      "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a": {
-        "activity_id": "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a",
-        "task_id": "01a07f70-4360-7072-a599-2a4748f426a0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a"
-      }
-    }
   }
 }

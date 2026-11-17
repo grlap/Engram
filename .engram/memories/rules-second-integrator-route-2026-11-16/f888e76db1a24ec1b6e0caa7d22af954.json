@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-second-integrator-route-2026-11-16",
+    "revision_id": "f888e76db1a24ec1b6e0caa7d22af954",
+    "previous": "b65a95f8f24b4a3eafa03830ff57aa7a",
+    "body_sha256": "464332f326aa86ee3c275442cbdc8f95490110705ff71bb0348c5956b4b41760",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-luna;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T16:23:19.380011300Z"
+    }
+  },
+  "body": "SECOND INTEGRATOR route (Engram::Fable ruling #4392, 2026-11-16 16:15Z; final custody revision #2058 at 16:21Z). Engram::Opus/session-7284 integrates the assigned package batches. For each Opus integration candidate: (1) Opus carries READY packages onto current master under /review-changes 6a, builds a local candidate commit, and freezes it. (2) Opus gets fresh focused compile and test evidence on that exact input (author-test ref run on s4/Mac). (3) Opus sends Merger the parent master, recorded tree id, freeze fingerprint, and focused evidence. (4) Merger creates/pushes only the detached test-ref commit reserved by AGENTS.md Test refs (parent master, tree = Opus's recorded tree id). (5) FULL on test ref is landing gate. (6) Opus owns FULL intake and lands by fast-forwarding master to exactly that test-ref commit under standing approval, with readiness/evaluation.\n\nCurrent final custody split per Fable #2058: Merger keeps/lands w-b7f9 and w-e999, plus restart set, w-6bba, w-9fcb (including w-3cea) and W43ED. Opus receives w-8b9e, w-f2b4, w-2638, w-32d6; w-8b9e lands first. w-32d6 returns to Coder-HostTestSplitFresh/session-11334 for carry after w-8b9e and lands only after w-fe6e because its Windows gate is test-rust.ps1. Earlier broader batch assignment is superseded by this final split. w-606e stays with Merger. Rejected: author-test FULL + Merger re-push wastes a run; Central local FULL fails today on Central's w-fe6e defect."
+}

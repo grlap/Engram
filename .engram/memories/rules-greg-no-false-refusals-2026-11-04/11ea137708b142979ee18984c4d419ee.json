@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-false-refusals-2026-11-04",
+    "revision_id": "11ea137708b142979ee18984c4d419ee",
+    "previous": "60e2f8f5460a4e22b50fd89d214c2f70",
+    "body_sha256": "1c1cacf44749a1419c3d54228070604baab8adb5dc9e75a23c04b799895d238a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T20:08:10.086460300Z"
+    }
+  },
+  "body": "LASTING GREG RULES on evidence refusals, unjustified blocks and simple procedures. Kept live as standing rules, so they no longer retire with w-89f3b3eeb688; consolidated on 2026-11-11 by Engram::Fable after 11334's retirement check (mailbox 5674b8de #2306). Rev 4 (2026-11-17) adds the unjustified-blocks direction at the end.\n\nGREG DIRECT, 2026-11-04 about 07:50Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #219, message 621ea76f), after the source_moved_after_check result: „Hmm. Trzymajmy procedury jak prosto jak się da.” Asistant's relayed brief, not his verbatim words: agree with TermAl a simple automatic fix of the cause; no manual empty turns as a standing procedure; no weakening of evidence credibility; avoid needless steps in rolling out Execution Observability.\n\nGREG DIRECT, 2026-11-04 about 16:05Z, after both evaluation windows were refused, relayed verbatim by Engram::Asistant (mailbox 43498a6e #235, message b1f8d665): „To nie moze tak byc. Znowu bedziemy odrzucac poprawne testy.” Asistant's brief, not his words: with TermAl, establish the actual source of the refusals and fix the automatic distinction between correct evidence and a real source change. No silence, no empty turns, no weakening of protection. Prepare positive and negative regression cases and a simple end-to-end path with normal work, leave existing evaluations untouched, and work autonomously.\n\nGREG DIRECT, about 16:06Z, verbatim via Asistant (43498a6e #238, message be5771e9): „Bez workaround i skomplikowanych procedur.” Asistant's brief: remove the cause in the product so the normal work cycle runs automatically. No temporary workarounds, empty turns, manual ordering or new agent procedures; keep protection against a real source change.\n\nGREG, 2026-11-17 about 20:07Z, relayed by Engram::Asistant (43498a6e #1479), verbatim: „prosze o znoszenie takich blokad + KIMI”. It refers to task-sync export refusing Beads-imported tasks although the sync format supports them (fixed by w-02098e071635). Asistant's brief: with Kimi, Engram and TermAl, review similar blocks in sync and the workflow. For each, name the concrete problem it solves and whether it's really needed. Remove unjustified restrictions and false refusals, with an owner and a simple fix. A refusal that stays must explain its cause and a possible correction. No new gates; don't delay the Comovo sync.\n\nStanding reading: correct evidence and valid work must not be falsely refused. The product, not agent procedure, must distinguish correct input from a real problem. Every refusal must earn its place by naming the problem it prevents and its remedy (see also rules-greg-refusals-state-reason-2026-11-15). Prefer the simplest automatic fix and keep evidence credible."
+}

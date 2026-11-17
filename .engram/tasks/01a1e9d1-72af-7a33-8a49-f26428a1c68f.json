@@ -1,0 +1,29 @@
+{
+  "id": "01a1e9d1-72af-7a33-8a49-f26428a1c68f",
+  "external_ref": null,
+  "title": "Prove a real two-host task-sync exchange where both stores hold native work, in both directions",
+  "outcome": "Prove a real two-host task-sync exchange where both stores hold native work, in both directions",
+  "acceptance": [
+    "Two stores that both hold natively created work, with begun feeds and at least one live claim, exchange tasks in both directions through the Git data branch, on real Windows and DL560 or Mac hosts. Each side's native tasks, claims, runs, evidence and seals are unchanged, the other host's tasks are applied, and an exact repeat is a no-op. The run records the commands, hosts, build fingerprints and results on this item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "comovo-sync-proof",
+    "greg-directed",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

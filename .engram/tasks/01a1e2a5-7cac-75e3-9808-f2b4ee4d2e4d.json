@@ -1,0 +1,30 @@
+{
+  "id": "01a1e2a5-7cac-75e3-9808-f2b4ee4d2e4d",
+  "external_ref": null,
+  "title": "Align the repository skill's freeze command with the full gate",
+  "outcome": "Agents reading the Engram repository skill see the same freeze-stage command and companion test selection as the current launcher and governing gate references.",
+  "acceptance": [
+    "The verification command in .agents/skills/engram-repo/SKILL.md matches the current launcher freeze selection, including the four isolated launcher entries, concurrency two, and all source/EO companion files",
+    "The documentation correction preserves existing authority and approval conditions and adds no tests that pin instruction text"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "ready-to-land",
+    "review-followup",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

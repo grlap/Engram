@@ -1,0 +1,29 @@
+{
+  "id": "01a1e293-5de1-7311-a76b-be990ed13776",
+  "external_ref": null,
+  "title": "Stop the Unix cleanup worker from spinning after spawn preparation unwinds",
+  "outcome": "Stop the Unix cleanup worker from spinning after spawn preparation unwinds",
+  "acceptance": [
+    "If child preparation unwinds after the cleanup thread starts but before prepared is published, the worker terminates or keeps a bounded nonzero wait after the original deadline; it never spins a CPU core indefinitely.",
+    "An isolated behavioral regression triggers preparation failure with a runtime missing required drivers and verifies bounded worker/result disposition without losing any already-created child ownership."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "process-cleanup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

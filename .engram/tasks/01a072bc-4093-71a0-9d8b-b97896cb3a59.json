@@ -30,21 +30,5 @@
       "actor_id": "grzeg",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "0a332704846c0abc78423ed992403c1a65337469bf37771fff9f19b1145150ae": {
-        "activity_id": "0a332704846c0abc78423ed992403c1a65337469bf37771fff9f19b1145150ae",
-        "task_id": "01a072bc-4093-71a0-9d8b-b97896cb3a59",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "grzeg",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "8f36d6ffbdc553078c9cc7f833d6dc37b4be994731476d83d48937077d5331d3"
-      }
-    }
   }
 }

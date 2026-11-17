@@ -1,0 +1,29 @@
+{
+  "id": "01a1eaba-c9cf-76f2-bd38-3bdd09c39060",
+  "external_ref": null,
+  "title": "Reduce macOS Git-query cleanup cost when only the exited root remains",
+  "outcome": "Avoid the unconditional macOS snapshot pause in the common exited-root-only cleanup path while retaining a justified ownership proof.",
+  "acceptance": [
+    "Measure the common zombie-only-root query cleanup cost on macOS and reduce avoidable repeated snapshots or fixed pauses without accepting live denied members or invalid root/membership observations.",
+    "Behavioral tests cover the optimized common path and retained refusal/descendant cleanup paths; document the supported ownership assumptions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "performance",
+    "review-follow-up"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

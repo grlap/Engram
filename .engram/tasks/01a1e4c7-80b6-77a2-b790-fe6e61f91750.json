@@ -1,0 +1,31 @@
+{
+  "id": "01a1e4c7-80b6-77a2-b790-fe6e61f91750",
+  "external_ref": null,
+  "title": "Make the task_sync_cli test binary pass on Windows master: eight failures from leftover state between tests",
+  "outcome": "Make the task_sync_cli test binary pass on Windows master: eight failures from leftover state between tests",
+  "acceptance": [
+    "Identify the reproduced Windows JSON refusal failure from actual stderr and status, preserve diagnostics for source-observation failures, and distinguish separately tracked Git-launch slowness from warning pollution.",
+    "`cargo test --test task_sync_cli` with one test thread passes on Windows, with every assertion unchanged in strength and no deadline raised",
+    "A behavioral test fails on the defect and passes with the fix, for example a process or handle that outlives its owning operation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "gate",
+    "ready-to-land",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

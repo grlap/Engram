@@ -20,40 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "644be83eb3c149738fd8f381b2c7ff71": {
-        "activity_id": "644be83eb3c149738fd8f381b2c7ff71",
-        "task_id": "01a1bd8c-50b3-79e3-96e0-15182dcd15f8",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "644be83eb3c149738fd8f381b2c7ff71"
-      },
-      "c84e37d9aaca45b599dc69b0f15b18ba": {
-        "activity_id": "c84e37d9aaca45b599dc69b0f15b18ba",
-        "task_id": "01a1bd8c-50b3-79e3-96e0-15182dcd15f8",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "c84e37d9aaca45b599dc69b0f15b18ba"
-      }
+  "completion": {
+    "summary": "Closed already-delivered evidence-persistence core on publishedmaster89e269f6. IndependentClaude18382 nativeevaluationc1b654b6f35741b8b8b5bea4a6542bba passed4/4 atcut267, stale=nullverified02:10:41Z; whole3301B output/nativeverdicts read. Manifest9132c05d80cb42c9b0de8534cb27c619 maps one-savepoint inert retention/exactreplay/collisionrollback, originqualifiedwitnesses, keyed boundedresume and agreedstorage seam to currentcode and existingAACBFULL0ae8b92d4235ordinaryPASS (19nonignoredpersistence tests, testedcontributionunchanged, laterinerthelperdisclosed). No newcode/tests/FULL/landing/install or host-testcredit invented. Tenoldsource-mutationobligations noactionbeforeeval handledbycompletion. ENDslotreleased. Removeclosure-onlyrootaftercheckedcleanup; originalAACB3JSON remainneededbyBD0B/DE7A closures. E81Croot/claim remainsfrozenforformalMergerhandoff.",
+    "completed_at": "2026-11-16T02:11:00.248507600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

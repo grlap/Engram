@@ -30,45 +30,5 @@
       "actor_id": "termal",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "5755558c00d88e51be8107273d14551b71c61f1a5f3d75e5d03998d5f56967ff": {
-        "activity_id": "5755558c00d88e51be8107273d14551b71c61f1a5f3d75e5d03998d5f56967ff",
-        "task_id": "01a0a1dd-4f2e-71c1-9316-85714c98709c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "ddaf96ac57310d607c86c43be9be4aa08209b13caa6adfbbe262f76e98af8a26"
-      },
-      "e21b126e8b8d2170a7f2dd8189eac6f85b2814bcf3858d217584f1ce73866333": {
-        "activity_id": "e21b126e8b8d2170a7f2dd8189eac6f85b2814bcf3858d217584f1ce73866333",
-        "task_id": "01a0a1dd-4f2e-71c1-9316-85714c98709c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "grzeg",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "e21b126e8b8d2170a7f2dd8189eac6f85b2814bcf3858d217584f1ce73866333"
-      },
-      "e864e84017570fc340b0139f4f490b0f4b3115253f6dba2099028400bdae73ab": {
-        "activity_id": "e864e84017570fc340b0139f4f490b0f4b3115253f6dba2099028400bdae73ab",
-        "task_id": "01a0a1dd-4f2e-71c1-9316-85714c98709c",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "grzeg",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "e864e84017570fc340b0139f4f490b0f4b3115253f6dba2099028400bdae73ab"
-      }
-    }
   }
 }

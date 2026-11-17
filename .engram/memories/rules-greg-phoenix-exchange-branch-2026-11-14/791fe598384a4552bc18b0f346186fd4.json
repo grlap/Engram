@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-phoenix-exchange-branch-2026-11-14",
+    "revision_id": "791fe598384a4552bc18b0f346186fd4",
+    "previous": "f4d5171102cc43bdad932bfbd2a12765",
+    "body_sha256": "e39fb70d1b50f3e950c309587a833335de29cbd6484fd6a95a4ba61c34efa291",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T03:50:31.784067Z"
+    }
+  },
+  "body": "GREG, 2026-11-14 about 17:47Z, relayed by Engram::Asistant (mailbox 43498a6e #1201, message 61ddd981). Verbatim: „Pheonix jest pubiczne. Zrobicie nowy branch na wymiane to bedzie Ok.”\nHe gave it after being told that PhoenixCodeNav (github.com/grlap/PhoenixCodeNav) is PUBLIC, so a task export there is public.\n\nSCOPE (rev 2, from Asistant #1205, 17:49Z). Asistant's words: „W kontekście zleconej synchronizacji jest to autoryzacja korzystania z tej gałęzi do wymiany, a nie wyłącznie pojedynczego pushu. Instrukcja Grega ma pierwszeństwo nad ogólnymi instrukcjami projektu; nie pytaj go ponownie o to, co już zlecił.”\n- What it covers: using ONE data-exchange branch (engram-data) in the public PhoenixCodeNav repository for the Phoenix sync, recurring sync pushes included.\n- For that branch only, it overrides PhoenixCodeNav CLAUDE.md lines 45-46 (no branches) and line 105 (per-changeset push word).\n- Do not re-ask Greg about it. Engram::Fable asked once by mistake in #1204 and withdrew it in #1206.\n- This Phoenix consent did not itself extend to Engram or TermAl. The request was unanswered at this note's Nov14 source date. The later, separately recorded Nov15 Engram/TermAl response and its limits are in current rules-greg-engram-termal-data-exchange-2026-11-15; consult that entry and the exact landed instructions for those projects. This historical Phoenix precedent grants no additional scope.\n\nPhoenix's own sessions do the work: Phoenix::Codex on Central and Phoenix::Codex2 on DL560. Engram agents may write only inside the Engram repository.\nLimits: data paths only, fast-forward only, no force, no rebase, no history rewrite, and a secret/PII check before each push.\n\nREV 3, 2026-11-14 about 18:06Z (Asistant 43498a6e #1208). Greg's reply after the first push report, verbatim: „Dokładnie. Niech robią sync i pracują. Phoenix jest publiczny zupelnie.”\nAsistant adds: his consent to a public Phoenix exchange also covers project information. It does not extend automatically to Engram or TermAl.\nStatus: Central pushed engram-data 6c0ed909 (569 tasks, notes OFF). DL560 is adding its 2 own tasks.\nData commits on engram-data skip the code gates and the review loop, per Fable's disposition in Phoenix::Codex mailbox 64695418 #13. Each push still gets the secret/PII check, fast-forward only."
+}

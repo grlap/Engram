@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-builder-branch-push-2026-11-15",
+    "revision_id": "cece79c90efb49278004c5486d7050f8",
+    "previous": null,
+    "body_sha256": "01377ddc6e3c4374cb0c7dec02c4ad02c209857e20c5a60110c9b93ccd20523d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T19:31:58.611036500Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 19:31Z, relayed by Engram::Asistant (mailbox 43498a6e #1287, message 218813e5), verbatim: „Oczywiscie, narzedzie moze przygotowac branch, wypchnac, podac source_id itp”.\nContext: the minimal \"workRef + branch\" builder design (Kimi::Consultant with Fable2, c15db92c #208/#210; memory rules-greg-task-id-and-branch-2026-11-15). The design said a tool-driven push or delete of the author's origin branch needs the authority procedure plus Greg's word for the widening.\nAsistant's scope: apply it to the builder design, so that the builder may automatically prepare and push the test branch, and determine and pass on source_id, without further questions about those acts. The coordinators agree the exact scope and the authority wording, record his words, and keep sync and EO first. His words do NOT mention DELETING a branch: don't claim he approved deletion separately.\nProcedure that still applies before any instruction text changes:\n(a) both coordinators, Engram::Fable and Termal::Fable2, concur on the exact wording in the item's notes;\n(b) Greg is sent the exact wording and its consequence;\n(c) the final-diff audit is recorded.\nThis memory is the recorded word of Greg the widening needs."
+}

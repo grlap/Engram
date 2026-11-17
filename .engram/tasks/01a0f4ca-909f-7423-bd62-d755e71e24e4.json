@@ -31,33 +31,5 @@
       "actor_id": "greg/kimi",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "8bfb4363529c424c89202c55fc59984d": {
-        "activity_id": "8bfb4363529c424c89202c55fc59984d",
-        "task_id": "01a0f4ca-909f-7423-bd62-d755e71e24e4",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/kimi",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "afedb185c97745e88ddb4d866da8c146"
-      },
-      "ec6ebd5dda314ed191aa44462c9ddb9c": {
-        "activity_id": "ec6ebd5dda314ed191aa44462c9ddb9c",
-        "task_id": "01a0f4ca-909f-7423-bd62-d755e71e24e4",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/kimi",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "65821d13f5044d438b4d5c99722862fd"
-      }
-    }
   }
 }

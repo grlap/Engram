@@ -1,0 +1,33 @@
+{
+  "id": "01a1e0ef-e438-75c3-89d2-57964ed89617",
+  "external_ref": null,
+  "title": "Select and materialize persistence deltas through dirty indexes rather than all sessions",
+  "outcome": "Background persistence selects changed sessions and delegations through maintained dirty state and materializes them by key, so an idle or small-change tick does not scan all retained sessions or perform changed-count times total-session lookups.",
+  "acceptance": [
+    "Delta selection is proportional to changed sessions and delegations rather than scanning every retained session and delegation on each persistence tick",
+    "Materialization uses keyed lookup rather than a linear session or delegation search per changed record",
+    "Unchanged, changed, removed and racing records retain their current persistence and trim behavior, with a large-history regression demonstrating bounded work"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization",
+    "performance",
+    "persistence"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

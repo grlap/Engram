@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-delegation-worktrees-in-repo-2026-11-16",
+    "revision_id": "7dd289233a8941f69b67616917e9274d",
+    "previous": "5331f0eb9982452eae6b7cac92c0c507",
+    "body_sha256": "958b29c365cb6f749ff7cf52c988fa4ba3ce7d2247415c65c7b17504eb36ad51",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:01:06.234115300Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 16:58Z, relayed by Engram::Asistant (mailbox 43498a6e #1376, message 932859a8), verbatim: „Jakis koszmar. Przeciez mamy reguly aby uzywac tylko katalogu repo.” This was about 40 GiB of TermAl delegation worktrees and their builds under C:\\Users\\grzeg\\.termal\\delegations.\nGREG, about 17:00Z, via Asistant (43498a6e #1379, message e5c1bf15), verbatim: „+ kimi. Nie może tak być że zespół sobie coś uznał. Prosze o doprecyzowanie reguły. Umieszczenie jej w skillach.” Asistant's scope text: work happens only PHYSICALLY inside the right repository's folder, including isolated worktrees, target/, test data and scratch. A Git worktree in the user profile is no exception just because it points at the repo's .git. Keep the existing tool and install actions the instructions already allow, and add no new exceptions by the team's own judgment. Kimi compares both repos' current text and host behavior independently. The always-loaded instructions stay the authority boundary; the skills carry the practical procedure, written by their owners. No Greg quotes in files, no extra gates, and no deletion of existing data without established authorization. Reports go to Greg in Polish. The rule text and skill change are tracked on w-2e8b0c1296b5.\nTermAl owns the product fix: w-eb21094eba5a, delegation worktrees default to ~/.termal and are never removed (owner Opus3, P0); and w-26abac74c80a, TermAl tests leak into the real ~/.termal. Engram's ten leftover worktrees are on w-efc9bb5bd5f7 and are removed only on Greg's explicit yes.\nINTERIM RULE (rev 4, Fable2 ebe242f7 #8144: the running TermAl host REFUSES any isolated-worktree path inside the source repo, src/delegations.rs:4664-4670, so an explicit in-repo path is impossible). In BOTH projects, until w-eb21094eba5a lands, NO isolated-worktree (writable) TermAl delegations are spawned at all. Writers work in their own session's .worktrees/ inside the repo. Read-only reviewers and explorers create no worktree and continue as before."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "work-only-in-repo-folder",
+    "revision_id": "7d4263b965034675898db918fbc6f546",
+    "previous": "991cf8d692024a7ea371564402047380",
+    "body_sha256": "811512424c9819673c0a4fbe836deb6fc503ff2b21b3289bf5a4b57b9c548454",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:36:11.103419200Z"
+    }
+  },
+  "body": "Greg's rule (2026-09-26), in force immediately for every agent: work only inside the repository folder. Create, change, move and delete files only inside this repository's folder and its worktrees, in every shell command and script. Scratch files, throwaway stores and test homes go under target/ (ignored by Git); agent-kept logs go under .logs/ and retained raw evidence under .evidence/ at the main checkout's root, never in the system temp folder, C:\\tmp, the user profile or another project, even when a harness names a scratchpad there. Outside the repository only tools write as part of their own work (Engram to its store home, TermAl through its tools, Cargo to its caches); installing an approved build is the one agent-made write outside. Anything else outside (installing, repairing or updating software or toolchains, user or global configuration) needs Greg's explicit word first. Reading outside is allowed. Before a recursive delete, resolve the target to an absolute path and check it lies inside the repository; never delete through an unchecked variable. In PowerShell never assign $home or any other automatic variable: names ignore case, $HOME is read-only, and a failed assignment keeps the old value while the script runs on. Why: at 12:41 on 2026-09-26 Engram::Opus ran a timing script whose $home assignment failed, and its Remove-Item -Recurse -Force $home cleanup deleted most of C:\\Users\\grzeg, including the WSL disk. Source text: AGENTS.md and CLAUDE.md, section \"Work only in the repository folder\", committed and pushed as 535a8b0. Greg's later explicit decision in Advisor session-6219 on 2026-09-26: TermAl will not block dangerous operations; the rules are already recorded in Beads and Engram. The planned host enforcement item w-bf5b12465446 was cancelled at his direction; tm-t1gh remains closed. The repository-only instructions above remain in force. Historical focus on 2026-09-26 was finishing the existing cleanup and refactoring, not implementing host enforcement. The historical source also records TermAl's same rule in AGENTS.md and CLAUDE.md at 317b286 on Greg's approval; its 'not yet pushed' status was a 2026-09-26 observation, not current delivery state.\n\nCurrent clarification from Greg's 2026-11-16 direction is recorded in rules-greg-delegation-worktrees-in-repo-2026-11-16: worktrees count only when physically inside the repository folder, regardless of .git registration. Agent, delegation and test artifacts (including fake homes, fixtures, stores, builds and scratch) stay inside; production ~/.termal, ~/.engram and system TEMP are not test locations. The outside-tool exception is for tool-owned host state only, and the existing explicit installation exception remains. The dated incident and commit references above are provenance, not a queue, a new permission or a change to source_id requirements."
+}

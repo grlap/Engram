@@ -27,33 +27,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "036e2bded9b542199a7caa7755c51305": {
-        "activity_id": "036e2bded9b542199a7caa7755c51305",
-        "task_id": "01a17b95-4b17-7592-b4ca-9f73fd5434dd",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "c9656a2df37546fd97e4d0713b354182"
-      },
-      "c9656a2df37546fd97e4d0713b354182": {
-        "activity_id": "c9656a2df37546fd97e4d0713b354182",
-        "task_id": "01a17b95-4b17-7592-b4ca-9f73fd5434dd",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "d4b594ea77a04d8ab88bba3d58706021"
-      }
-    }
-  }
+  "completion": null
 }

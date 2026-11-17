@@ -26,21 +26,5 @@
   "blockers": [],
   "superseded_by": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
   "disposal_reason": "Superseded by B (w-da8c79e5d5ab), landed as master 0e52e6fd on 2026-10-31. Commit-bound Git-input eligibility replaces the sighting-based mechanism this item addressed (rules-greg-commit-clean-identity rev 5).",
-  "completion": null,
-  "activity": {
-    "central": {
-      "a5533d361adb499497ae3821a1da06ca": {
-        "activity_id": "a5533d361adb499497ae3821a1da06ca",
-        "task_id": "01a18f0a-c544-7453-9537-7b194f1d1cd9",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "0dcbc75984e44ea599da33b77f8422fe"
-      }
-    }
-  }
+  "completion": null
 }

@@ -1,0 +1,29 @@
+{
+  "id": "01a1e34f-a107-72c1-ab52-77a9f42827d9",
+  "external_ref": null,
+  "title": "Report the acceptance basis consistently when refusing a nonpositive evaluation basis",
+  "outcome": "An invalid evaluation basis produces a coherent refusal whose current value matches the accepted contract, or explicitly explains the positive-basis requirement.",
+  "acceptance": [
+    "After a metadata-only edit makes the general work revision differ from acceptance_basis, submitting acceptance basis zero reports the actual derived basis or an explicit positive-basis validation error, without suggesting a general revision that evaluate refuses",
+    "A public service/word regression covers the malformed basis after metadata editing while retaining early no-mutation validation and normal stale-basis admission guards"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

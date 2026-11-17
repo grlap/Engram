@@ -24,21 +24,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "96121730dda64bcb94cf393bf83f8e0f": {
-        "activity_id": "96121730dda64bcb94cf393bf83f8e0f",
-        "task_id": "01a1c9e1-47fb-7f20-9b0c-6ecc3eec6f85",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "96121730dda64bcb94cf393bf83f8e0f"
-      }
-    }
-  }
+  "completion": null
 }

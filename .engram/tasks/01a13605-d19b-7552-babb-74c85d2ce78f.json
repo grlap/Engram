@@ -19,7 +19,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
   "prerequisites": [
@@ -27,6 +27,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded: a refusal and candidate retention for TermAl-responsible runs presumes TermAl takes part in sync, which Greg ruled out (rules-greg-full-sync-is-full-exchange-2026-11-07 rev 2). Held and refused imports with exit 3 shipped in e67837ba. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
   "completion": null
 }

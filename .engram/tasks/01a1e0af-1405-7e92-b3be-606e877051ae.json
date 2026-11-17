@@ -1,0 +1,31 @@
+{
+  "id": "01a1e0af-1405-7e92-b3be-606e877051ae",
+  "external_ref": null,
+  "title": "Remote verification refusals name the observed and expected values and the remedy",
+  "outcome": "Remote verification refusals name the observed and expected values and the remedy",
+  "acceptance": [
+    "Every association_stale detail in a remote verification receipt names the deciding check, the value the delivery carried and the value found (item revision, claim/fence/run, named root workspace and generation, session) and a concrete remedy (for example: re-deliver the same origin with the current binding; name the root; reclaim)",
+    "commit_mismatch, tree_mismatch, source_id_missing_or_changed, not_full_mode and result_not_pass receipts also carry the observed and expected values and a remedy",
+    "A receipt test per reason shows the values and remedy text; no new reason codes or wire fields are needed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "ready-to-land",
+    "refusal-explains",
+    "remote-verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

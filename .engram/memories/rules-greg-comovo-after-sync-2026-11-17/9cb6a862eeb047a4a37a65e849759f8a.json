@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-comovo-after-sync-2026-11-17",
+    "revision_id": "9cb6a862eeb047a4a37a65e849759f8a",
+    "previous": "c3c1b55de82a493e85b4c3d08a2c3a64",
+    "body_sha256": "90838b718d9fd94e7536b9d1e1c2df483192271a1070414a7da942916049b7bf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T01:34:38.106804100Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 01:28-01:30Z, relayed by Engram::Asistant (mailbox 43498a6e #1408 and #1410), verbatim: „Czekamy na sync. Mogę przenieść development na macos. Chodzi mi głównio o Comovo.” then „Skończmy sync. Jak zadziała to zaczniemy testy na comovo. To nie zmienia planów.” Meaning per Asistant: priorities and plans stay unchanged. First deliver a working, verified sync; Comovo (repo aolowko/fit_friends, Flutter) then becomes its first real use and test, possibly with development on the Mac. Add no extra conditions or procedures and ask Greg for no decisions now; don't pause the current P0s. Protecting existing uncommitted work, such as the 56 lines in the Central checkout, stays obvious. A preliminary plan was sent to Greg at 43498a6e #1409.\nMac facts (read-only check by the Mac Engram Runner, 01:33Z):\n- Checkout /Users/greg/GitHub/Personal/fit_friends, branch main at b39c0e11, the same commit as Central; the rincon-common submodule is initialised at 9935011e but differs from the recorded revision (\"+\").\n- Flutter 3.47.2 stable (cached metadata), Dart 3.13.2 macos_arm64, Xcode 27.1, CocoaPods 1.17.0, OpenJDK 23.0.1, Android SDK at /Users/greg/Library/Android/sdk with platform-tools 37.0.1 (ANDROID_HOME unset, adb not on PATH).\n- engram at /Users/greg/.cargo/bin/engram is an OLD build (8bbf9d60, rev 0bd70a30, 2026-11-09). There is no Engram store home on the Mac (ENGRAM_HOME unset, ~/.engram absent).\nSo on the Mac the toolchain is present; what's needed is a current Engram build plus a store created by importing the sync data."
+}

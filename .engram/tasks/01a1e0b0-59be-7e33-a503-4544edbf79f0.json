@@ -1,0 +1,33 @@
+{
+  "id": "01a1e0b0-59be-7e33-a503-4544edbf79f0",
+  "external_ref": null,
+  "title": "Credit committed-input test evidence by claim and exact commit, without a named root or root sighting",
+  "outcome": "Credit committed-input test evidence by claim and exact commit, without a named root or root sighting",
+  "acceptance": [
+    "A registered or remote verification whose input is a committed input (exact commit with equal before/after source_id) is credited to the claimed item's run by claim, fence and run plus that commit/source_id, without requiring a bound named root on the claim or a named-root sighting",
+    "Independent acceptance evaluation of an item whose cited evidence is all committed-input evidence no longer requires a named source root or a named-root sighting (no named_root_sighting_required or no-naming-history refusal for that case)",
+    "Obligations from source changes are closed by committed-input evidence whose source_id equals the observed change's source_id, with the matching rule documented; uncommitted (working-tree) observation keeps its named-root requirements unchanged",
+    "Every refusal on these paths names the deciding check, the observed and expected values and a remedy",
+    "docs/features/execution-observability.md and acceptance-evaluation docs describe the committed-input rule; a design review with Engram::Fable and a read-only Codex explorer is recorded before coding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "greg-directed",
+    "remote-verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Superseded before any work: Kimi::Consultant's final joint design (c15db92c #210, 19:30:39Z) keeps Engram's named-root, revision, claim and fence guards; TermAl's builder names the root inside the host operation and re-delivers the same terminal origin with the current binding when a delivery goes stale. No Engram evidence or wire change is needed for workRef + branch.",
+  "completion": null
+}

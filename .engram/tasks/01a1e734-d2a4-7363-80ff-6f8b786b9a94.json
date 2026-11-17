@@ -1,0 +1,28 @@
+{
+  "id": "01a1e734-d2a4-7363-80ff-6f8b786b9a94",
+  "external_ref": null,
+  "title": "Let a Windows custody journal writer rename managed.pending while a lock-free reader has the journal open",
+  "outcome": "Let a Windows custody journal writer rename managed.pending while a lock-free reader has the journal open",
+  "acceptance": [
+    "On Windows, a writer holding the custody reservation publishes managed.pending over managed.json (publish_journal, recover_pending_journal) while another process has managed.json or managed.pending open through the lock-free observe() read path; the publish succeeds, or fails with the typed busy/retry remedy rather than a raw OS error 32, proven by a Windows test that holds a read handle across the publish"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-task-sync",
+    "review",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -26,21 +26,5 @@
   "blockers": [],
   "superseded_by": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
   "disposal_reason": "Superseded by B (w-da8c79e5d5ab), landed as master 0e52e6fd on 2026-10-31. The \"no sighting of named root\" refusal text this item would change belongs to the sighting mechanism that B's commit-bound eligibility replaces.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "6065642daa4d44f78ec819f735126b44": {
-        "activity_id": "6065642daa4d44f78ec819f735126b44",
-        "task_id": "01a18d7d-22e6-7771-908f-00e2f3694fea",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "ad0748070409443395338f1c90d630bc"
-      }
-    }
-  }
+  "completion": null
 }

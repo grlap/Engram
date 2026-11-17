@@ -4,7 +4,7 @@
   "title": "Task sync stage 1: atomic host-independent admissible subset apply",
   "outcome": "Task sync stage 1: atomic host-independent admissible subset apply",
   "acceptance": [
-    "Only the stage-1-approved subset with no affected TermAl responsibility applies; the complete relevant local readset (union graph, lifecycle/run/claim bases, newly connected races) is compared inside the same writer transaction, and shared changes, heads and the exact ImportReceipt commit together with no partial final graph or receipt",
+    "Only the admissible subset applies: an incoming GOVERNING planning change to a task with engaged local execution (a live handoff; or an Active, unexpired claim; or, when the task has no claim row, non-planning active-run history), or one touching held state, is held until that work ends normally, and a mixed governing-plus-shared candidate is deferred atomically. Purely additive shared updates (notes, activity) may apply under a live claim without adopting claim, event or WorkItem ownership, and dormant native planning (a run with no execution history) may accept returned planning or reported completion without a seal or credit. This is Engram-only, with no TermAl attestation, per Greg's decision in memory rules-greg-full-sync-is-full-exchange-2026-11-07 rev 2. The complete relevant local readset (union graph, lifecycle/run/claim bases, newly connected races) is compared inside the same writer transaction, and shared changes, heads and the exact ImportReceipt commit together with no partial final graph or receipt.",
     "An exact retry returns the exact receipt with no duplicate events or ids; a connected local race refuses while unrelated edits do not; reported planning or inert completion creates no live claim, grant, session or evaluation verification; the same native completed outcome keeps its seal and basis",
     "Notes keep immutable ids with exact self-echo checks, activity updates keep original start/actor/origin binding and refuse rollback or equal-revision conflict, profile omission is not deletion, and re-export keeps unchanged committed bytes, proven by tests"
   ],
@@ -18,15 +18,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
-  "prerequisites": [
-    "01a13605-bebe-76e2-a4d6-9bf54c91b725",
-    "01a13605-d19b-7552-babb-74c85d2ce78f"
-  ],
+  "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Delivered the Engram-only atomic admissible import subset. Governing changes respect engaged execution and held state; shared-only updates remain inert; connected readsets, changes, heads and exact receipts commit atomically, retry preserves identity, and imported completion never fabricates native authority. Immutable notes/activity and disclosed profile omissions preserve committed input. Independent Claude18435 evaluation6b6d86776cc24618ab93d5cee282ec02 freshly passed all3 judgment criteria on r6/cut27/clean05dad; full original2564B and whole native verdict read,stale=null, evaluatorEND/released before completion. Original F52850862 FULL/focused evidence and unchanged selected owners support this no-code closure; no new/current05dadFULL or host verification claimed. Final manifestaf9c9746326b47019b0bb5cc49d09490, own full original quotations50b8fe2b1ba343d4a264e74353dd8ebe. Native no-action-before-evaluation assumed_missing_baseline obligation disclosed as untested accounting; no new source mutation, test/build, landing/install/restart or live-store action by11323.",
+    "completed_at": "2026-11-16T04:39:18.089874300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

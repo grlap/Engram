@@ -22,33 +22,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "carried under the shipped memories item as a required child by mistake; Low follow-up re-filed under the root",
-  "completion": null,
-  "activity": {
-    "central": {
-      "2b4ff08064c6b2d579d0fd799c477fc8d728204afb423240fc8561f5e889036b": {
-        "activity_id": "2b4ff08064c6b2d579d0fd799c477fc8d728204afb423240fc8561f5e889036b",
-        "task_id": "01a0632f-06db-7b90-a8af-ae1b87c4529f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "22e5e6a96c2bd7212c6ec3c6186bd5a0b7214492f41f2830e71b3d4738a54c82"
-      },
-      "fc6ea23e32c5e096856047ccb657394dcd178a092c86a10d50ec35e7ce8a46d1": {
-        "activity_id": "fc6ea23e32c5e096856047ccb657394dcd178a092c86a10d50ec35e7ce8a46d1",
-        "task_id": "01a0632f-06db-7b90-a8af-ae1b87c4529f",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "dbbe7b6b687bef5057e1b277cd2fef3aa5d3254c5bbb46b73b4f6076bd375921"
-      }
-    }
-  }
+  "completion": null
 }

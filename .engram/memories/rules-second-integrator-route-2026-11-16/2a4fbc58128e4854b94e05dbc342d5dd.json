@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-second-integrator-route-2026-11-16",
+    "revision_id": "2a4fbc58128e4854b94e05dbc342d5dd",
+    "previous": "f888e76db1a24ec1b6e0caa7d22af954",
+    "body_sha256": "a3789ef0ad13cd2108d3b3214353593e2bd6039b077c11d3f10c03d8f53dc7fa",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-luna;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T16:24:30.856763700Z"
+    }
+  },
+  "body": "SECOND INTEGRATOR route (Engram::Fable rulings #4392 at 16:15Z; final custody correction #2060 at 16:23Z). Engram::Opus/session-7284 integrates the assigned packages. For each Opus integration candidate: (1) Opus carries READY packages onto current master under /review-changes 6a, builds a local candidate commit, and freezes it. (2) Opus gets fresh focused compile/test evidence on that exact input (author-test ref run on s4/Mac). (3) Opus sends Merger the parent master, recorded tree id, freeze fingerprint and focused evidence. (4) Merger creates/pushes only the detached test-ref commit reserved by AGENTS.md Test refs (parent master, tree = Opus's recorded tree id). (5) FULL on test ref is landing gate. (6) Opus owns FULL intake and lands by fast-forwarding master to exactly that test-ref commit under standing approval, with readiness/evaluation.\n\nFinal custody per Fable #2060: Merger keeps/lands w-b7f9 and w-e999, plus restart set (dd205, e81c, ea4a, 606e), w-6bba, w-9fcb (including child w-3cea) and W43ED. Opus receives nine: w-5e5f, w-f265, w-f33a, w-1970, w-a5b1, w-8b9e, w-f2b4, w-2638, w-32d6. Opus has candidate A (5e5f+f265+f33a+1970) on base 05dadbad. w-8b9e lands first. w-32d6 returns to Coder-HostTestSplitFresh/session-11334 for carry after 8b9e, and lands only after w-fe6e because its Windows gate is test-rust.ps1. Earlier broader custody split was superseded by #2060. Rejected: author-test FULL + Merger re-push wastes a run; Central local FULL fails today on Central's w-fe6e defect."
+}

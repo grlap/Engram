@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-codex-deletes-2026-11-16",
+  "head": {
+    "state": "active",
+    "chain": [
+      "dca5a6c20005400d936f37f7b49bbff9",
+      "fe77ce63121a4150917853915cb71d6a"
+    ]
+  }
+}

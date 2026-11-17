@@ -21,7 +21,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
   "child_requirement": "required",
   "prerequisites": [
@@ -29,6 +29,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Superseded: its acceptance excludes a shared data branch, which contradicts the current design. Data-branch fast-forward pushes are authorized by the AGENTS rule landed in 22bfe632 under rules-greg-engram-termal-data-exchange-2026-11-15. The exact-retry fast-forward publish belongs to the one-command item w-6ea6f92ccffc. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
   "completion": null
 }

@@ -1,0 +1,32 @@
+{
+  "id": "01a1e190-897a-7423-891b-43ed0027b660",
+  "external_ref": null,
+  "title": "Diagnose and correct the effective Git-attribute refusal for managed task files",
+  "outcome": "Task materialization diagnoses the actual effective attribute value and applies the intended managed policy without blocking valid publication or weakening unsafe-attribute refusals.",
+  "acceptance": [
+    "The refusal reports the path, attribute, actual value and expected safe values with a concrete remedy, so CI no longer hides the deciding value",
+    "The effective policy accepts text=set with eol=lf and diagnoses the actual unsupported value found by the failing materialize scenarios, without weakening unsafe filter, encoding or override refusals",
+    "The two failing task_sync_materialize_cli scenarios pass on the corrected tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "ci",
+    "gate",
+    "greg-directed",
+    "ready-to-land",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

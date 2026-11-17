@@ -21,40 +21,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "5f5a55a7f9b944bda9a5e20d18bc2c92": {
-        "activity_id": "5f5a55a7f9b944bda9a5e20d18bc2c92",
-        "task_id": "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "5f5a55a7f9b944bda9a5e20d18bc2c92"
-      },
-      "5f97ed1a60f84e71bc750918b9d13c7a": {
-        "activity_id": "5f97ed1a60f84e71bc750918b9d13c7a",
-        "task_id": "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "5f97ed1a60f84e71bc750918b9d13c7a"
-      }
+  "completion": {
+    "summary": "Closed delivered evidence-exchange core already present in published master89e269f6: exact canonical record envelopes, typed bounded immutable packs, origin/governing witnesses and dependency-first atomic SCCs. Fresh independent evaluation c41c8f7221ea4afaa9ee0cbd35f7ff81 passed5/5 atcut281 on89e269f6/treea0cf0c04, stale=null verified. Complete nativeoutput3550B read; criterioncitations recorded by evaluator from manifest2266d0d0/supplement06a68e01. OriginalAACBFULL0ae8b92d and unchanged-core proof support30unignoredcoretests; no new code/test/landing/install performed. C5limitation disclosed: evaluator used quoteddesign§3/5+testinventory, not full§10. Prior18374 catalogfailure submitted no verdict, trackedTermAlw27e5. Sevenlegacy mutationobligations disclosed noactionbeforeeval; no forgedcheck/waiver. Evaluator END/released. Removeclosure-onlyroot afterseal/pathchecks; retain originalAACB3JSON whileother3assignedcoreclosures use them.",
+    "completed_at": "2026-11-16T02:03:13.217878300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

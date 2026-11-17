@@ -22,21 +22,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "scratch: simulate a test defect",
-  "completion": null,
-  "activity": {
-    "central": {
-      "db249a92a5826cca51b639d5c56697f01d11e28ade80ea6a7a76a26af804eae5": {
-        "activity_id": "db249a92a5826cca51b639d5c56697f01d11e28ade80ea6a7a76a26af804eae5",
-        "task_id": "01a06838-f711-71a2-b7a0-717dc1b9da1e",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "637ef6e196fdeff844c150c1c16225dec98980c861cf6029194aa0db71398a89"
-      }
-    }
-  }
+  "completion": null
 }

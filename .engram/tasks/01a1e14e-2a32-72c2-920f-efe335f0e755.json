@@ -1,0 +1,34 @@
+{
+  "id": "01a1e14e-2a32-72c2-920f-efe335f0e755",
+  "external_ref": null,
+  "title": "Select existing cross-family regression tests from touched shared state transitions",
+  "outcome": "The existing focused-test tooling selects relevant cross-family scenarios from the shared transitions a change touches, so seam regressions are exercised before review without a hand-maintained test list or another gate.",
+  "acceptance": [
+    "A change touching shared sync transitions automatically includes the existing scenarios covering their cross-family interactions in the focused selection",
+    "The known baseline-admission, withheld-retirement and local-revert seam cases are selected without the author manually naming them",
+    "The rule adds no gate and changes neither the review pair nor the full validation requirement"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization",
+    "sync",
+    "testing",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

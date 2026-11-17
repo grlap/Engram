@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-comovo-engram-data-push-2026-11-17",
+  "head": {
+    "state": "active",
+    "chain": [
+      "089d49966b9e4b7a8169f59d7005987c",
+      "0e24401b9ecf4c478895c09d9ddfbcbe"
+    ]
+  }
+}

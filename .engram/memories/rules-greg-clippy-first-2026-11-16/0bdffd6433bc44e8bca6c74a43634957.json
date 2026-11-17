@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-clippy-first-2026-11-16",
+    "revision_id": "0bdffd6433bc44e8bca6c74a43634957",
+    "previous": null,
+    "body_sha256": "a9c4a7f2b6268bb2c39859433433bd85d26c5a7e5570f3810c325be74422e836",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T17:42:41.445765800Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 17:42Z, relayed by Engram::Asistant (mailbox 43498a6e #1392, message 5fc8c254), verbatim: „Korwa, kiedy wchodzi clippy? Po testach!!! + kimi”. Context: dd205's Windows-only Clippy error (incremental.rs:274) surfaced only at integration, after 18 review rounds and Mac/Linux runs, because no Windows Clippy ran on the coder's input.\nAsistant's scope: Kimi checks with both teams the actual order of compile, Clippy, focused tests and FULL on each needed platform, names the measured source of the delay, and the teams adopt a simple reordering, so that a fast compile and Clippy on the right platform catch errors before expensive tests. Keep one full gate, add no manual steps, and don't repeat valid tests needlessly.\nOPERATING ORDER (Engram::Fable, effective now, pending Kimi's check): strict Clippy (`cargo clippy --all-targets --all-features -- -D warnings`) is the FIRST check on a coder's input, before any focused test run, review round or remote FULL. It runs on EVERY platform whose cfg-specific code the change touches: Windows for cfg(windows) or Windows-only paths (on Central, a short -j1 slot that Opus2 gives priority to), and macOS or Linux for cfg(unix), macOS or Linux-only code. A change touching only shared code runs it on one platform. This reorders an existing gate step and adds no new gate. The landing FULL is unchanged."
+}

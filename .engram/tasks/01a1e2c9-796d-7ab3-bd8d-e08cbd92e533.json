@@ -1,0 +1,29 @@
+{
+  "id": "01a1e2c9-796d-7ab3-bd8d-e08cbd92e533",
+  "external_ref": null,
+  "title": "Clarify which folder-admission refusal precedes unsupported planning fields",
+  "outcome": "The planning-field matrix states that reconciliation holds and shared note/activity refusals take precedence over unsupported_fields, while preserving whole-task refusal semantics.",
+  "acceptance": [
+    "The Git task-sync planning-field matrix describes the current folder_admission::apply_on refusal order: reconciliation hold, shared note/activity admission, then unsupported_fields; field names are distinguished from refusal reason codes.",
+    "The clarification preserves whole-task value protection, follows current source, and passes the repository's documentation validation and review requirements."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

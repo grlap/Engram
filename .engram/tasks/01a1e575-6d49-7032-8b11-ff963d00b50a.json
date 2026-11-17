@@ -1,0 +1,31 @@
+{
+  "id": "01a1e575-6d49-7032-8b11-ff963d00b50a",
+  "external_ref": null,
+  "title": "Make Clippy non-blocking in Engram's gates: an early blocking compile check, an early Clippy whose findings are reported and fixed next round",
+  "outcome": "Report Clippy findings without blocking check-in or landing; run an early blocking compile check and preserve blocking builds and tests.",
+  "acceptance": [
+    "scripts/test-launcher.mjs runs cargo check --all-targets --all-features early as a blocking step, and cargo clippy --all-targets --all-features --message-format=json -- --cap-lints warn early with native exits unchanged. Clippy warning findings are reported with locations in the run result, do not fail the gate, and let tests continue; compiler, deny/forbid errors in the uncapped check and spawn/tool failures remain blocking.",
+    "AGENTS.md and CLAUDE.md, kept identical, both existing coder-test-execution skill twins, .claude/commands/review-changes.md, the engram-repo gate example and docs/development.md carry exact agreed V3: Clippy warnings do not block check-in or landing, are recorded and assigned for next-round fixes, while compile/build/test/tool failures still block. Kimi agrees the reconciliation and authority-text (a), (b) and final-diff audit (c) apply, with Greg's verbatim widening word recorded.",
+    "Behavioral launcher tests show a located Clippy warning is reported without failing the gate while later tests execute, and compile/tool failures still block. The actual toolchain's deny-level Clippy lint becomes warning with native exit0 under the capped command, while uncapped compiler/deny failures block. No test reads Markdown."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "gate",
+    "greg-directed",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

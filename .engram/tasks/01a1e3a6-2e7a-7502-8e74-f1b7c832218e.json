@@ -1,0 +1,29 @@
+{
+  "id": "01a1e3a6-2e7a-7502-8e74-f1b7c832218e",
+  "external_ref": null,
+  "title": "Correct link-basis guidance that still says metadata edits refuse",
+  "outcome": "Teach the derived acceptance-contract link basis consistently in the two remaining agent and protocol passages.",
+  "acceptance": [
+    "docs/features/cli-agent-usage.md and docs/features/local-work-protocol.md describe link_basis as the acceptance-contract basis printed by show: metadata and label edits preserve it, while criteria, verification-binding or evaluation-mode changes (including a revert) require a fresh basis.",
+    "The documentation link check passes on the corrected Markdown input; no product behavior, stored ids/links or authority text changes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

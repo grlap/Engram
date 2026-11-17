@@ -25,45 +25,5 @@
   "blockers": [],
   "superseded_by": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
   "disposal_reason": "The target, due-grant test seeding, was physically removed with turn gating (landed at 5e8, cutover 6/6). Verified at master fe9a: due_grant and seed_due have no hits in src. Found by the legacy-scan explorer session-15943 at bad43423.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "448a53bf6b8c4955aae5856a4477444a": {
-        "activity_id": "448a53bf6b8c4955aae5856a4477444a",
-        "task_id": "01a1532f-02aa-70a2-90ee-b62e6d4200f8",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "448a53bf6b8c4955aae5856a4477444a"
-      },
-      "5b52608eec2745758d7981af1a69debe": {
-        "activity_id": "5b52608eec2745758d7981af1a69debe",
-        "task_id": "01a1532f-02aa-70a2-90ee-b62e6d4200f8",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "995d65bb06cf4630abc7f5bbc6236b3d"
-      },
-      "6a5a07d9b2cf4d70b30b384dd2daf88b": {
-        "activity_id": "6a5a07d9b2cf4d70b30b384dd2daf88b",
-        "task_id": "01a1532f-02aa-70a2-90ee-b62e6d4200f8",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "6a5a07d9b2cf4d70b30b384dd2daf88b"
-      }
-    }
-  }
+  "completion": null
 }

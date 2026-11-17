@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-kimi-standing-optimization-2026-11-15",
+    "revision_id": "b678489c80724728bff47e584bf297a0",
+    "previous": null,
+    "body_sha256": "74b89353ef2c836ed2ba23c5e0eda530a3d75ed72340137fcb163cb21ae247ec",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T20:27:49.240390800Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 20:27Z, relayed by Engram::Asistant (mailbox 43498a6e #1297, message e77d20c2), verbatim: „Kimi maial i nadal ma za zadanie optymalizowac te procedury!!!”\nAsistant's brief, a paraphrase: this is a CONTINUING, active role, not a one-off report on one bug. Kimi works with both teams to remove unnecessary steps and repetition, simplify procedures, reuse existing results and make refusals clear. Kimi identifies concrete changes and drives them through their owners to deployment, in parallel with sync and EO. Greg wants the concrete status of the optimizations already started, their owners and the next result, not another review or plan.\nHow Engram::Fable applies it: Kimi::Consultant is the standing procedure optimizer for Engram and TermAl. Each optimization is a tracker item with an owner. Engram's list is the epic \"Procedure optimization driven by Kimi\" with its notes. Coordinators assign owners; Kimi follows each item to deployment and reports status. It adds no gate and gives Kimi no authority to commit or push."
+}

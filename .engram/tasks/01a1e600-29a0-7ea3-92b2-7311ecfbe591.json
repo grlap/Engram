@@ -1,0 +1,29 @@
+{
+  "id": "01a1e600-29a0-7ea3-92b2-7311ecfbe591",
+  "external_ref": null,
+  "title": "Make saved Clippy findings discoverable after a passing run",
+  "outcome": "Make saved Clippy findings discoverable after a passing run",
+  "acceptance": [
+    "A passing run with Clippy warnings directs the recipient to the warning count and saved located findings, using bounded numeric completion metadata or clear guidance to results.json stages[].advisories.clippy.",
+    "Preserve the two leading completion lines, the machine-record contract, native exits and stage verdicts; warning discovery itself must not turn a warning-only pass into a failure."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "diagnostics",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

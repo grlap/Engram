@@ -15,44 +15,24 @@
   "labels": [
     "area-host-integration",
     "gate",
+    "ready-to-land",
     "tooling"
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "2888393723d3421ba4ba3aaa78e6cc98": {
-        "activity_id": "2888393723d3421ba4ba3aaa78e6cc98",
-        "task_id": "01a1d820-e103-7581-ac8f-05e65b3717a0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "2888393723d3421ba4ba3aaa78e6cc98"
-      },
-      "5dae116c1d0345de95a695cd26bf21d5": {
-        "activity_id": "5dae116c1d0345de95a695cd26bf21d5",
-        "task_id": "01a1d820-e103-7581-ac8f-05e65b3717a0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "2888393723d3421ba4ba3aaa78e6cc98"
-      }
+  "completion": {
+    "summary": "Fixed and landed on master; full launcher gate and fresh independent acceptance evaluation passed all 3 criteria on commit 05dadbad9be59a1a927034737e5cbe8a6af81a3e/tree 8dbdfa610c36573e40b9428581e59696f43b0849. Installed the exact build at 2026-11-16 02:12:55Z and verified readiness across all six stores; build fingerprint a4313eccc9ccaeb80c79c362e356b69d8de4fed68f124bb1dbd86ab938c3afc6. No process was stopped and TermAl was not restarted.",
+    "completed_at": "2026-11-16T02:18:17.646329200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

@@ -27,21 +27,5 @@
   "blockers": [],
   "superseded_by": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
   "disposal_reason": "folded into the removal P0",
-  "completion": null,
-  "activity": {
-    "central": {
-      "0d023337c92d47e097ecaa12c69c22cd": {
-        "activity_id": "0d023337c92d47e097ecaa12c69c22cd",
-        "task_id": "01a1981e-079b-7390-a5af-1163f8f9bab1",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "4957b83d40ce4aae8c4bc512f0387ac6"
-      }
-    }
-  }
+  "completion": null
 }

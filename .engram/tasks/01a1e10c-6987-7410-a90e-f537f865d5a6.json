@@ -1,0 +1,28 @@
+{
+  "id": "01a1e10c-6987-7410-a90e-f537f865d5a6",
+  "external_ref": null,
+  "title": "Coalesce work-scoped memory changes in next delivery to the current head, without historical titles or staged-replay old versions",
+  "outcome": "Coalesce work-scoped memory changes in next delivery to the current head, without historical titles or staged-replay old versions",
+  "acceptance": [
+    "When a next delivery cursor spans several versions of one work-scoped memory, the agent sees only the current version's change; superseded titles or bodies from historical feed entries or staged-page replay are not shown",
+    "Feed positions, cursors and replay determinism are unchanged; a regression covers multi-revision work memories across paging and restart"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "project-memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

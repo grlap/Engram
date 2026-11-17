@@ -1,0 +1,33 @@
+{
+  "id": "01a1eb3c-3263-7572-8704-97133ed5aac3",
+  "external_ref": null,
+  "title": "Bring the engram-use skill's sync section up to date: memories exchange, memory-aware refresh, and portable sync rules",
+  "outcome": "Correct the engram-use skill: project memories are exchanged by task sync with --include-memories",
+  "acceptance": [
+    "docs/skills/engram-use/SKILL.md no longer says project memories are not exchanged; it states that export and import with --include-memories carry current project memories, as shipped",
+    "The skill's refresh and exchange procedure works once the data branch holds memories: it never removes the committed memory component before an --include-memories export, and it states the current limit on refreshing changed tasks together with memories",
+    "The skill states portable, project-neutral sync rules with no repository names and no quotes: teams sync whenever they judge it useful without asking each time; every code push is followed by a data sync; data stays on its own branch separate from code; the rules grant no code push and the consuming project's own instructions keep the concrete Git authority; it offers a sentence a consuming project can adopt in its instructions",
+    "The link check passes through the focused launcher, and the Codex and Claude reviews are clean"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "greg-directed",
+    "refusals",
+    "skills",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1eb20-304d-77e1-bf4f-32cef679c919",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

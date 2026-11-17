@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-central-chrome-kill-2026-11-16",
+    "revision_id": "7a49e1c76feb4a3b913d27a044a1aa0b",
+    "previous": null,
+    "body_sha256": "eeb9d15a7227187a247eed4283b1c6f2d76fb0465514978bcfab6432837b54dc",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T00:08:08.538438700Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 00:07Z, relayed by Engram::Asistant (mailbox 43498a6e #1325, message 3a9207af), verbatim: „Nic nie ruszam. Nie jestem przy komputerze. Mogą ubić chrome.exe jak chcą.” Scope per Asistant: agents may close Chrome on Central when the memory is needed for work, coordinating resources, and continue EO and sync.\nPractice: only chrome.exe, never engram.exe or any TermAl process. Stop it only when a pre-spawn census on Central is below the floor (FreeVirtualMemory below 16,777,216 KiB), then re-census and record what was stopped on the work item or in the slot message. Opus2 owns the Central schedule and was told (mailbox 28ccc255 #1001). At 00:08Z host 285K had 25,659,428 KiB free virtual memory, so nothing was stopped then."
+}

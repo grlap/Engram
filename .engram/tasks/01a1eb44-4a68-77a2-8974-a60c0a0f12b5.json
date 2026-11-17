@@ -1,0 +1,30 @@
+{
+  "id": "01a1eb44-4a68-77a2-8974-a60c0a0f12b5",
+  "external_ref": null,
+  "title": "State in the task-sync data-branch rule that teams sync whenever useful and after every code push",
+  "outcome": "State in the task-sync data-branch rule that teams sync whenever useful and sync after every code push to master",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md carry, appended to the existing task-sync data-branch bullet, exactly: \"Teams run this sync whenever they judge it useful, without asking each time, and every code push is followed by this sync; this grants no code push.\"",
+    "Both coordinators' concurrence on the exact wording, the wording sent to Greg, and the final-diff audit are recorded on this item before landing",
+    "The link check passes through the focused launcher on the landed tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

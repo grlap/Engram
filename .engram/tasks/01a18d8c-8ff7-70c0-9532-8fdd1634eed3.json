@@ -43,57 +43,5 @@
   ],
   "superseded_by": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
   "disposal_reason": "Superseded by B (w-da8c79e5d5ab), landed as master 0e52e6fd on 2026-10-31. Test evidence is now bound to the exact Git commit through normal Git status (rules-greg-commit-clean-identity, rev 5 onwards), which replaces the named-root sighting emission this item proposed. Parked as superseded in purpose since 2026-10-31 01:53Z.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "252598865f7144848e04f968b2f20ac4": {
-        "activity_id": "252598865f7144848e04f968b2f20ac4",
-        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "c29465f66c474bea8f5bbd545da9f01d"
-      },
-      "c29465f66c474bea8f5bbd545da9f01d": {
-        "activity_id": "c29465f66c474bea8f5bbd545da9f01d",
-        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "c29465f66c474bea8f5bbd545da9f01d"
-      },
-      "efe9758ddd934da08c9d738f6853e7e4": {
-        "activity_id": "efe9758ddd934da08c9d738f6853e7e4",
-        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/claude",
-          "actor_kind": "agent"
-        },
-        "state": "abandoned",
-        "state_revision": 2,
-        "event_id": "272f4ff168c048a09c39ce208575d60c"
-      },
-      "fc69e968b38543f4a1894adac92143a5": {
-        "activity_id": "fc69e968b38543f4a1894adac92143a5",
-        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "efe9758ddd934da08c9d738f6853e7e4"
-      }
-    }
-  }
+  "completion": null
 }

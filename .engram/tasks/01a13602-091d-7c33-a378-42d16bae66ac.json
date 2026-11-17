@@ -19,28 +19,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "f9dcd9a7517d4e69811ccd75e40e8c27": {
-        "activity_id": "f9dcd9a7517d4e69811ccd75e40e8c27",
-        "task_id": "01a13602-091d-7c33-a378-42d16bae66ac",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "f9dcd9a7517d4e69811ccd75e40e8c27"
-      }
-    }
-  }
+  "disposal_reason": "Superseded: this is the Engram side of TermAl G3 settlement, and TermAl has no part in Engram sync (rules-greg-full-sync-is-full-exchange-2026-11-07 rev 2). Hold-until-release replaces it. Closed under rules-greg-close-senseless-tasks-2026-11-08; nothing is claimed as implemented.",
+  "completion": null
 }

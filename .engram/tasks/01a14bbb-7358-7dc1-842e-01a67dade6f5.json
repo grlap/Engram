@@ -20,112 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "14fe0b275e864afb844d78fde85073a1": {
-        "activity_id": "14fe0b275e864afb844d78fde85073a1",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "14fe0b275e864afb844d78fde85073a1"
-      },
-      "431d7ac5ed894c3b9d6ab95eee4af89e": {
-        "activity_id": "431d7ac5ed894c3b9d6ab95eee4af89e",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "431d7ac5ed894c3b9d6ab95eee4af89e"
-      },
-      "5efebd5532a248cfb4c768555bdd2d64": {
-        "activity_id": "5efebd5532a248cfb4c768555bdd2d64",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "5efebd5532a248cfb4c768555bdd2d64"
-      },
-      "8657dd71f5a8453c831bb5492aadfbfd": {
-        "activity_id": "8657dd71f5a8453c831bb5492aadfbfd",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "8657dd71f5a8453c831bb5492aadfbfd"
-      },
-      "8d59de6873aa4d1db2df1da91fc3220a": {
-        "activity_id": "8d59de6873aa4d1db2df1da91fc3220a",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "8d59de6873aa4d1db2df1da91fc3220a"
-      },
-      "8f66b5955b63402789464fc35fc39f9f": {
-        "activity_id": "8f66b5955b63402789464fc35fc39f9f",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "8f66b5955b63402789464fc35fc39f9f"
-      },
-      "9e6b567f98ed4937b33bbb5b49f4f97b": {
-        "activity_id": "9e6b567f98ed4937b33bbb5b49f4f97b",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "14fe0b275e864afb844d78fde85073a1"
-      },
-      "a4d875b1804146df9d4d932009ee6aee": {
-        "activity_id": "a4d875b1804146df9d4d932009ee6aee",
-        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "a4d875b1804146df9d4d932009ee6aee"
-      }
+  "completion": {
+    "summary": "Delivered explicit project-local origin enrollment, stable canonical lineage and private continuity with restart/clone/SAME-origin oldDB restore quarantine; explicit CLI recovery and joining preserve local authority. Fresh independent Claude18398 evaluation ebf9ed1f004946b6a1062308951b022a at acceptance r3/cut835 passed all4, stale=null, on clean89e269f6/treea0cf0c04; full2372-byte original and entire native verdicts read. Primary evidence0181f030 with current-designf752e95d and exact pre-landing cutover-presentation supplement6414394c. Parent directly read b1e623 Asistant#988/Greg14:29 consent beforeAACB15:43 push; evaluator relied on faithful quote, not direct foreignmailbox. C3 laterjoining is sourcejudgment-only, no current-master executionclaimed; origin-specific unchangedtests reuse originalAACBfull. Prior18395 catalogfailure remainsno verdict/reportedw27e5. No source/tests/newgate/landing/install action. END/releasedslot; checked closure-rootcleanup follows. 7413 still waits b106/dd205; dependent365c/597d remain open, no fabricatedsync completion.",
+    "completed_at": "2026-11-16T03:11:38.685626100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

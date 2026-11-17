@@ -1,0 +1,33 @@
+{
+  "id": "01a1e511-5cbb-7283-adc9-bafd82af7c17",
+  "external_ref": null,
+  "title": "Batch data-worktree admission discovery and path inventory without weakening checks",
+  "outcome": "Reduce Git subprocesses used by every data-worktree observation while retaining exact root, administration, branch, HEAD, history and complete path admission.",
+  "acceptance": [
+    "A behavioral spawn-count regression measures representative empty and populated data-worktree observation before and after; the corrected observation uses a fixed small bound independent of unrelated files",
+    "Repository discovery and HEAD reads are batched, and complete cached plus ignored/unignored file inventory is read together, while existing rejection and code-preservation tests retain their strength",
+    "Focused Windows data-worktree tests and independent complete-input reviews pass on the exact candidate, with no deadline increase or global cache"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "gate",
+    "performance",
+    "ready-to-land",
+    "sync",
+    "windows"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1e4fe-e90c-7ca0-bd2a-02da03035c7c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

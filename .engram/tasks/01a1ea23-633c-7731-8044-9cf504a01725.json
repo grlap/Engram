@@ -1,0 +1,31 @@
+{
+  "id": "01a1ea23-633c-7731-8044-9cf504a01725",
+  "external_ref": null,
+  "title": "Bring up Comovo task and memory sync between Windows and the Mac through the engram-data branch",
+  "outcome": "Bring up Comovo task and memory sync between Windows and the Mac through the engram-data branch",
+  "acceptance": [
+    "The Mac runs an Engram build from current master with its own initialized store for the Comovo project, built and installed inside the agreed locations",
+    "Comovo's tasks and memories are exported on Windows into an engram-data branch pushed to the private aolowko/fit_friends origin, after a check that the export carries no secret or credential",
+    "The Mac imports that branch and shows the same Comovo tasks and memories",
+    "One further change made on each host reaches the other host through a repeat export and import with memories"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "comovo",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

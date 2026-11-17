@@ -1,0 +1,29 @@
+{
+  "id": "01a1e2a4-be0c-7542-800e-c82628f09ef4",
+  "external_ref": null,
+  "title": "Explain unsupported retained Git-policy paths with an actionable refusal",
+  "outcome": "An unsupported retained task-attribute policy path reports its escaped spelling, the deciding conversion check and an applicable recovery action while preserving fail-closed publication.",
+  "acceptance": [
+    "Both unsupported Git path spelling and non-Unicode retained-policy refusals identify the escaped path and concrete deciding reason.",
+    "Each refusal names a supported next action when one exists, without suggesting an unverified manual state rewrite.",
+    "Unsafe or unrepresentable paths still refuse before publication; targeted behavioral checks verify retained inputs and public state remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

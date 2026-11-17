@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-roadmap-direction-2026-11-16",
+    "revision_id": "4a5a5880af8d49ad82e0200e452247e6",
+    "previous": null,
+    "body_sha256": "dae1770fe6968aa20e7398feffe0dd29a0fca57b71c0dc30b84329ee023a1a2d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T01:56:57.244906400Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 01:56Z, roadmap direction relayed by Engram::Asistant (mailbox 43498a6e #1336, message 192b9f94; Asistant's summary of Greg, not verbatim):\n(1) Greg accepts closing out EO and sync.\n(2) Work optimization is a continuous process, above all context and KV caching.\n(3) Work on other applications is partly happening already; in Greg's view TermAl currently has the largest Engram base.\n(4) He agrees with the detachable-federation direction.\n(5) The view/operator is part of work optimization. Telegram, including sending files, serves the mobile role well; he sees no case for 2–3 months on a separate mobile frontend. Small UI fixes may run in parallel.\nMOST IMPORTANT NEED: simple Engram sync in the style of git push / git pull.\nTreat this as product direction. Don't assume unagreed details or a new architecture. EO and sync stay the priority.\nMapping in the tracker: the simple push/pull sync is the existing one-command item w-6ea6f92ccffc (owner Coder 11330), plus w-6bbabe3a062b (macOS/Linux, owner Coder 12325), under epic w-c5d58ec64202."
+}

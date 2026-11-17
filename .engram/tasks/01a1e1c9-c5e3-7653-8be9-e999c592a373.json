@@ -1,0 +1,31 @@
+{
+  "id": "01a1e1c9-c5e3-7653-8be9-e999c592a373",
+  "external_ref": null,
+  "title": "Advance an item's acceptance basis only when its acceptance changes, so a label edit no longer stales recorded evaluations",
+  "outcome": "Advance an item's acceptance basis only when its acceptance changes, so a label edit no longer stales recorded evaluations",
+  "acceptance": [
+    "Adding or removing a label (for example ready-to-land) leaves the item's acceptance_basis unchanged, and an acceptance evaluation recorded before the label edit stays current for done",
+    "Changing acceptance criteria, bindings or the evaluation mode still advances acceptance_basis and stales earlier evaluations, as today",
+    "A behavior test shows both cases through the public words (update with a label, then show and done), with no change to stored record ids or links"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "coordination",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

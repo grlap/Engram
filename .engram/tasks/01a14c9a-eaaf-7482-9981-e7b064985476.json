@@ -35,21 +35,5 @@
   ],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "824479c2348743ba88d414cc65c2cfae": {
-        "activity_id": "824479c2348743ba88d414cc65c2cfae",
-        "task_id": "01a14c9a-eaaf-7482-9981-e7b064985476",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "824479c2348743ba88d414cc65c2cfae"
-      }
-    }
-  }
+  "completion": null
 }

@@ -1,0 +1,30 @@
+{
+  "id": "01a1e550-4d22-7270-8bd4-e3375fd6d801",
+  "external_ref": null,
+  "title": "Keep every file an Engram test run creates inside the repository, including scratch made by the engram binaries the tests start",
+  "outcome": "Keep every file an Engram test run creates inside the repository, including scratch made by the engram binaries the tests start",
+  "acceptance": [
+    "Every process a test run starts, including the engram binary started by Rust integration tests and Node scripts, places its temporary files under the repository's target/ (for example by giving the child TMP, TEMP and TMPDIR inside the run's fixture root), and the existing run audit fails if a test run leaves anything in the system temp folder or the real home",
+    "The source EOL fallback's private scratch (engram-source-eol-*) is removed reliably on Windows, or the cause of a leftover is reported; a behavioral test covers the Windows cleanup",
+    "No test reads or writes the real ~/.engram, ~/.termal or the user's real temp folder; the existing target/tmp/engram ownership in scripts/test-temp.mjs and src/test_support.rs stays the single mechanism"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "gate",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

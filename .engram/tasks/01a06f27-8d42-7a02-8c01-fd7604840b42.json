@@ -30,21 +30,5 @@
       "actor_id": "advisor",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "d2612e842383f847afc3f900ce8f8051acd8b0ff7ca3e5f73ae7732b893900d3": {
-        "activity_id": "d2612e842383f847afc3f900ce8f8051acd8b0ff7ca3e5f73ae7732b893900d3",
-        "task_id": "01a06f27-8d42-7a02-8c01-fd7604840b42",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "advisor",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "ffc3d95cd50237153a151cbc07ef12f96cb521e788bb111a784941ead7876c70"
-      }
-    }
   }
 }

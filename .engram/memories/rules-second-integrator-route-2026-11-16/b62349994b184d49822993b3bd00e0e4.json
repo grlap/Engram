@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-second-integrator-route-2026-11-16",
+    "revision_id": "b62349994b184d49822993b3bd00e0e4",
+    "previous": "739ec84469a143f6b6f1a0bfdde856af",
+    "body_sha256": "88171ab4b8be661fcd2ba331dfb7178c2112ee78825b952d6cf863fdd9128a03",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-luna;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T16:27:46.539287100Z"
+    }
+  },
+  "body": "SECOND INTEGRATOR route (Engram::Fable rulings #4392, #2060 and final custody correction #2061, 2026-11-16). Engram::Opus/session-7284 integrates the assigned packages. For each Opus integration candidate: (1) Opus carries READY packages onto current master under /review-changes 6a, builds a local candidate commit, and freezes it. (2) Opus gets fresh focused compile/test evidence on that exact input (author-test ref run on s4/Mac). (3) Opus sends Merger the parent master, recorded tree id, freeze fingerprint and focused evidence. (4) Merger creates/pushes only the detached test-ref commit reserved by AGENTS.md Test refs (parent master, tree = Opus's recorded tree id). (5) FULL on test ref is landing gate. (6) Opus owns FULL intake and lands by fast-forwarding master to exactly that test-ref commit under standing approval, with readiness/evaluation.\n\nFinal custody per Fable #2061: Merger keeps/lands w-b7f9 and w-e999, plus restart set (dd205, e81c, ea4a, 606e), w-6bba, w-9fcb (including child w-3cea) and W43ED. Opus integrates w-5e5f, w-f265, w-f33a, w-1970, w-a5b1, w-8b9e, w-f2b4, w-2638 and w-32d6; w-8732 is paired with w-32d6 and closes with it. Opus has candidate A (5e5f+f265+f33a+1970) on base 05dadbad. w-8b9e lands first. w-32d6 returns to Coder-HostTestSplitFresh/session-11334 for carry after 8b9e, and lands only after w-fe6e because its Windows gate is test-rust.ps1.\n\nFable #2062/#2064 lane ruling: the restart set remains the top priority because Greg's restart waits on it. Merger runs the restart-set candidate (dd205 + e81c + ea4a + 606e) on Mac as soon as frozen, with its focused Windows leg alongside it. Separately on s4, run w-6bba then w-fe6e; w-fe6e stays with Merger and is not part of Opus's integration queue. The #2062 candidate passed its one-thread Windows suite, so no Windows FULL is needed. Rejected: author-test FULL + Merger re-push wastes a run; Central local FULL fails today on Central's w-fe6e defect."
+}

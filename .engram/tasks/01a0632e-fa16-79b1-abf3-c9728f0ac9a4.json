@@ -29,33 +29,5 @@
       "actor_id": "termal",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "568f1b5d79ae52fbe732da96ea68a26b1664f75d9b2bff0b61fe4b0465829a91": {
-        "activity_id": "568f1b5d79ae52fbe732da96ea68a26b1664f75d9b2bff0b61fe4b0465829a91",
-        "task_id": "01a0632e-fa16-79b1-abf3-c9728f0ac9a4",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "45942836fa1e19579333ef9c1daa72588c2f4e327aaf4c7feb5115f65cd03ae9"
-      },
-      "73d9e9c62639622730b4baa4c8ec7b5273dcc6d9c3f6d3b0efa36f720ca53dd5": {
-        "activity_id": "73d9e9c62639622730b4baa4c8ec7b5273dcc6d9c3f6d3b0efa36f720ca53dd5",
-        "task_id": "01a0632e-fa16-79b1-abf3-c9728f0ac9a4",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "21c3ccd928a1b8e08682d641d021b92f6b166038d1fdd0d7954308a4bb6a6f43"
-      }
-    }
   }
 }

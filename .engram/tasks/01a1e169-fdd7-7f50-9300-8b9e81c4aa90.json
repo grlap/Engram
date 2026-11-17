@@ -1,0 +1,32 @@
+{
+  "id": "01a1e169-fdd7-7f50-9300-8b9e81c4aa90",
+  "external_ref": null,
+  "title": "Add scripts/test-task.mjs: request a test of a work item from workRef + branch over the existing typed test request",
+  "outcome": "Add a remote-only scripts/test-task.mjs thin adapter from workRef + branch to the existing typed mailbox test request, with absence-checked author-ref publication and honest pending request identity, including the explicitly accepted v1 publication race.",
+  "acceptance": [
+    "The remote-only CLI node scripts/test-task.mjs WORK BRANCH --remote RUNNER [--focused SELECTION] --confirm-safe-to-publish resolves one unambiguous branch once to an immutable commit, proves its parent reachable from origin and checks the author-test ref is absent, then normally pushes exactly that own candidate with an explicit refspec and no force options. Only porcelain '*' new-ref status permits dispatch; any other status stops with observed ref and old/new OIDs. The documented check-then-push race is accepted for v1 under Fable #1116; it is not an atomic create guarantee.",
+    "It sends the existing MailboxTestRequest with mode full by default or focused only with an explicit selection and targets[{workRef,use:{kind:committed_input,expected_commit,purpose:verification}}]. The host captures requester, claim, existing named root and store; the script never names a root or asks for those identities. Missing confirmation, bad/ambiguous branch, unpublished parent, existing ref, missing claim/root and unsupported mode have explicit observed-value/reason/remedy refusals.",
+    "It prints the accepted request message id, request key, ref, commit and tree, with run_id null and honest pending status. Real run/source_id/outcome come through existing completion delivery; no polling, local-run mode, invented result reader, scheduler, sole-credit enforcement or READY automation.",
+    "Behavioral tests use a stubbed TermAl CLI and temporary Git repositories under target, and a short usage note names the exact existing MailboxTestRequest fields checked against TermAl's source; no Rust or protocol change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "area-tooling",
+    "greg-directed",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

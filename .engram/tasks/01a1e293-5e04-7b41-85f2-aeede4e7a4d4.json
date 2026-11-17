@@ -1,0 +1,29 @@
+{
+  "id": "01a1e293-5e04-7b41-85f2-aeede4e7a4d4",
+  "external_ref": null,
+  "title": "Exercise Unix cleanup drain and registry-capacity refusal paths",
+  "outcome": "Exercise Unix cleanup drain and registry-capacity refusal paths",
+  "acceptance": [
+    "Isolated behavioral tests cover draining pending and failed cleanup controllers, the CLI failure disposition for unproved cleanup, and refusal when pending controller capacity is exhausted.",
+    "Tests exercise member-enumeration, root-layout/state and cleanup-deadline failures with typed failures and retained ownership, without relying on registry state owned by concurrently running tests."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "process-cleanup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

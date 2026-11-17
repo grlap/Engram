@@ -27,21 +27,5 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": "GREG STOP (via Advisor #1649, 2026-10-17 23:31Z): \"STOP w-499d and every special apply human-resolved planning merge command/slice. Do not code, gate, review, claim, or estimate that mechanism.\" The pilot is ordinary explicit git fetch, a designated Merger agent's guided Git merge, and the existing import. Zero code effects (per 9860 via Advisor #1651): only a claim, a clean detached worktree and a note read; claim and root released and worktree removed without force.",
-  "completion": null,
-  "activity": {
-    "central": {
-      "745d7f5d5d57408ba55d0914b6bfd319": {
-        "activity_id": "745d7f5d5d57408ba55d0914b6bfd319",
-        "task_id": "01a14c33-ec84-7751-be1b-499d25a96bde",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "c7955ca6fc5849be8e7ab6aab53ceb34"
-      }
-    }
-  }
+  "completion": null
 }

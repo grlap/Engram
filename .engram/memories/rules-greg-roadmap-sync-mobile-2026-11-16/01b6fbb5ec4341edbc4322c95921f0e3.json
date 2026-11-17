@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-roadmap-sync-mobile-2026-11-16",
+    "revision_id": "01b6fbb5ec4341edbc4322c95921f0e3",
+    "previous": null,
+    "body_sha256": "0775e85a19a5b381051ea0182bb59620574ee979be5d071da70f7bb55f640a11",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent",
+      "actor_context": "agent=kimi;model=kimi-code/k3.1-pro",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T01:58:01.034959100Z"
+    }
+  },
+  "body": "Greg's product direction via Engram::Asistant mailbox 125b6704 #254, 2026-11-16 (paraphrase, not verbatim): EO and sync remain P0. Sync should be simple in the style of git push/pull. Optimization is continuous, especially context and KV caching; operator view is part of it. Work on other applications already happens, and TermAl currently has the largest real Engram dataset. Detachable federation is the agreed direction. Telegram, including files, serves the mobile need; no separate multi-month mobile frontend is justified. Small UI fixes may proceed in parallel. Do not infer unagreed details/new architecture or new gates. Kimi's revised roadmap explains that optional 'organizational backend' meant a hypothetical shared multi-user server store, not TermAl/relay and not a current plan; local SQLite + sync + federation remain the model."
+}

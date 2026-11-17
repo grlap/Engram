@@ -1,0 +1,28 @@
+{
+  "id": "01a1e0c9-fec1-7742-83af-8508b721b0e4",
+  "external_ref": null,
+  "title": "Let an incremental task-sync import after a complete enrolment keep retained native notes under their own alias",
+  "outcome": "Let an incremental task-sync import after a complete enrolment keep retained native notes under their own alias",
+  "acceptance": [
+    "A host holding retained native notes under its own alias can enrol by completely importing a folder last written by another host, then incrementally import a commit touching a component with such a note, without a shared_identity refusal and without first exporting",
+    "A CLI regression covers enrolment followed by an incremental import on a host with retained native notes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

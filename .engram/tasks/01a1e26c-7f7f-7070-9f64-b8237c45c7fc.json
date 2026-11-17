@@ -1,0 +1,27 @@
+{
+  "id": "01a1e26c-7f7f-7070-9f64-b8237c45c7fc",
+  "external_ref": null,
+  "title": "Withhold a memory key whose retirement target is a held removal absent from the folder, on the holder's export",
+  "outcome": "Withhold a memory key whose retirement target is a held removal absent from the folder, on the holder's export",
+  "acceptance": [
+    "An incremental export from a host that holds another host's removal of task T (T in the folder head's pending set, its file absent from the folder) does not publish a memory key whose revision retires with T, or refuses it by name, so no receiver meets memory_retiring_target_missing while the hold lasts; a behavioural CLI test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

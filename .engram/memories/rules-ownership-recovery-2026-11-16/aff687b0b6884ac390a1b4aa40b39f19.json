@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-ownership-recovery-2026-11-16",
+    "revision_id": "aff687b0b6884ac390a1b4aa40b39f19",
+    "previous": null,
+    "body_sha256": "3948da8cfaf0ba356e11a517385d55a296de11193cf9e52ec955df731e06e2f2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-16T06:39:53.139411700Z"
+    }
+  },
+  "body": "OWNERSHIP RECOVERY (Engram::Fable, 2026-11-16 06:40Z, after Greg via Asistant 43498a6e #1362: „cos nie tak z regulami pracy, w tym sensie, ze zostawiamy tickety bez pracy”; verdict by Kimi::Consultant c15db92c #281). Three rules, no watchers, no new gates:\n1. On an EXISTING coordinator wake, run one bounded check for P0 items with no live claim, or no note in more than 60 min. The 60-minute mark is a prompt to look at the facts and ask the owner, never an automatic reassignment.\n2. A holder waiting on resources keeps ONE durable WAIT line on the item (owner, blocker, release condition). It renews its claim only for actual work or before expiry, not on every mailbox turn.\n3. A standing stand-in for the single slot granter (Opus2): if a due slot request waits more than 10 min without a GO or a hold, the coordinator rechecks the current slots and grants under the same census and cap rules (rules-central-slot, rules-central-slot-2), copying START and END to the granter.\nTrigger case: dd205 on 2026-11-16. Its owner was alive, but its claim lapsed while it waited about 1.5 h for review slots, held up by the no-spawn rule during an already failed FULL and by an 85-minute single granter turn."
+}

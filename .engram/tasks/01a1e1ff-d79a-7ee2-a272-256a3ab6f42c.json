@@ -1,0 +1,30 @@
+{
+  "id": "01a1e1ff-d79a-7ee2-a272-256a3ab6f42c",
+  "external_ref": null,
+  "title": "Key doctor checks for refused remote deliveries by root and record",
+  "outcome": "Doctor and projection repair avoid rescanning all root feed entries for each refused remote verification association.",
+  "acceptance": [
+    "The refused-association root membership check uses a keyed lookup or the integrity pass's existing occurrence map, so unrelated root-feed growth adds no repeated scan per refused record",
+    "Doctor still detects extra run membership, wrong-root membership, and root entries for unknown or foreign destinations; historical project-only refusals retain their forward-only interpretation",
+    "A deterministic query-work or plan regression covers the bounded lookup without wall-clock timing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

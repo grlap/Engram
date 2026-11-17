@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-comovo-engram-data-push-2026-11-17",
+    "revision_id": "089d49966b9e4b7a8169f59d7005987c",
+    "previous": null,
+    "body_sha256": "058313888b4923773e04d46d0f81654d21baea313d820f9e2350b8f641ff9609",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T20:45:20.212183700Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 20:45Z, relayed by Engram::Asistant (mailbox 43498a6e #1490, message f20410c3), answering Fable's question #1489, verbatim: „Tak. \nChciałbym doprecyzować.\nOgólnie wymiana odbywa się przez engram-data branch? Tak?\n\nTak. Push kodu oznacza push danych engrama.”\nQuestion #1489 asked whether agents on Windows and the Mac may commit and push ONLY the engram-data branch of the private aolowko/fit_friends repo, on every Comovo sync exchange: task and memory data only, no code, no force, after a secrets check. Meaning: a standing YES for those engram-data commits and pushes; it grants no other commit or push. Greg's added expectation, per Asistant: a code push should also push the Engram data. Today the data push is a separate manual step. Plan it with the team as part of one-command sync (w-6ea6f92ccffc), with no new gates."
+}

@@ -20,52 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
-  "activity": {
-    "central": {
-      "3018bf81586f49cf9cab5308fb94de37": {
-        "activity_id": "3018bf81586f49cf9cab5308fb94de37",
-        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "3018bf81586f49cf9cab5308fb94de37"
-      },
-      "4a80bce354524b19800faa6c6c577e9a": {
-        "activity_id": "4a80bce354524b19800faa6c6c577e9a",
-        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "9531f80e3a95404ab8e778fe4e33b487"
-      },
-      "9531f80e3a95404ab8e778fe4e33b487": {
-        "activity_id": "9531f80e3a95404ab8e778fe4e33b487",
-        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "greg/codex",
-          "actor_kind": "agent"
-        },
-        "state": "started",
-        "state_revision": 1,
-        "event_id": "9531f80e3a95404ab8e778fe4e33b487"
-      }
+  "completion": {
+    "summary": "Completed and landed task-sync activity and note updates; the post-landing independent acceptance evaluation passed all four criteria on commit 50862fcee346963a14fb27f88549b3b9e74d0477. Installed build fingerprint 6aa0feda2e0f6707803d635d6c61b6421271a129dddf2e54d8df8f3a64bb8239.",
+    "completed_at": "2026-11-15T18:28:47.661894300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
     }
   }
 }

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-comovo-engram-data-push-2026-11-17",
+    "revision_id": "0e24401b9ecf4c478895c09d9ddfbcbe",
+    "previous": "089d49966b9e4b7a8169f59d7005987c",
+    "body_sha256": "79d8f02893e685084e90cc5b62a73b5ebef8c7d3177edf518c74f219f35a92ad",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T20:47:27.856258700Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 20:45Z, relayed by Engram::Asistant (mailbox 43498a6e #1490, message f20410c3), answering Fable's question #1489, verbatim: „Tak. \nChciałbym doprecyzować.\nOgólnie wymiana odbywa się przez engram-data branch? Tak?\n\nTak. Push kodu oznacza push danych engrama.”\nQuestion #1489 asked whether agents on Windows and the Mac may commit and push ONLY the engram-data branch of the private aolowko/fit_friends repo, on every Comovo sync exchange: task and memory data only, no code, no force, after a secrets check. Meaning: a standing YES for those engram-data commits and pushes.\nGREG, about 20:47Z, relayed by Asistant (43498a6e #1494, message a7bd0c46), verbatim: „Zespoły mogą sobie robić engram sync jak uwazaja za stosowne + Kimi. Aby potwierdzic reguły.” Asistant's brief: teams decide on their own when to run routine Engram sync, without asking each time. Kimi and both coordinators confirm one shared rule text and how it is recorded. Data goes through engram-data, separate from code, and a code push also pushes the Engram data. No new gates, no hold on the Comovo sync. This is NOT general permission for any code push.\nToday a code push does not push Engram data: the data push is a separate manual step. Make it one command and tie it to the code push under w-6ea6f92ccffc. The shared rule text was proposed to Kimi and Fable2 on 2026-11-17."
+}

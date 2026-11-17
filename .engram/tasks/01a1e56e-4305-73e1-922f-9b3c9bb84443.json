@@ -1,0 +1,28 @@
+{
+  "id": "01a1e56e-4305-73e1-922f-9b3c9bb84443",
+  "external_ref": null,
+  "title": "Clarify the coder-test-execution skill's closing scope",
+  "outcome": "The skill's closing sentence accurately describes its project-independent workflow without contradicting the explicit repository-containment procedure.",
+  "acceptance": [
+    "The closing sentence in .agents/skills/coder-test-execution/SKILL.md is consistent with the concrete locations and host API named by its repository-containment section, while preserving the in-repository path guidance and existing authority boundaries"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

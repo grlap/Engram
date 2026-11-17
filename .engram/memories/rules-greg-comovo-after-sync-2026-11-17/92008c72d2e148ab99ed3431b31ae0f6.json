@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-comovo-after-sync-2026-11-17",
+    "revision_id": "92008c72d2e148ab99ed3431b31ae0f6",
+    "previous": "9cb6a862eeb047a4a37a65e849759f8a",
+    "body_sha256": "cc5af7899e3eee891e5b06ef4a2de46f51b64267f9b82871cb3f54be4db00596",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T01:40:24.035679800Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 01:28-01:36Z, relayed by Engram::Asistant (mailbox 43498a6e #1408, #1410 and #1414), verbatim: „Czekamy na sync. Mogę przenieść development na macos. Chodzi mi głównio o Comovo.” then „Skończmy sync. Jak zadziała to zaczniemy testy na comovo. To nie zmienia planów.” then „Parę dni to za dużo. + Kimi. Co realnie brakuje. Różnicę ogarnę w Comovo. Aby pracować muszę mieć jakoś zaimplementovaný sync.” Meaning: find the SHORTEST path to usable Windows<->Mac task and memory sync for Comovo (repo aolowko/fit_friends, Flutter, 234 tasks in the Central Engram store, sync off). Greg resolves Comovo-side differences himself; no extra requirements; don't delay other P0s.\nSHORTEST PATH (Engram::Fable, independently confirmed by Kimi c15db92c #300):\n- master's `task-sync data-init`, `export --include-memories` and `import --include-memories --empty-basis` work on any platform (src/bin_support/task_sync.rs:776-817; tests/task_sync_cli/memories.rs:104-145). Only Engram's BUILT-IN Git fetch/push is Windows-only (src/task_sync/exchange/mod.rs:34-49, UnsupportedPlatform), and that's w-6bba, NOT required. The manual route is plain git fetch, merge --ff-only and push of the engram-data branch (docs/skills/engram-use/SKILL.md).\n- Caveat: w-443806ecaf50 (w-4438), where a repeat export with memories refuses once the data branch holds memories and tasks changed, is fixed inside dd205. So bootstrap works on master; repeatable exchange with memories needs the dd205 restart set landed.\n- Plan: the restart set (dd205 R18u + ea4a + 606e) lands; Greg's restart; the Mac installs that master (the Mac has build 8bbf9d60 / rev 0bd70a30 and no store); `engram init` on the Mac; Comovo on Central: task-sync enable, data-init --branch engram-data, export --include-memories, commit, push; the Mac: data-init, fetch, import --include-memories --empty-basis.\n- Greg's yes is requested at 43498a6e #1415 for (a) the Mac install and store, and (b) pushing engram-data to the private fit_friends.\nMac facts (01:33Z): checkout /Users/greg/GitHub/Personal/fit_friends, main at b39c0e11 (rincon-common submodule at a different revision, \"+\"). Flutter 3.47.2, Dart 3.13.2, Xcode 27.1, CocoaPods 1.17.0, Java 23, Android SDK present (ANDROID_HOME unset). C6A9's real two-host proof is Windows<->DL560, not yet Windows<->Mac."
+}

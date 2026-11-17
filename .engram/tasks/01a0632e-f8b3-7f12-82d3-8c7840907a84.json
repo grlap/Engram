@@ -27,57 +27,5 @@
       "actor_id": "fable",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "4bacdcc08c85e7718b724fef7445e3a6cc9307c7f51d40207b9f11bfbbb55360": {
-        "activity_id": "4bacdcc08c85e7718b724fef7445e3a6cc9307c7f51d40207b9f11bfbbb55360",
-        "task_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "ace945cf5932033261abc13149b947d0b2aa3f4b1e1e3a044a1237d6c9e5f1ab"
-      },
-      "5ef28ccf60624826ecd404dbb570c3f791977ce2072efacfeb8d221f44c445c7": {
-        "activity_id": "5ef28ccf60624826ecd404dbb570c3f791977ce2072efacfeb8d221f44c445c7",
-        "task_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "73de728640a7b9f1996010ae49042f3834ff89baaa6e78f8aaeed8fd4fddb62b"
-      },
-      "74f61d4fed6f391b69d6b626bc5ea1525d97dfdf3fbf2d603b49e27a0c7008d1": {
-        "activity_id": "74f61d4fed6f391b69d6b626bc5ea1525d97dfdf3fbf2d603b49e27a0c7008d1",
-        "task_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "36bb6642b5c4560ac07dedfefe2cce360cdd7974d00d2b3ecd37c0bb72b07a64"
-      },
-      "ef33e52147ca580c7ce856579b2117c60bd55ae908e29254304e6aa92e5db08f": {
-        "activity_id": "ef33e52147ca580c7ce856579b2117c60bd55ae908e29254304e6aa92e5db08f",
-        "task_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "codex",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "6f799e12023bf9101cfa2d0c36f311af5782ce57ca6fa690b5249ba1878cdaf5"
-      }
-    }
   }
 }

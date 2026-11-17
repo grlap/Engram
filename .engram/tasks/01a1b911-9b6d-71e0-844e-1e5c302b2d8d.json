@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Closed the already-landed data-branch grant preparation from exact recorded wording, coordinator concurrence, Greg's contextual quoted word and prelanding audit. Fresh independent Claude18410 evaluation b40b64dd5dac43098aaa7fa100e216d4 at cut62/r1 passed2/2 with stale=null, complete original2568B and whole native verdict read. Primary6696f3be +context6620bacd +full attributed source transcripts29221ad2/517cc53b preserve sources, chronology and limitations; prior1ce49371 needs_human remains history, not erased. Evaluator judged #1240 with Phoenix referent and #1241 form-only correction sufficient; it did not directly read foreign originals or preceding Asistant question verbatim. No new instruction/source/test/build/push/install action and no new authority grant by this closure. Existing22bfe632 text remains unchanged through examined05dad master. END/releasedslot reported; remove now-unused closure-only worktree after safety/retention checks.",
+    "completed_at": "2026-11-16T04:04:58.590056900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

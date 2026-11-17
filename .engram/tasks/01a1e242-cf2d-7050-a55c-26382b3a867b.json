@@ -1,0 +1,30 @@
+{
+  "id": "01a1e242-cf2d-7050-a55c-26382b3a867b",
+  "external_ref": null,
+  "title": "Avoid Git repository setup for launcher parser and transport fixtures",
+  "outcome": "The 24 identified parser, timing and registration/wait cases use existing guarded scratch ownership while retaining every transcript, subprocess, timeout and assertion; genuinely source-sensitive cases keep real repositories.",
+  "acceptance": [
+    "The 24 identified non-Git launcher fixture cases use guarded scratch directories and preserve every existing assertion, transcript, real subprocess, timeout and filesystem case check; source, lifecycle, drift, linked-worktree and stop/recovery integration still use real repositories",
+    "Original launcher output records before-and-after Node total/pass/skip/todo counts on comparable exact declared inputs, with no lost test or relaxed assertion, and records measured stage durations without claiming the parent's final Windows FULL target"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-testing",
+    "greg-directed",
+    "ready-to-land",
+    "test-speed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a19999-11d5-7ab1-977b-ea9882b948c8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

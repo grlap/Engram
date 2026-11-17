@@ -1,0 +1,29 @@
+{
+  "id": "01a1ead8-95a5-7251-90e8-f4b31d0dfde6",
+  "external_ref": null,
+  "title": "Drop the folder-exchange test fixture's TempHome after its two hosts, so Windows can delete the temp directory",
+  "outcome": "Drop the folder-exchange test fixture's TempHome after its two hosts, so Windows can delete the temp directory",
+  "acceptance": [
+    "The task_sync_folder_counts and task_sync_folder_recovery tests pass on Windows with no 'Engram test fixture cleanup FAILED ... (os error 32)' line and no 'Temp fixture leak' in the run's final temp audit",
+    "The test fixture releases every store and file handle its hosts hold before it removes its temporary home, on every platform"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "test-fixture",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

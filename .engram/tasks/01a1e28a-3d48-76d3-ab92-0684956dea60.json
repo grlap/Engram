@@ -1,0 +1,28 @@
+{
+  "id": "01a1e28a-3d48-76d3-ab92-0684956dea60",
+  "external_ref": null,
+  "title": "Keep signed-candidate metadata diagnostics independent of Git display settings",
+  "outcome": "The remote test adapter reads true candidate tree/parent metadata without signature-display text and explains unsupported or malformed object identities separately from parent-count refusals.",
+  "acceptance": [
+    "With log.showSignature enabled, a valid signed single-parent candidate is parsed without a false parent-count refusal; malformed or unsupported tree/commit identity gets a reason naming that check, before publication."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "area-tooling",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

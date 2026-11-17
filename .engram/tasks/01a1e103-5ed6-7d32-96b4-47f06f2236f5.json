@@ -1,0 +1,29 @@
+{
+  "id": "01a1e103-5ed6-7d32-96b4-47f06f2236f5",
+  "external_ref": null,
+  "title": "task_sync_destination_occupied names the occupied candidate, the basis and the supported refresh steps",
+  "outcome": "task_sync_destination_occupied names the occupied candidate, the basis and the supported refresh steps",
+  "acceptance": [
+    "When export refuses because .engram already holds a different candidate, the refusal names the committed data HEAD, whether the occupied folder equals that commit's export, the observed export_basis, and the supported remedy (save the basis from the committed project.json, git rm the folder, re-export with the same selection, restore non-planning entries), or the one-command sync once it ships",
+    "A refusal test asserts those values and the remedy are present; no new refusal code or wire field is needed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "refusal-explains",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

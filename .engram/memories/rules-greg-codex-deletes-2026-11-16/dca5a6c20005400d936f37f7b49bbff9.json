@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-codex-deletes-2026-11-16",
+    "revision_id": "dca5a6c20005400d936f37f7b49bbff9",
+    "previous": null,
+    "body_sha256": "5731b8dd1b1a0f489c42f5f6ca423d4428dd8ba437a1b70dd0dd2458acd0b231",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T18:23:21.391417300Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 17:05Z, relayed by Engram::Asistant (mailbox 43498a6e #1385, message 55970ff1), verbatim: „Niech codex usuwa katologi. (Opus nie)”.\nAsistant's scope at the time, for the delegation-worktree cleanup: only a Codex session removes directories, never Opus. Before removal, verify each absolute path lies in the named folder, and confirm no active work or process. Preserve unique commits, uncommitted and untracked files, and needed results. Use the supported route (git worktree remove for worktrees); no global prune and no --force on unverified work. Leave and report anything that can't be fully preserved. Report what was removed, the space recovered, and what remains.\nApplied since as a standing rule in both projects. Recorded originally as w-efc9bb5bd5f7 note 5a78379d. Greg asked on 2026-11-17 (Asistant #1469) for ONE shared cleanup rule for Engram and TermAl; Kimi is drafting it, with TermAl w-e2a5 and Engram w-bb60c6606217 as inputs."
+}

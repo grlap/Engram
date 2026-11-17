@@ -29,33 +29,5 @@
       "actor_id": "termal",
       "actor_kind": "agent"
     }
-  },
-  "activity": {
-    "central": {
-      "95453d58b0df0be22baea1c8cc09f823f201d9914455654f411ace4f22a4e257": {
-        "activity_id": "95453d58b0df0be22baea1c8cc09f823f201d9914455654f411ace4f22a4e257",
-        "task_id": "01a0632e-fbc4-7170-a8b6-22e5cbfffff0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "fable",
-          "actor_kind": "agent"
-        },
-        "state": "released",
-        "state_revision": 2,
-        "event_id": "58f25ad155f7930136de1fbedaa249fcaa1948fedb275869c093560a86c3097d"
-      },
-      "fe561597f349b8da1ce3b263a9c9a1218e6af734a8ccd58d12b398b499c42ac9": {
-        "activity_id": "fe561597f349b8da1ce3b263a9c9a1218e6af734a8ccd58d12b398b499c42ac9",
-        "task_id": "01a0632e-fbc4-7170-a8b6-22e5cbfffff0",
-        "origin_machine": "central",
-        "actor": {
-          "actor_id": "termal",
-          "actor_kind": "agent"
-        },
-        "state": "finished",
-        "state_revision": 2,
-        "event_id": "b4d60e4bc7060a796852705e5cb371d299f227c4b3346e1227b3d1768a9048d9"
-      }
-    }
   }
 }

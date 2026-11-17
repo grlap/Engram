@@ -1,0 +1,27 @@
+{
+  "id": "01a1eae6-e51f-73e0-aa9a-79525f220105",
+  "external_ref": null,
+  "title": "Align Engram's run guidance with TermAl's credit contract: detached focused runs earn no verification credit",
+  "outcome": "Align Engram's run guidance with TermAl's credit contract: detached focused runs earn no verification credit",
+  "acceptance": [
+    "The engram-repo skill and the review-changes command no longer steer agents to a detached focused launcher run where TermAl's documented contract credits only a foreground --input commit run, and they state which route earns verification credit and which is evidence only"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "execution-observability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

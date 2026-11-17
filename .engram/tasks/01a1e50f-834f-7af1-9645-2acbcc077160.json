@@ -1,0 +1,30 @@
+{
+  "id": "01a1e50f-834f-7af1-9645-2acbcc077160",
+  "external_ref": null,
+  "title": "Keep work core JSON refusals clean when slow warnings are requested",
+  "outcome": "Implicit JSON output from work core remains a single JSON document even when --warn-slow is supplied without --json.",
+  "acceptance": [
+    "The parsed CLI warning policy suppresses slow-operation warning text for work core operations, whose success and refusal output is always JSON, even with --warn-slow and no --json flag.",
+    "A regression covers work core implicit JSON selection while preserving explicit --json suppression, human-facing warning opt-in, and the unchanged MCP/control policy.",
+    "The correction changes no operation deadline, refusal code, source-observation predicate, or work authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "area-cli",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

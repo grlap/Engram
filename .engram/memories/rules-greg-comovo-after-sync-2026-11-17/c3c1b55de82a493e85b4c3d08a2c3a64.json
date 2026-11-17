@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-comovo-after-sync-2026-11-17",
+    "revision_id": "c3c1b55de82a493e85b4c3d08a2c3a64",
+    "previous": null,
+    "body_sha256": "48333407fc186fbd3f21f7231d34a44ce0e7279123cf703fd849adb9ef920b10",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T01:30:35.502891500Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 01:28-01:30Z, relayed by Engram::Asistant (mailbox 43498a6e #1408 and #1410), verbatim: „Czekamy na sync. Mogę przenieść development na macos. Chodzi mi głównio o Comovo.” then „Skończmy sync. Jak zadziała to zaczniemy testy na comovo. To nie zmienia planów.” Meaning per Asistant: priorities and plans stay unchanged. First deliver a working, verified sync; Comovo (repo aolowko/fit_friends, Flutter) then becomes its first real use and test, possibly with development on the Mac. Add no extra conditions or procedures and ask Greg for no decisions now; don't pause the current P0s. Protecting existing uncommitted work, such as the 56 lines in the Central checkout, stays obvious. A preliminary plan was sent to Greg at 43498a6e #1409. A read-only Mac fact check (repo, Flutter/Xcode/CocoaPods, Engram) went through Opus2 #1036."
+}

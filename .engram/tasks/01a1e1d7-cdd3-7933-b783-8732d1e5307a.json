@@ -1,0 +1,30 @@
+{
+  "id": "01a1e1d7-cdd3-7933-b783-8732d1e5307a",
+  "external_ref": null,
+  "title": "Record per-test gate durations and run independent test cases concurrently",
+  "outcome": "The full gate records per-test durations and its slowest tests, combines the existing scale selections, and runs independent notes, operation-matrix and diagnostics cases concurrently without losing coverage.",
+  "acceptance": [
+    "The full gate records per-test durations and lists the slowest tests; unsupported timing is reported visibly without rerunning tests or changing their verdicts",
+    "Every existing gate check, test assertion and scale budget is retained when the scale phases are combined and independent test cases are split"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "ready-to-land",
+    "test-speed",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a19999-11d5-7ab1-977b-ea9882b948c8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

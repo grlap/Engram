@@ -1,0 +1,28 @@
+{
+  "id": "01a1eb60-e933-7781-a343-13ca3af04026",
+  "external_ref": null,
+  "title": "Sync check: dependent of the DL560 close",
+  "outcome": "Sync check: dependent of the DL560 close",
+  "acceptance": [
+    "Becomes ready on Central once the DL560 completion of its prerequisite is imported, without a new evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "sync-check"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1eb60-de2a-7fe0-8732-659dd4cb7537"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
