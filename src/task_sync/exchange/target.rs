@@ -303,12 +303,33 @@ fn helper_names(bytes: &[u8]) -> Result<Vec<String>, RunError> {
             continue;
         }
         let helper = std::str::from_utf8(value).map_err(|_| RunError::UnsupportedHelper)?;
-        if !matches!(helper, "manager" | "manager-core" | "wincred") || result.len() >= 8 {
+        if !admitted_helper(helper) || result.len() >= 8 {
             return Err(RunError::UnsupportedHelper);
         }
         result.push(helper.to_owned());
     }
     Ok(result)
+}
+
+/// The platform's own keychain helper, beside Git Credential Manager.
+pub(super) const NATIVE_HELPER: Option<&str> = if cfg!(windows) {
+    Some("wincred")
+} else if cfg!(target_os = "macos") {
+    Some("osxkeychain")
+} else if cfg!(target_os = "linux") {
+    Some("libsecret")
+} else {
+    None
+};
+
+/// Only non-interactive credential facilities, by exact name. The `cache`
+/// helper starts a daemon in its own session, outside the runner's ownership,
+/// and `store` keeps plaintext secrets; neither is admitted on any platform.
+/// Git Credential Manager's own store setting is not inspected: a manager set
+/// to a cache or plaintext store, or a keychain that raises a graphical unlock
+/// prompt, is bounded only by the request deadline.
+fn admitted_helper(helper: &str) -> bool {
+    matches!(helper, "manager" | "manager-core") || Some(helper) == NATIVE_HELPER
 }
 
 #[cfg(test)]
@@ -357,17 +378,36 @@ mod tests {
             b"custom\0",
             b"manager\n",
             b"manager\0!script\0",
+            b"cache\0",
+            b"store\0",
+            b"cache --timeout=1\0",
         ] {
             assert_eq!(helper_names(helper), Err(RunError::UnsupportedHelper));
         }
+        // Another platform's keychain helper is not admitted here.
+        for foreign in ["wincred", "osxkeychain", "libsecret"]
+            .into_iter()
+            .filter(|helper| Some(*helper) != NATIVE_HELPER)
+        {
+            assert_eq!(
+                helper_names(format!("{foreign}\0").as_bytes()),
+                Err(RunError::UnsupportedHelper),
+                "{foreign}"
+            );
+        }
         assert_eq!(helper_names(b"manager\0\0").unwrap(), Vec::<String>::new());
-        assert_eq!(helper_names(b"manager\0\0wincred\0").unwrap(), ["wincred"]);
-        assert_eq!(
-            helper_names(b"manager\0manager-core\0wincred\0")
-                .unwrap()
-                .len(),
-            3
-        );
+        if let Some(native) = NATIVE_HELPER {
+            assert_eq!(
+                helper_names(format!("manager\0\0{native}\0").as_bytes()).unwrap(),
+                [native]
+            );
+            assert_eq!(
+                helper_names(format!("manager\0manager-core\0{native}\0").as_bytes())
+                    .unwrap()
+                    .len(),
+                3
+            );
+        }
     }
 
     #[test]

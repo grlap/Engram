@@ -1,26 +1,38 @@
-//! A job owns descendants even when Git exits before its credential helper.
+//! One launch owns its process tree and bounds its output. Cleanup is requested
+//! on every exit path of the launch: root exit,
+//! cancellation, deadline, output or pipe failure, and a dropped future.
+//!
+//! Windows places Git in a kill-on-close job. Unix starts Git as the leader of
+//! a new session and verifies cleanup of that group, returning a typed failure
+//! when termination cannot be proved. A descendant that
+//! leaves the group, by starting a session of its own or moving to another
+//! group, leaves that ownership; Engram's result is still bounded by the
+//! deadline, but such a process is not ended. Unlike a job, the group is not
+//! ended if Engram's own process dies abruptly.
 
 use super::{Cancellation, RunError, RunLimits, RunOutput};
-use process_wrap::tokio::{CommandWrap, CreationFlags, JobObject, KillOnDrop};
 use std::{
-    process::{Command, Stdio},
+    process::Command,
     time::{Duration, Instant},
 };
 use tokio::io::{AsyncRead, AsyncReadExt};
-use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
-pub(super) fn confined_command(mut command: Command) -> CommandWrap {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let native = tokio::process::Command::from(command);
-    let mut wrapped = CommandWrap::from(native);
-    wrapped
-        .wrap(CreationFlags(CREATE_NO_WINDOW))
-        .wrap(KillOnDrop)
-        .wrap(JobObject);
-    wrapped
+#[cfg(windows)]
+mod job;
+#[cfg(windows)]
+use job as platform;
+#[cfg(all(test, windows))]
+pub(super) use job::confined_command;
+#[cfg(unix)]
+mod session;
+#[cfg(unix)]
+use session as platform;
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+pub(super) use session::{fail_for, no_live_members};
+
+#[cfg(unix)]
+pub(super) fn drain() -> Result<(), RunError> {
+    session::drain()
 }
 
 pub(super) async fn execute(
@@ -142,36 +154,38 @@ async fn execute_into(
     #[cfg(test)] deadline_hook: DeadlineHook<'_>,
 ) -> Result<(), RunError> {
     let started = Instant::now();
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     let mut stage_trace = super::tests::windows::readiness::Trace::for_command(&command);
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     let label = super::fixture_diagnostics::label(&command);
     #[cfg(test)]
     let subcommand = git_subcommand(&command);
-    let mut wrapped = confined_command(command);
     // Native spawn itself is synchronous. Check the same deadline immediately
     // after it returns; no native-kernel preemption is claimed.
     #[cfg(test)]
     super::test_support::LAUNCHES.with(|count| count.set(count.get() + 1));
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     let trace = super::fixture_diagnostics::product(label);
+    #[cfg(all(test, windows))]
+    if let Some(trace) = &mut stage_trace {
+        trace.stage("before-native-spawn");
+    }
+    #[cfg(unix)]
+    let spawned = platform::Tree::spawn(command, started, limits.deadline);
+    #[cfg(windows)]
+    let spawned = platform::Tree::spawn(command).map_err(|_| RunError::Spawn);
+    #[cfg(all(test, windows))]
+    if let Some(trace) = &mut stage_trace {
+        trace.stage(if spawned.is_ok() {
+            "after-native-spawn"
+        } else {
+            "native-spawn-failed"
+        });
+    }
+    let mut tree = spawned?;
     let result = async {
-        #[cfg(test)]
-        if let Some(trace) = &mut stage_trace {
-            trace.stage("before-native-spawn");
-        }
-        let spawned = wrapped.spawn();
-        #[cfg(test)]
-        if let Some(trace) = &mut stage_trace {
-            trace.stage(if spawned.is_ok() {
-                "after-native-spawn"
-            } else {
-                "native-spawn-failed"
-            });
-        }
-        let mut child = spawned.map_err(|_| RunError::Spawn)?;
-        let stdout = child.stdout().take().ok_or(RunError::Process)?;
-        let stderr = child.stderr().take().ok_or(RunError::Process)?;
+        let stdout = tree.stdout().ok_or(RunError::Process)?;
+        let stderr = tree.stderr().ok_or(RunError::Process)?;
         #[cfg(test)]
         let observed_out = std::sync::Mutex::new(Vec::new());
         #[cfg(test)]
@@ -208,12 +222,15 @@ async fn execute_into(
                 return Err(RunError::Deadline);
             }
             if status.is_none() {
-                status = child.try_wait().map_err(|_| RunError::Process)?;
-                if status.is_some() {
-                    // Do not await the wrapper's potentially blocking completion-
-                    // port wait. Terminate the job, keep it owned while draining,
-                    // and close it on every return/drop (including cancellation).
-                    child.start_kill().map_err(|_| RunError::Process)?;
+                // Once the root exits, the rest of its tree is ended before the
+                // drain, so no helper can hold a pipe open past it.
+                #[cfg(unix)]
+                {
+                    status = tree.root_exited()?;
+                }
+                #[cfg(windows)]
+                {
+                    status = tree.root_exited().map_err(|_| RunError::Process)?;
                 }
             }
             if let Some(status) = status.as_ref().filter(|_| out_done && err_done) {
@@ -231,12 +248,14 @@ async fn execute_into(
         }
     }
     .await;
+    #[cfg(unix)]
+    let result = tree.finish(result).await;
     // The readers borrowed the captured output until the block above ended.
     #[cfg(test)]
     if let (Err(RunError::Git), Some(subcommand)) = (&result, &subcommand) {
         report_git_failure(subcommand, capture.exit_code, &capture.stderr);
     }
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     trace.finish(result.as_ref().err());
     result
 }

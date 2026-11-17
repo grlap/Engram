@@ -7,6 +7,11 @@ license = "Apache-2.0"
 publish = false
 repository = "https://github.com/grlap/Engram"
 
+[workspace]
+members = ["crates/macos-process-snapshot"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
 anyhow = "1.0"
 cap-std = "4.0"
@@ -53,11 +58,22 @@ rusqlite = { version = "0.40", default-features = false, features = ["cache", "t
 junction = "2.1"
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", default-features = false, features = ["fs"] }
+# Lock-based liveness probes and a fixture that leaves its session.
+nix = { version = "0.31", default-features = false, features = ["fs", "process"] }
 
 [target.'cfg(unix)'.dependencies]
-# Directory publication must not fall back to hard links when NOREPLACE is absent.
-rustix = { version = "1.1", features = ["fs"] }
+# Git leads a new session: setsid and an unblocked signal mask in the forked
+# child. Engram signals Git's process group and observes the root's exit through
+# rustix without reaping it; Tokio reaps the root.
+process-wrap = { version = "=10.0.0", default-features = false, features = ["tokio1", "process-session", "reset-sigmask"] }
+# Directory publication must not fall back to hard links when NOREPLACE is
+# absent; waitid without reaping and process-group signals own Git's group.
+rustix = { version = "1.1", features = ["fs", "process"] }
+tokio = { version = "1.47", features = ["process", "io-util", "time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Read exact sysctl bytes, then inspect scalar fields without pointer casts.
+macos-process-snapshot = { path = "crates/macos-process-snapshot" }
 
 [profile.release]
 lto = "thin"

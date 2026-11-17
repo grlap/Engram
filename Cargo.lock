@@ -332,6 +332,7 @@ dependencies = [
  "flate2",
  "fs4",
  "junction",
+ "macos-process-snapshot",
  "nix",
  "process-wrap",
  "rmcp",
@@ -697,6 +698,13 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "macos-process-snapshot"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "maybe-owned"

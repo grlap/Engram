@@ -228,8 +228,11 @@ metadata or publication success is invented by the adapter. The original
 request and each publication witness
 remain retained. This is an explicit library/service path for complete retained
 candidates; managed proportional publication and the ordinary CLI
-exchange workflow remain separate implementation work. The transport still has
-the existing Windows-only process-confinement boundary.
+exchange workflow remain separate implementation work. The transport runs Git
+under Engram's process confinement: a kill-on-close job on Windows and an owned
+session process group on macOS and Linux, each with the boundaries the
+[HTTPS process runner](task-planning-text.md#explicit-https-process-runner)
+section discloses.
 
 `SqliteStore::completed_task_sync_exchange` is a read-only library seam taking
 `CompletedExchangeRequest { binding, intent }`. It compares the complete original
@@ -531,8 +534,10 @@ or completed non-fast-forward refusal returns the explicit agent reconciliation
 step. This entry does not admit a resolved delta retry. The service applies the
 same early opt-in, writer and attribution checks, and invocation grants no Git
 authority. The explicit command steps record agent-resolved retry decisions;
-they do not expose this automated publication driver. Linux/macOS automated transport remains refused by the existing
-transport implementation; scripted decision tests do not prove platform support.
+they do not expose this automated publication driver. The confined transport
+supports Windows, macOS and Linux with the process-ownership limits described
+in the [HTTPS runner](task-planning-text.md#explicit-https-process-runner).
+Scripted decision tests alone do not prove real-network exchange.
 
 The additive `DeltaResolved` ledger recipe and common reducer retain the
 original native preparation and cut, alongside the agent's separately selected

@@ -118,25 +118,7 @@ impl Fixture {
         command
     }
     fn snapshot(&self) -> Vec<(PathBuf, Vec<u8>)> {
-        fn visit(root: &Path, path: &Path, entries: &mut Vec<(PathBuf, Vec<u8>)>) {
-            for entry in fs::read_dir(path).unwrap() {
-                let path = entry.unwrap().path();
-                let metadata = fs::symlink_metadata(&path).unwrap();
-                assert!(!metadata.file_type().is_symlink());
-                if metadata.is_dir() {
-                    visit(root, &path, entries);
-                } else {
-                    entries.push((
-                        path.strip_prefix(root).unwrap().to_path_buf(),
-                        fs::read(path).unwrap(),
-                    ));
-                }
-            }
-        }
-        let mut entries = Vec::new();
-        visit(&self.0, &self.0, &mut entries);
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        entries
+        super::policy_cases::snapshot(&self.0)
     }
 }
 
@@ -273,48 +255,4 @@ async fn task_exchange_windows_cancelled_or_invalid_requests_create_no_process()
 #[tokio::test]
 async fn task_exchange_windows_config_capture_and_drift_never_run_unsupported_helpers() {
     configuration::run_groups().await;
-}
-
-#[tokio::test]
-async fn task_exchange_service_refuses_read_only_and_opt_out_before_any_git_process() {
-    let fixture = Fixture::new();
-    let database = fixture.0.join("not-created/db.sqlite");
-    let project = crate::ProjectId("exchange/service".into());
-    let service = || {
-        crate::LocalWorkService::new(
-            database.clone(),
-            project.clone(),
-            "fixture".into(),
-            crate::SessionId("fixture".into()),
-            None,
-        )
-    };
-    let selection = TargetSelection {
-        repository: fixture.0.join("missing-repository"),
-        remote: "origin".into(),
-        reference: "refs/heads/main".into(),
-    };
-    let cancel = Cancellation::default();
-    let error = service()
-        .into_read_only()
-        .run_task_sync_exchange(
-            &selection,
-            &ExchangeOperation::Observe,
-            RunLimits::default(),
-            &cancel,
-        )
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("read-only"));
-    let error = service()
-        .run_task_sync_exchange(
-            &selection,
-            &ExchangeOperation::Observe,
-            RunLimits::default(),
-            &cancel,
-        )
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("not enabled"));
-    assert!(!fixture.0.join("not-created").exists());
 }
