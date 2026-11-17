@@ -10,6 +10,12 @@ use std::{
 
 const MAX_BYTES: u64 = 1024 * 1024;
 
+/// The output limit of a listing that names folder paths: two records for
+/// each of the 100,000 tasks a folder may hold, such as a diff's old and new
+/// side or a status that lists a deleted file beside an untracked one, of at
+/// most 512 bytes each, plus 1 MiB for everything else.
+pub(crate) const MAX_LISTING_BYTES: u64 = 2 * 100_000 * 512 + 1024 * 1024;
+
 #[cfg(all(test, windows))]
 pub(crate) mod test_clock;
 
@@ -92,6 +98,29 @@ pub(crate) fn run_observed(
     )
 }
 
+/// A path listing whose output grows with the number of paths it names, such
+/// as a commit diff, under the caller's output limit instead of the general
+/// one; every other bound and the hardened environment are the same.
+pub(crate) fn run_listing_observed(
+    root: &Path,
+    args: &[&str],
+    bound: Duration,
+    output_limit: u64,
+) -> Result<Vec<u8>> {
+    let mut command = super::command(root, args);
+    command.env_remove("GIT_ATTR_SOURCE");
+    command.env("GIT_LITERAL_PATHSPECS", "1");
+    run_command_bounded(
+        command,
+        args[0],
+        false,
+        None,
+        bound,
+        StderrPolicy::ErrorOnly,
+        output_limit,
+    )
+}
+
 /// Run an already isolated local query with the same output and time bounds.
 /// The caller owns its Git configuration and fixed argument vector.
 pub(crate) fn run_command(
@@ -135,6 +164,26 @@ pub(super) fn evidence_blob_observed(
         bound,
         StderrPolicy::RequireEmpty,
         u64::try_from(limit)?,
+    )
+}
+
+/// Many blobs through one `cat-file --batch` process under one deadline: one
+/// object id per input line, each answered by its header, bytes and newline.
+pub(super) fn batch_blobs_observed(
+    root: &Path,
+    input: &[u8],
+    bound: Duration,
+    output_limit: u64,
+) -> Result<Vec<u8>> {
+    let command = super::command(root, &["cat-file", "--batch"]);
+    run_command_bounded(
+        command,
+        "cat-file",
+        false,
+        Some(input),
+        bound,
+        StderrPolicy::ErrorOnly,
+        output_limit,
     )
 }
 

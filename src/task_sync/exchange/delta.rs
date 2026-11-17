@@ -78,10 +78,105 @@ impl InspectedDelta {
     }
 }
 
+/// Prove the selected Git commit holds exactly the prepared delta's output.
+///
+/// After a confirmed publication, the commit is read as a diff from that
+/// publication's snapshot, whose root was verified when it was confirmed:
+/// it must descend from it, its changed paths must turn the confirmed root
+/// into the declared output root, and every prepared document must equal its
+/// blob. Before any publication is confirmed there is no verified Git
+/// snapshot to diff from, so that first bootstrap reads the whole commit.
+fn verify_outgoing_commit(
+    binding: &Binding,
+    intent: &DeltaIntent,
+    payload: &DeltaCandidatePayload,
+    commit: &str,
+    limits: RunLimits,
+    started: Instant,
+) -> Result<()> {
+    let DeltaBasis::Outgoing {
+        confirmed_before, ..
+    } = &intent.basis
+    else {
+        anyhow::bail!("delta outgoing basis is missing");
+    };
+    let Some(confirmed) = confirmed_before else {
+        let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
+            &binding.repository.main_checkout,
+            &binding.project,
+            commit,
+            remaining(limits, started)?.deadline,
+        )?;
+        let root = snapshot.tree.tasks.iter().try_fold(
+            crate::task_sync::inventory::InventoryRoot::ZERO,
+            crate::task_sync::inventory::InventoryRoot::including,
+        )?;
+        let documents = snapshot
+            .tree
+            .tasks
+            .iter()
+            .map(|task| (task.id, task))
+            .collect::<BTreeMap<_, _>>();
+        ensure!(
+            root == payload.output.inventory_root
+                && snapshot.envelope.profile == payload.output.profile
+                && payload
+                    .documents
+                    .iter()
+                    .all(|(id, expected)| documents.get(id).copied() == expected.as_ref()),
+            "selected Git snapshot differs from the prepared delta membership"
+        );
+        return Ok(());
+    };
+    let delta = crate::task_sync::git::read_verified_task_delta(
+        &binding.repository.main_checkout,
+        &binding.project,
+        &confirmed.snapshot.commit.oid,
+        confirmed.snapshot.membership.inventory_root,
+        commit,
+        remaining(limits, started)?.deadline,
+    )?;
+    delta.require_root(payload.output.inventory_root)?;
+    ensure!(
+        delta.incoming.profile == payload.output.profile,
+        "selected Git commit profile differs from the prepared delta output"
+    );
+    // A prepared document the diff does not name is unchanged since the
+    // confirmed snapshot, so its value there is the one to compare.
+    let unchanged = payload
+        .documents
+        .keys()
+        .copied()
+        .filter(|id| !delta.changed.contains_key(id))
+        .collect::<Vec<_>>();
+    let at_confirmed = crate::task_sync::git::read_tasks_at(
+        &binding.repository.main_checkout,
+        &binding.project,
+        &confirmed.snapshot.commit.oid,
+        unchanged,
+        remaining(limits, started)?.deadline,
+    )?;
+    for (id, expected) in &payload.documents {
+        let actual = match delta.changed.get(id) {
+            Some(changed) => changed.after.as_ref(),
+            None => at_confirmed.get(id).and_then(Option::as_ref),
+        };
+        ensure!(
+            actual == expected.as_ref(),
+            crate::task_sync::TaskSyncRefusal::InventoryRootMismatch.invalid(format!(
+                "selected Git commit document {} differs from the prepared delta",
+                id.0
+            ))
+        );
+    }
+    Ok(())
+}
+
 /// Bind an already retained, data-only Git commit to its exact outgoing delta.
-/// This explicit inspection reads the complete selected snapshot; it is not
-/// the ordinary proportional publication path. It creates no commit, changes
-/// no branch and contacts no remote. Repeating it preserves the original event.
+/// After a confirmed publication the commit is read as a verified diff from
+/// that publication; only the first, before any confirmation, reads the whole
+/// snapshot. It creates no commit, changes no branch and contacts no remote.
+/// Repeating it preserves the original event.
 ///
 /// # Errors
 /// Refuses missing preparation, changed retained bytes or pins, a foreign data
@@ -130,31 +225,14 @@ pub(crate) async fn record_delta_export_commit_remaining(
     observe_git_selection(binding, selected, limits, started, cancel).await?;
     let payload = retention::delta::read_candidate(binding_id, binding, intent)?
         .context("retained outgoing delta candidate is missing")?;
-    let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
-        &binding.repository.main_checkout,
-        &binding.project,
+    verify_outgoing_commit(
+        binding,
+        intent,
+        &payload,
         &selection.commit.oid,
-        remaining(limits, started)?.deadline,
+        limits,
+        started,
     )?;
-    let root = snapshot.tree.tasks.iter().try_fold(
-        crate::task_sync::inventory::InventoryRoot::ZERO,
-        crate::task_sync::inventory::InventoryRoot::including,
-    )?;
-    let documents = snapshot
-        .tree
-        .tasks
-        .iter()
-        .map(|task| (task.id, task))
-        .collect::<BTreeMap<_, _>>();
-    ensure!(
-        root == payload.output.inventory_root
-            && snapshot.envelope.profile == payload.output.profile
-            && payload
-                .documents
-                .iter()
-                .all(|(id, expected)| { documents.get(id).copied() == expected.as_ref() }),
-        "selected Git snapshot differs from the prepared delta membership"
-    );
     data.revalidate_within(budget)?;
     observe_git_selection(
         binding,

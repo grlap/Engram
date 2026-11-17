@@ -182,7 +182,12 @@ pub fn retain_candidate(
         request_bytes.len() <= LIMIT && payload_bytes.len() <= LIMIT,
         "retained delta exceeds byte bound"
     );
-    let _guard = AuditReservation::acquire(&binding.repository.git_directory)?;
+    let guard = AuditReservation::acquire(&binding.repository.git_directory)?;
+    guard.reserve_artifact(
+        intent.operation,
+        super::audit::journal::Family::Delta,
+        &(&reservation, payload),
+    )?;
     let git = PrivateDirectory::open(&binding.repository.git_directory)?;
     let root = container(&git, Path::new(ROOT))?;
     let name = intent.operation.to_string();
@@ -268,17 +273,39 @@ pub(crate) fn observe_construction(
     operation: uuid::Uuid,
 ) -> Result<(RetainedRequest, DeltaCandidatePayload)> {
     let git = PrivateDirectory::open(git_directory)?;
-    let directory = git
-        .child(Path::new(ROOT))?
-        .child(Path::new(&operation.to_string()))?;
+    selected_construction(&git, git_directory, operation)?
+        .context("retained delta construction is missing")
+}
+
+pub(super) fn selected_construction(
+    git: &PrivateDirectory,
+    git_directory: &Path,
+    operation: uuid::Uuid,
+) -> Result<Option<(RetainedRequest, DeltaCandidatePayload)>> {
+    let directory = match git
+        .child(Path::new(ROOT))
+        .and_then(|root| root.child(Path::new(&operation.to_string())))
+    {
+        Ok(directory) => directory,
+        Err(error) if missing(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
     let (request, payload, _) = observe(&directory)?;
     ensure!(
         request.intent.operation == operation
             && request.intent.candidate.directory == candidate_directory(git_directory, operation),
-        "retained construction operation or directory differs"
+        "retained delta operation differs"
     );
     payload.validate_declared(&request.intent)?;
-    Ok((request, payload))
+    Ok(Some((request, payload)))
+}
+
+pub(super) fn selected(
+    git: &PrivateDirectory,
+    git_directory: &Path,
+    operation: uuid::Uuid,
+) -> Result<Option<RetainedRequest>> {
+    Ok(selected_construction(git, git_directory, operation)?.map(|(request, _)| request))
 }
 
 fn observe(

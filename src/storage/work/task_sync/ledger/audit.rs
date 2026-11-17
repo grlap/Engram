@@ -716,6 +716,11 @@ impl SqliteStore {
             .map_err(|_| invalid("custody audit binding store path cannot be resolved"))?;
         require(opened == declared, "custody audit store binding differs")?;
         restore_basis(&binding)?;
+        retention::audit::journal::require_audit_mode(
+            &binding.repository.git_directory,
+            request.reason == task_sync::delta::CheckpointReason::ManagedAudit,
+        )
+        .map_err(|error| invalid(error.to_string()))?;
         let origin = producing_origin::load_on(&self.connection, project)?
             .ok_or_else(|| invalid("custody audit requires explicit origin enrollment"))?;
         require(
@@ -769,6 +774,9 @@ impl SqliteStore {
         let reservation = reservations
             .get(&binding.repository.git_directory)
             .ok_or_else(|| invalid("audit repository reservation missing"))?;
+        reservation
+            .require_audit_mode(request.reason == task_sync::delta::CheckpointReason::ManagedAudit)
+            .map_err(|error| invalid(error.to_string()))?;
         let pending = private::read(guard.database(), &binding.project)?.audit;
         let original = recorded(&self.connection, request)?;
         if let Some(original) = &original
@@ -808,6 +816,9 @@ impl SqliteStore {
                     original == &audit,
                     "committed custody audit differs from retention",
                 )?;
+                reservation
+                    .resume_audit_journal(&audit)
+                    .map_err(|error| invalid(error.to_string()))?;
             }
             (audit, pending)
         } else {
@@ -892,7 +903,7 @@ impl SqliteStore {
             (audit, pending)
         };
         guard.refresh()?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),
@@ -947,7 +958,7 @@ impl SqliteStore {
         #[cfg(test)]
         failure_point("repository_ack")?;
         guard.refresh()?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),
@@ -968,9 +979,12 @@ impl SqliteStore {
         reservation
             .acknowledge(&audit, pending.repository_head.as_ref())
             .map_err(|error| invalid(error.to_string()))?;
+        reservation
+            .activate_audit_journal(&audit)
+            .map_err(|error| invalid(error.to_string()))?;
         #[cfg(test)]
         failure_point("private_cleanup")?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),

@@ -177,7 +177,7 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
                                 Some(binding.run_id),
                             )
                         } else {
-                            Some(HashSet::from([format!("project:{}", record.project_id.0)]))
+                            expected_refused_remote_feeds(connection, work_items, &hash, &record)?
                         }
                     }
                     Err(_) => None,
@@ -471,6 +471,30 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
         invalid.push(format!("{kind}:{hash}:missing_work_feeds"));
     }
     Ok(())
+}
+
+/// Historical refusals have only a project entry. New deliveries may also
+/// have an item root entry, which never admits them to an execution feed.
+fn expected_refused_remote_feeds(
+    connection: &Connection,
+    work_items: &HashMap<String, serde_json::Value>,
+    id: &ObjectId,
+    record: &crate::domain::RemoteVerificationAssociationRecord,
+) -> Result<Option<HashSet<String>>, StoreError> {
+    let has_root: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_feed_entries
+         WHERE object_id = ?1 AND feed_kind = 'root_work')",
+        [id.as_str()],
+        |row| row.get(0),
+    )?;
+    let project_feed = format!("project:{}", record.project_id.0);
+    if !has_root {
+        return Ok(Some(HashSet::from([project_feed])));
+    }
+    Ok(
+        expected_feeds_for_work(work_items, record.request.association.binding.work_id, None)
+            .filter(|feeds| feeds.contains(&project_feed)),
+    )
 }
 
 fn expected_work_memory_feeds(

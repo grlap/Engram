@@ -37,12 +37,13 @@ fn planning_member(store: &SqliteStore, task: &TaskDocument) -> ObjectId {
         previous: None,
         changes: BTreeMap::from([(task.id, Some(task.clone()))]),
         inventory_root: InventoryRoot::ZERO.including(task).unwrap().hex(),
-        export_basis: "fixture member".into(),
+        export_basis: Some("fixture member".into()),
         profile: ExportProfile {
             include_notes: true,
             origin_machine: Some("peer".into()),
         },
         created_at: at(2),
+        retired_unshared: std::collections::BTreeSet::new(),
     })
     .unwrap();
     store.connection.execute("INSERT INTO objects(object_id,object_kind,canonical_json,created_at) VALUES(?1,?2,?3,'fixture')",

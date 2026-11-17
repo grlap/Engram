@@ -70,16 +70,19 @@ impl SqliteStore {
     > {
         self.work_read_snapshot(|store| {
             let tasks = folder_export_on(&store.connection, project, profile)?;
-            let mut memories = store.export_project_memory_sync_with_resolutions(project, selected, resolutions)?;
-            let target_ids = tasks.tree.tasks.iter().map(|task| task.id).collect::<HashSet<_>>();
-            let withheld = memories.keys.iter().filter_map(|(key, history)| {
-                history.revisions.values().any(|revision| matches!(&revision.provenance.retiring_target, Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. }) if !target_ids.contains(work_id))).then_some(key.clone())
-            }).collect::<Vec<_>>();
-            for key in withheld {
-                memories.keys.remove(&key);
-                memories.withheld.push(crate::task_sync::memories::WithheldKey { key, reason: "historical retirement target is outside selected task profile".into() });
-            }
-            Ok((tasks,memories))
+            let mut memories = store.export_project_memory_sync_with_resolutions(
+                project,
+                selected,
+                resolutions,
+            )?;
+            let target_ids = tasks
+                .tree
+                .tasks
+                .iter()
+                .map(|task| task.id)
+                .collect::<HashSet<_>>();
+            withhold_undisclosed(&mut memories, &target_ids);
+            Ok((tasks, memories))
         })
     }
 
@@ -99,103 +102,72 @@ impl SqliteStore {
         options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
         dry_run: bool,
     ) -> Result<crate::task_sync::memories::FolderImportOutcome, StoreError> {
-        use crate::task_sync::memories::{FolderImportOutcome, ImportRequest, KeyImportResult};
-        for (key, selected) in memories {
-            selected.validate()?;
-            if key != &selected.key || &selected.project_id != request.project {
-                return Err(invalid("memory component belongs to another project/key"));
-            }
-        }
-        if options.keys().any(|key| !memories.contains_key(key)) {
-            return Err(invalid("memory resolution names an absent selected key"));
-        }
-        let session = request
-            .actor
-            .session_id
-            .as_ref()
-            .ok_or_else(|| invalid("memory import recorder requires its local session"))?;
+        validate_memory_selection(request.project, memories, options)?;
         let transaction = self.begin_work_mutation()?;
         let mut tasks = apply_task_sync_folder_on(&transaction, request, idempotency_key)?;
         tasks.dry_run = dry_run;
-        let mut results = Vec::new();
-        let mut partial = false;
-        for (key, selected) in memories {
-            let history = crate::storage::project_memory::project_memory_history_on(
-                &transaction,
-                request.project,
-                key,
-            )?;
-            let defaults = crate::task_sync::memories::ImportOptions::default();
-            let options = options.get(key).unwrap_or(&defaults);
-            transaction.execute_batch("SAVEPOINT engram_memory_key")?;
-            let applied = if options.retire_unseen {
-                Err(StoreError::InvalidProjectMemory("retire_unseen is export-only; use export --include-memories --retire-unseen KEY".into()))
-            } else {
-                Self::import_project_memory_sync_on(
-                    &transaction,
-                    &ImportRequest {
-                        selected,
-                        expected_local_head: history.last().map(|entry| &entry.version_id),
-                        actor: request.actor,
-                        session_id: session,
-                        now: request.now,
-                        dry_run,
-                        merge: options.merge.as_ref(),
-                        seed: options.seed.as_ref(),
-                        mark_untagged_seed: options.mark_untagged_seed,
-                    },
-                )
-            };
-            match applied {
-                Ok(mut outcome) => {
-                    if let Some(conflict) = outcome.concurrent_retirement.take() {
-                        transaction.execute_batch(
-                            "ROLLBACK TO engram_memory_key; RELEASE engram_memory_key",
-                        )?;
-                        partial = true;
-                        results.push(KeyImportResult::ConcurrentRetirement {
-                            key: key.clone(),
-                            unseen_revisions: conflict.unseen_revisions,
-                            remedy: conflict.remedy,
-                        });
-                    } else {
-                        transaction.execute_batch("RELEASE engram_memory_key")?;
-                        results.push(KeyImportResult::Applied {
-                            key: key.clone(),
-                            outcome,
-                        });
-                    }
-                }
-                Err(error)
-                    if matches!(
-                        error,
-                        StoreError::InvalidProjectMemory(_)
-                            | StoreError::ProjectMemoryRetired(_)
-                            | StoreError::ProjectMemoryRevisionConflict { .. }
-                            | StoreError::ProjectMemoryBindingInvalid
-                    ) =>
-                {
-                    transaction.execute_batch(
-                        "ROLLBACK TO engram_memory_key; RELEASE engram_memory_key",
-                    )?;
-                    partial = true;
-                    results.push(KeyImportResult::Refused {
-                        key: key.clone(),
-                        reason: error.to_string(),
-                    });
-                }
-                Err(error) => return Err(error),
-            }
-        }
+        let (results, partial) = import_memories_on(
+            &transaction,
+            request.project,
+            request.actor,
+            request.now,
+            memories,
+            options,
+            dry_run,
+        )?;
         if dry_run {
             transaction.rollback()?;
         } else {
             transaction.commit()?;
         }
-        Ok(FolderImportOutcome {
+        Ok(crate::task_sync::memories::FolderImportOutcome {
             tasks,
             memories: results,
             memory_partial: partial,
+        })
+    }
+
+    /// Captures the memory component alone, withholding a whole key whose
+    /// historical task target the folder does not disclose. Each target is
+    /// looked up by itself, so the capture reads no other task.
+    ///
+    /// # Errors
+    /// Refuses unreadable canonical storage and a target's capture failure.
+    pub fn export_task_sync_memories(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        selected: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        resolutions: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+    ) -> Result<crate::task_sync::memories::ExportOutcome, StoreError> {
+        self.work_read_snapshot(|store| {
+            let mut memories = store.export_project_memory_sync_with_resolutions(
+                project,
+                selected,
+                resolutions,
+            )?;
+            let targets = memories
+                .keys
+                .values()
+                .flat_map(|history| history.revisions.values())
+                .filter_map(|revision| match &revision.provenance.retiring_target {
+                    Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. }) => {
+                        Some(*work_id)
+                    }
+                    _ => None,
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let captured = super::origin::with_origin_scope(&store.connection, || {
+                super::capture::capture_on(&store.connection, project, profile, targets)
+            })?;
+            let disclosed = captured
+                .documents
+                .iter()
+                .filter(|(_, task)| matches!(task, crate::task_sync::CapturedTask::Present(_)))
+                .map(|(id, _)| *id)
+                .collect::<HashSet<_>>();
+            withhold_undisclosed(&mut memories, &disclosed);
+            Ok(memories)
         })
     }
 
@@ -234,6 +206,138 @@ impl SqliteStore {
     ) -> Result<TaskSyncFolderExport, StoreError> {
         self.work_read_snapshot(|store| folder_export_on(&store.connection, project, profile))
     }
+}
+
+/// Withhold every key one of whose revisions retires a local task outside
+/// `disclosed`.
+fn withhold_undisclosed(
+    memories: &mut crate::task_sync::memories::ExportOutcome,
+    disclosed: &HashSet<WorkId>,
+) {
+    let withheld = memories.keys.iter().filter_map(|(key, history)| {
+        history.revisions.values().any(|revision| matches!(&revision.provenance.retiring_target, Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. }) if !disclosed.contains(work_id))).then_some(key.clone())
+    }).collect::<Vec<_>>();
+    for key in withheld {
+        memories.keys.remove(&key);
+        memories
+            .withheld
+            .push(crate::task_sync::memories::WithheldKey {
+                key,
+                reason: "historical retirement target is outside selected task profile".into(),
+            });
+    }
+}
+
+/// Refuse a memory selection of another project or key, or a resolution for
+/// a key that is not selected.
+pub(super) fn validate_memory_selection(
+    project: &ProjectId,
+    memories: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+    options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+) -> Result<(), StoreError> {
+    for (key, selected) in memories {
+        selected.validate()?;
+        if key != &selected.key || &selected.project_id != project {
+            return Err(invalid("memory component belongs to another project/key"));
+        }
+    }
+    if options.keys().any(|key| !memories.contains_key(key)) {
+        return Err(invalid("memory resolution names an absent selected key"));
+    }
+    Ok(())
+}
+
+/// Import each selected memory key inside the caller's transaction, after
+/// the task changes it may depend on. A refused key rolls back to its own
+/// savepoint and is reported; the second value is whether any key was not
+/// applied.
+pub(super) fn import_memories_on(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    actor: &ActorContext,
+    now: DateTime<Utc>,
+    memories: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+    options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+    dry_run: bool,
+) -> Result<(Vec<crate::task_sync::memories::KeyImportResult>, bool), StoreError> {
+    use crate::task_sync::memories::{ImportRequest, KeyImportResult};
+    if memories.is_empty() {
+        return Ok((Vec::new(), false));
+    }
+    let session = actor
+        .session_id
+        .as_ref()
+        .ok_or_else(|| invalid("memory import recorder requires its local session"))?;
+    let mut results = Vec::new();
+    let mut partial = false;
+    for (key, selected) in memories {
+        let history =
+            crate::storage::project_memory::project_memory_history_on(transaction, project, key)?;
+        let defaults = crate::task_sync::memories::ImportOptions::default();
+        let options = options.get(key).unwrap_or(&defaults);
+        transaction.execute_batch("SAVEPOINT engram_memory_key")?;
+        let applied = if options.retire_unseen {
+            Err(StoreError::InvalidProjectMemory(
+                "retire_unseen is export-only; use export --include-memories --retire-unseen KEY"
+                    .into(),
+            ))
+        } else {
+            SqliteStore::import_project_memory_sync_on(
+                transaction,
+                &ImportRequest {
+                    selected,
+                    expected_local_head: history.last().map(|entry| &entry.version_id),
+                    actor,
+                    session_id: session,
+                    now,
+                    dry_run,
+                    merge: options.merge.as_ref(),
+                    seed: options.seed.as_ref(),
+                    mark_untagged_seed: options.mark_untagged_seed,
+                },
+            )
+        };
+        match applied {
+            Ok(mut outcome) => {
+                if let Some(conflict) = outcome.concurrent_retirement.take() {
+                    transaction.execute_batch(
+                        "ROLLBACK TO engram_memory_key; RELEASE engram_memory_key",
+                    )?;
+                    partial = true;
+                    results.push(KeyImportResult::ConcurrentRetirement {
+                        key: key.clone(),
+                        unseen_revisions: conflict.unseen_revisions,
+                        remedy: conflict.remedy,
+                    });
+                } else {
+                    transaction.execute_batch("RELEASE engram_memory_key")?;
+                    results.push(KeyImportResult::Applied {
+                        key: key.clone(),
+                        outcome,
+                    });
+                }
+            }
+            Err(error)
+                if matches!(
+                    error,
+                    StoreError::InvalidProjectMemory(_)
+                        | StoreError::ProjectMemoryRetired(_)
+                        | StoreError::ProjectMemoryRevisionConflict { .. }
+                        | StoreError::ProjectMemoryBindingInvalid
+                ) =>
+            {
+                transaction
+                    .execute_batch("ROLLBACK TO engram_memory_key; RELEASE engram_memory_key")?;
+                partial = true;
+                results.push(KeyImportResult::Refused {
+                    key: key.clone(),
+                    reason: error.to_string(),
+                });
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok((results, partial))
 }
 
 /// Applies one complete folder inside the caller's transaction; the public
@@ -303,8 +407,26 @@ pub(super) fn apply_task_sync_folder_on(
     super::reconciliation::validate_current_heads_on(transaction, request.project, selected)
         .map_err(super::origin::classify_binding)?;
 
+    // A head written by a strict delta records no full-folder basis. Its
+    // absence never matches: the request's basis is then compared with this
+    // folder's freshly computed one, and the head's membership with the tree.
+    let basis_matches =
+        baseline
+            .as_ref()
+            .is_some_and(|baseline| match baseline.head.export_basis.as_deref() {
+                Some(recorded) => recorded == request.export_basis,
+                None => current.export_basis == request.export_basis,
+            });
+    let membership_matches = match &baseline {
+        Some(baseline) if baseline.head.export_basis.is_none() => {
+            baseline.head.inventory_root == baseline::tree_root(request.tree)?
+                && baseline.head.include_notes == request.profile.include_notes
+        }
+        _ => true,
+    };
     if let Some(baseline) = &baseline
-        && baseline.head.export_basis == request.export_basis
+        && basis_matches
+        && membership_matches
         && baseline.tree.folder_documents()? == request.tree.folder_documents()?
         && current.tree.folder_documents()? == baseline.tree.folder_documents()?
     {
@@ -630,7 +752,7 @@ fn record_baseline(
         project,
         baseline.map(|baseline| baseline.head.record.clone()),
         changes,
-        export_basis,
+        Some(export_basis),
         profile,
         now,
     )?;

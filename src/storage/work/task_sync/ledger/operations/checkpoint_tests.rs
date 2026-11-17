@@ -7,6 +7,7 @@ mod data_bootstrap;
 mod delta;
 mod evidence;
 mod export;
+mod managed;
 #[cfg(windows)]
 mod orphan;
 #[cfg(windows)]
@@ -1617,4 +1618,101 @@ async fn incoming_commit_audit_reads_complete_real_git_selection_and_requires_it
         Some(snapshot.commit)
     );
     assert!(store.verify_all().unwrap().is_healthy());
+}
+
+// A merged resolution is admitted as a change to the original preparation's
+// export membership, checked on the component it touches: an unchanged child
+// still naming a removed parent is found through the reverse edge, without a
+// read of every member.
+#[test]
+fn an_export_change_that_removes_a_parent_its_unchanged_child_names_is_refused() {
+    use crate::storage::work::task_sync::closure::overlay::check_export_change_on;
+    use crate::task_sync::delta::BootstrapMember;
+    let (_home, mut store, binding, tree) = initial_fixture();
+    let id = store.activate_task_sync_binding(&binding).unwrap();
+    let template = tree
+        .tasks
+        .iter()
+        .find(|task| task.lifecycle == crate::WorkLifecycle::Open && task.parent_id.is_none())
+        .unwrap();
+    let member = |title: &str, parent: Option<crate::WorkId>| {
+        let mut task = template.clone();
+        task.id = crate::WorkId(uuid::Uuid::new_v4());
+        task.external_ref = None;
+        task.parent_id = parent;
+        task.prerequisites.clear();
+        task.title = title.into();
+        task
+    };
+    let parent = member("Parent", None);
+    let child = member("Child", Some(parent.id));
+    let unrelated = member("Unrelated", None);
+    let exported = [parent.clone(), child.clone(), unrelated];
+    let membership = OutputMembership {
+        inventory_root: exported
+            .iter()
+            .try_fold(InventoryRoot::ZERO, InventoryRoot::including)
+            .unwrap(),
+        profile: binding.profile.clone(),
+    };
+    let seed = checkpoint(
+        &store,
+        &binding,
+        &id,
+        None,
+        Some(CheckpointSeed::PreparedExport {
+            membership: membership.clone(),
+            members: BootstrapMembers::Captured {
+                members: exported
+                    .iter()
+                    .map(|task| {
+                        (
+                            task.id,
+                            BootstrapMember::Document {
+                                task: Box::new(task.clone()),
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+        }),
+    );
+    append_checkpoint(&mut store, &binding, &id, seed).unwrap();
+    let check = |expected: &OutputMembership,
+                 changes: std::collections::BTreeMap<
+        crate::WorkId,
+        Option<crate::task_sync::TaskDocument>,
+    >| {
+        let transaction = store.connection.unchecked_transaction().unwrap();
+        check_export_change_on(&transaction, &id, &binding.project, expected, &changes)
+    };
+    let error = check(
+        &membership,
+        std::collections::BTreeMap::from([(parent.id, None)]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::store_error_value(&error)["error"]["code"],
+        "task_sync_invalid_graph",
+        "{error:#}"
+    );
+    let mut orphan = child.clone();
+    orphan.parent_id = None;
+    check(
+        &membership,
+        std::collections::BTreeMap::from([(parent.id, None), (child.id, Some(orphan))]),
+    )
+    .unwrap();
+    let mut stale = membership.clone();
+    stale.inventory_root = InventoryRoot::ZERO;
+    let error = check(
+        &stale,
+        std::collections::BTreeMap::from([(parent.id, None)]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::store_error_value(&error)["error"]["code"],
+        "task_sync_baseline_head_moved",
+        "{error:#}"
+    );
 }

@@ -225,6 +225,47 @@ fn the_doctor_names_a_changed_task_row_the_feed_does_not_derive() {
     );
 }
 
+// A position that changes no task still has a coverage row, so losing any
+// row refuses the capture by name instead of reading as "nothing changed".
+#[test]
+fn a_lost_coverage_row_refuses_change_capture_until_the_projections_are_repaired() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &tree(vec![document(0)]), "enrol", 5);
+    let cut = changes(&store, &start()).cut;
+    let native = store
+        .create_work(
+            &root_request(PROJECT, "native", 7),
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let head = changes(&store, &cut);
+    assert_eq!(head.changed, BTreeSet::from([native.work_id]));
+    store
+        .connection
+        .execute(
+            "DELETE FROM work_project_feed_coverage WHERE project_id = ?1 AND position = ?2",
+            rusqlite::params![PROJECT, head.cut.position],
+        )
+        .unwrap();
+    let error = store.capture_task_changes(&project(), &cut).unwrap_err();
+    assert_eq!(
+        refusal_code(&error),
+        "task_sync_feed_projection_gap",
+        "{error:#}"
+    );
+    let report = store.verify_all().unwrap();
+    assert!(
+        format!("{report:?}").contains("work_project_feed_coverage"),
+        "{report:?}"
+    );
+    assert_eq!(
+        crate::storage::work::feed_tasks::rebuild(&store.connection).unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(changes(&store, &cut).changed, head.changed);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
 #[test]
 fn tasks_over_the_search_limit_arrive_and_fail_no_search_that_would_not_select_them() {
     let limit = crate::storage::work::search_budget::unit_bytes_limit();

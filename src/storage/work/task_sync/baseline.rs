@@ -39,9 +39,19 @@ pub(in crate::storage::work) struct TaskSyncImportPlanning {
     /// The membership fingerprint after these changes. A content
     /// fingerprint for comparison, never an identity.
     pub inventory_root: String,
-    pub export_basis: String,
+    /// The full BEFORE-export folder fingerprint, written by complete-folder
+    /// writers. A strict delta writer, which never exports the whole folder,
+    /// omits it; nothing may read its absence as a match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_basis: Option<String>,
     pub profile: crate::task_sync::progress::ExportProfile,
     pub created_at: DateTime<Utc>,
+    /// Removals of tasks this host published since its last import that
+    /// another host removed before they ever joined the baseline: each is
+    /// recorded retired, so no later export publishes it again, although it
+    /// never was a member. Every other removal must name a member.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub retired_unshared: BTreeSet<WorkId>,
 }
 
 impl TaskSyncImportPlanning {
@@ -49,14 +59,21 @@ impl TaskSyncImportPlanning {
     /// envelope, and that each change names the task it carries.
     pub(in crate::storage::work) fn validate(&self, project: &ProjectId) -> Result<(), StoreError> {
         let consistent = self.project_id == *project
-            && !self.export_basis.trim().is_empty()
+            && self
+                .export_basis
+                .as_deref()
+                .is_none_or(|basis| !basis.trim().is_empty())
             && self.profile.options().validate().is_ok()
             && Root::parse(&self.inventory_root).is_some()
             && self.changes.iter().all(|(id, change)| {
                 change.as_ref().is_none_or(|document| {
                     document.id == *id && (self.profile.include_notes || document.notes.is_empty())
                 })
-            });
+            })
+            && self
+                .retired_unshared
+                .iter()
+                .all(|id| matches!(self.changes.get(id), Some(None)));
         if consistent {
             Ok(())
         } else {
@@ -71,7 +88,8 @@ pub(in crate::storage::work) struct BaselineHead {
     pub record: ObjectId,
     pub position: i64,
     pub inventory_root: String,
-    pub export_basis: String,
+    /// The head record's full-folder fingerprint, when its writer recorded one.
+    pub export_basis: Option<String>,
     pub include_notes: bool,
 }
 
@@ -238,6 +256,26 @@ pub(in crate::storage::work) fn retired(
         .collect()
 }
 
+/// Which of `ids` the exchange retired, one keyed read each, so the cost
+/// follows the ids asked about and never the project's removal history.
+pub(in crate::storage::work) fn retired_among(
+    connection: &Connection,
+    project: &ProjectId,
+    ids: impl IntoIterator<Item = WorkId>,
+) -> Result<BTreeSet<WorkId>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT 1 FROM work_task_sync_baseline
+         WHERE project_id = ?1 AND work_id = ?2 AND document IS NULL",
+    )?;
+    let mut retired = BTreeSet::new();
+    for id in ids {
+        if statement.exists(rusqlite::params![project.0, id.0.to_string()])? {
+            retired.insert(id);
+        }
+    }
+    Ok(retired)
+}
+
 /// The complete latest baseline of `project`. Only a complete-folder
 /// exchange, which compares the whole folder, reads every member. Each
 /// member's document must match its key and leaf, and the members' leaves
@@ -307,7 +345,36 @@ pub(in crate::storage::work) fn append(
     project: &ProjectId,
     previous: Option<ObjectId>,
     changes: BTreeMap<WorkId, Option<TaskDocument>>,
-    export_basis: &str,
+    export_basis: Option<&str>,
+    profile: &crate::task_sync::progress::ExportProfile,
+    now: DateTime<Utc>,
+) -> Result<ObjectId, StoreError> {
+    append_retiring(
+        transaction,
+        project,
+        previous,
+        changes,
+        BTreeSet::new(),
+        export_basis,
+        profile,
+        now,
+    )
+}
+
+/// [`append`], also retiring `retired_unshared`: removals among `changes` of
+/// tasks this host published since its last import, which never joined the
+/// baseline but must stay out of every later export.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the baseline record's own fields beside the unshared retirements"
+)]
+pub(in crate::storage::work) fn append_retiring(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    previous: Option<ObjectId>,
+    changes: BTreeMap<WorkId, Option<TaskDocument>>,
+    retired_unshared: BTreeSet<WorkId>,
+    export_basis: Option<&str>,
     profile: &crate::task_sync::progress::ExportProfile,
     now: DateTime<Utc>,
 ) -> Result<ObjectId, StoreError> {
@@ -316,9 +383,10 @@ pub(in crate::storage::work) fn append(
         previous,
         inventory_root: next_root(transaction, project, &changes)?,
         changes,
-        export_basis: export_basis.into(),
+        export_basis: export_basis.map(str::to_owned),
         profile: profile.clone(),
         created_at: now,
+        retired_unshared,
     };
     let object = CanonicalObject::mint(&planning)?;
     append_object(transaction, &object)
@@ -511,6 +579,8 @@ fn apply(
                 Some(self::leaf(document)?),
             ),
             None if previous.as_ref().is_some_and(|row| row.leaf.is_some()) => (None, None),
+            // Retired although it never joined: the root has nothing to drop.
+            None if previous.is_none() && planning.retired_unshared.contains(id) => (None, None),
             None => {
                 return Err(invalid(format!(
                     "task folder baseline retires {}, which is not a member",
@@ -576,7 +646,9 @@ impl View for SqlView<'_> {
                     record: parse_record(record)?,
                     position,
                     inventory_root,
-                    export_basis,
+                    // The column stores an absent basis as '', which no
+                    // full-folder SHA can be.
+                    export_basis: (!export_basis.is_empty()).then_some(export_basis),
                     include_notes: notes == 1,
                 })
             })
@@ -638,7 +710,7 @@ impl View for SqlView<'_> {
                 head.record.as_str(),
                 head.position,
                 head.inventory_root,
-                head.export_basis,
+                head.export_basis.as_deref().unwrap_or(""),
                 i64::from(head.include_notes),
             ],
         )?;

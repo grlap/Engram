@@ -15,6 +15,9 @@ mod writer_controls;
 #[path = "consumption/writer_selection.rs"]
 mod writer_selection;
 
+#[path = "consumption/capture_disclosure.rs"]
+mod capture_disclosure;
+
 struct Selected {
     root: crate::test_support::TempHome,
     origin: Fixture,

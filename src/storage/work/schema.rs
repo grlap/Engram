@@ -37,6 +37,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "objects_task_sync_exchange_key"),
     ("index", "objects_task_sync_exchange_prepared"),
     ("index", "objects_task_sync_exchange_checkpoint"),
+    ("index", "objects_task_sync_custody_checkpoint"),
     ("index", "objects_task_sync_exchange_incoming_completed"),
     ("index", "objects_task_sync_exchange_outgoing_completed"),
     ("index", "objects_task_sync_exchange_delta_planning"),
@@ -58,6 +59,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("table", "work_note_fts"),
     ("index", "objects_work_evidence_gate_name"),
     ("index", "objects_work_event_work_id"),
+    ("index", "objects_work_remote_association_item"),
     ("index", "objects_task_sync_reconciliation_scope"),
     ("index", "objects_work_source_proposal_work"),
     ("index", "objects_work_source_key"),
@@ -94,6 +96,8 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("table", "work_project_feed_tasks"),
     ("index", "work_feed_entries_planning"),
     ("index", "work_project_feed_tasks_task"),
+    ("table", "work_project_feed_coverage"),
+    ("table", "work_task_sync_folder_heads"),
     ("table", "work_task_sync_baseline"),
     ("index", "work_task_sync_baseline_retired"),
     ("table", "work_task_sync_baseline_heads"),
@@ -115,6 +119,7 @@ pub(in crate::storage) fn owns_schema_object(name: &str) -> bool {
         || name.starts_with("objects_work_")
         || name == "objects_task_sync_reconciliation_scope"
         || name == "objects_task_sync_membership_checkpoint"
+        || name == "objects_task_sync_custody_checkpoint"
         || name.starts_with("objects_task_sync_exchange_")
         || name.starts_with("objects_task_sync_binding_")
         || name.starts_with("objects_task_sync_producing_origin_")
@@ -504,6 +509,9 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              FOREIGN KEY(feed_kind, feed_id)
                  REFERENCES work_feed_heads(feed_kind, feed_id)
          ) STRICT;
+         CREATE INDEX IF NOT EXISTS objects_work_remote_association_item
+             ON objects(json_extract(CAST(canonical_json AS TEXT), '$.request.association.binding.work_id'))
+             WHERE object_kind = 'remote_verification_association';
          CREATE INDEX IF NOT EXISTS objects_work_source_proposal_work
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_source_proposal';
@@ -594,6 +602,7 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::folder_head::create_schema(connection)?;
     super::task_sync::ledger::view::create_schema(connection)?;
     super::task_sync::producing_origin::view::create_schema(connection)?;
     super::task_sync::closure::documents::create_schema(connection)?;
@@ -688,6 +697,9 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_run_evidence(work_id, evidence_id);
          CREATE INDEX IF NOT EXISTS work_run_obligations_run
              ON work_run_obligations(run_id, state, trigger_position, obligation_id);
+         CREATE INDEX IF NOT EXISTS objects_work_remote_association_item
+             ON objects(json_extract(CAST(canonical_json AS TEXT), '$.request.association.binding.work_id'))
+             WHERE object_kind = 'remote_verification_association';
          CREATE INDEX IF NOT EXISTS objects_work_source_proposal_work
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_source_proposal';
@@ -740,6 +752,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::folder_head::create_schema(connection)?;
     super::task_sync::ledger::view::create_schema(connection)?;
     super::task_sync::producing_origin::view::create_schema(connection)?;
     super::task_sync::closure::documents::create_schema(connection)?;
@@ -758,6 +771,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     restored_findings.extend(super::note_index::rebuild_for_repair(connection)?);
     restored_findings.extend(super::feed_tasks::rebuild(connection)?);
     restored_findings.extend(super::task_sync::baseline::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::folder_head::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::documents::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::source::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::graph::rebuild(connection)?);

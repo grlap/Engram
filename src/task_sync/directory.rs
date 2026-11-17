@@ -14,13 +14,15 @@ use crate::task_sync::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_TREE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_TASKS: usize = 100_000;
 
 mod envelope;
 mod evidence;
-pub(crate) use envelope::prepare_folder_documents;
+mod incremental;
+pub(crate) use envelope::{complete_envelope, prepare_folder_documents};
+pub use incremental::FolderWrite;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -62,14 +64,37 @@ pub struct FolderExchange {
 pub struct FolderBasis {
     pub project_id: crate::ProjectId,
     pub profile: ExportProfile,
-    pub export_basis: String,
+    /// The complete folder's ordered fingerprint; absent from an incremental
+    /// envelope, which never reads every task to compute it.
+    pub export_basis: Option<String>,
+    /// The incremental membership basis, when the folder was written by an
+    /// incremental export.
+    pub incremental: Option<IncrementalBasis>,
+    /// Whether the envelope advertises the memory component, which only an
+    /// export or import that includes memories may read or write over.
+    pub memory_capable: bool,
+}
+
+pub const INCREMENTAL_FORMAT: &str = "engram-task-sync-folder-incremental-v1";
+
+/// An incremental folder envelope: the additive membership root and count of
+/// the folder on disk, and the exporter's own project-feed cut. The cut is
+/// meaningful only to the host that wrote it; an importer never trusts a cut
+/// carried by a merged folder.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IncrementalBasis {
+    pub format: String,
+    pub inventory_root: crate::task_sync::inventory::InventoryRoot,
+    pub task_count: u64,
+    pub cut: crate::task_sync::progress::ExportCut,
 }
 
 /// The destination basis selected for one folder import.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DestinationBasis {
     /// This host's own pre-merge folder export.
-    Recorded(FolderBasis),
+    Recorded(Box<FolderBasis>),
     /// A first import into a destination with no shared planning. The
     /// applying transaction checks that the destination is in fact empty.
     Empty,
@@ -85,11 +110,69 @@ struct FolderProjectDocument {
     memory_profile: Option<String>,
 }
 
+/// The complete folder's ordered fingerprint, an incremental export's
+/// membership root, or both after a complete export. A build that knows only
+/// the fingerprint refuses the membership root rather than misreading it.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FolderExchangeDocument {
     complete: bool,
-    export_basis: FolderExportBasis,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_basis: Option<FolderExportBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    incremental: Option<IncrementalBasis>,
+}
+
+impl FolderExchangeDocument {
+    fn one_basis(&self) -> Result<()> {
+        if !self.complete {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange must be complete")
+                .into());
+        }
+        match (&self.export_basis, &self.incremental) {
+            (_, Some(incremental)) if incremental.format != INCREMENTAL_FORMAT => {
+                Err(TaskSyncRefusal::InvalidGraph
+                    .invalid("unsupported incremental task folder format")
+                    .into())
+            }
+            (None, None) => Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange must carry a basis")
+                .into()),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// The project document of a folder written by an incremental export.
+///
+/// # Errors
+/// Refuses an invalid profile or a disclosure the project document does not
+/// match.
+/// `memories` advertises the memory component in the envelope.
+pub(crate) fn incremental_envelope(
+    project: &ProjectDocument,
+    profile: &ExportProfile,
+    basis: IncrementalBasis,
+    memories: bool,
+) -> Result<Vec<u8>> {
+    profile.options().validate()?;
+    if project.notes_included != profile.include_notes || basis.format != INCREMENTAL_FORMAT {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder profile and tree disclosure differ")
+            .into());
+    }
+    Ok(pretty(&FolderProjectDocument {
+        project: project.clone(),
+        profile: profile.clone(),
+        folder_exchange: FolderExchangeDocument {
+            complete: true,
+            export_basis: None,
+            incremental: Some(basis),
+        },
+        memory_profile: memories.then(|| super::memories::FORMAT.into()),
+    })
+    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?)
 }
 
 #[derive(Deserialize, Serialize)]
@@ -215,7 +298,7 @@ pub fn matching_memory_task_export(
     Ok(Some(folder))
 }
 
-fn read_resolved_data_folder_profile(
+pub(crate) fn read_resolved_data_folder_profile(
     data: &super::data_worktree::DataWorktree,
     memories: bool,
 ) -> Result<FolderExchange> {
@@ -264,11 +347,7 @@ pub(in crate::task_sync) fn folder_from_documents_profile(
                 .invalid("memory-capable profile requires explicit --include-memories")
         );
     }
-    if !envelope.folder_exchange.complete {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder exchange must be complete")
-            .into());
-    }
+    envelope.folder_exchange.one_basis()?;
     envelope.profile.options().validate()?;
     if envelope.project.notes_included != envelope.profile.include_notes {
         return Err(TaskSyncRefusal::InvalidGraph
@@ -282,12 +361,29 @@ pub(in crate::task_sync) fn folder_from_documents_profile(
     let tree = TaskTree::from_stored_documents(&documents)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     let fingerprint = documents_fingerprint(&tree.folder_documents()?);
-    if verify_inventory
-        && envelope.folder_exchange.export_basis.inventory_fingerprint != fingerprint
-    {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder exchange inventory fingerprint is inconsistent")
-            .into());
+    if verify_inventory {
+        let fingerprint_consistent = envelope
+            .folder_exchange
+            .export_basis
+            .as_ref()
+            .is_none_or(|basis| basis.inventory_fingerprint == fingerprint);
+        let root_consistent = match &envelope.folder_exchange.incremental {
+            None => true,
+            Some(basis) => {
+                basis.task_count == tree.tasks.len() as u64
+                    && basis.inventory_root
+                        == tree.tasks.iter().try_fold(
+                            crate::task_sync::inventory::InventoryRoot::ZERO,
+                            crate::task_sync::inventory::InventoryRoot::including,
+                        )?
+            }
+        };
+        let consistent = fingerprint_consistent && root_consistent;
+        if !consistent {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange inventory fingerprint is inconsistent")
+                .into());
+        }
     }
     Ok(FolderExchange {
         tree,
@@ -321,23 +417,23 @@ pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
             .invalid("unsupported task format")
             .into());
     }
-    if !envelope.folder_exchange.complete {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder basis must be complete")
-            .into());
-    }
+    envelope.folder_exchange.one_basis()?;
     envelope.profile.options().validate()?;
     if envelope.project.notes_included != envelope.profile.include_notes {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder basis profile and disclosure differ")
             .into());
     }
-    let export_basis = envelope.folder_exchange.export_basis.inventory_fingerprint;
-    if export_basis.len() != 64
-        || !export_basis
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
+    let export_basis = envelope
+        .folder_exchange
+        .export_basis
+        .map(|basis| basis.inventory_fingerprint);
+    if export_basis.as_ref().is_some_and(|basis| {
+        basis.len() != 64
+            || !basis
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }) {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder basis fingerprint is malformed")
             .into());
@@ -346,6 +442,8 @@ pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
         project_id: envelope.project.project_id,
         profile: envelope.profile,
         export_basis,
+        incremental: envelope.folder_exchange.incremental,
+        memory_capable: envelope.memory_profile.is_some(),
     })
 }
 
@@ -752,6 +850,117 @@ fn admit_limits_with(documents: &BTreeMap<String, Vec<u8>>, limits: Limits) -> R
         .into())
 }
 
+/// Refuse an incremental or complete folder write the readers could not take
+/// back: a written file over the per-file limit, or a resulting folder of
+/// `tasks` task files holding `task_bytes`, beside its envelope and the
+/// `policy_bytes` of its policy files, over the task or size limit. Only the
+/// written files are inspected, never the whole folder.
+pub(crate) fn admit_written(
+    files: &BTreeMap<String, Option<String>>,
+    tasks: u64,
+    task_bytes: u64,
+    policy_bytes: u64,
+) -> Result<()> {
+    // The readers count the envelope and the folder's policy files too.
+    let envelope = (files
+        .get("project.json")
+        .and_then(Option::as_ref)
+        .map_or(0, String::len) as u64)
+        .saturating_add(policy_bytes);
+    let refusal = if tasks > LIMITS.tasks as u64 {
+        TaskSyncRefusal::DestinationTaskLimit
+    } else if files
+        .values()
+        .flatten()
+        .any(|bytes| bytes.len() as u64 > LIMITS.file_bytes)
+    {
+        TaskSyncRefusal::DestinationFileLimit
+    } else if task_bytes.saturating_add(envelope) > LIMITS.tree_bytes as u64 {
+        TaskSyncRefusal::DestinationTreeLimit
+    } else {
+        return Ok(());
+    };
+    Err(refusal
+        .invalid("export exceeds the supported task candidate limits")
+        .into())
+}
+
+/// The limits the complete folder reader enforces, for a folder whose task
+/// count and stored size an incremental import derived from a verified delta:
+/// a delta never accepts a folder the complete route would then refuse.
+///
+/// # Errors
+/// Refuses more tasks than a folder may hold, and a folder larger than the
+/// tree limit, naming the counts.
+pub(crate) fn admit_folder_size(tasks: u64, folder_bytes: u64) -> Result<()> {
+    let refusal = if tasks > LIMITS.tasks as u64 {
+        TaskSyncRefusal::DestinationTaskLimit.invalid(format!(
+            "the incoming folder holds {tasks} tasks, more than the {} a folder may hold; resolve the merge so the shared folder stays within it, then import again",
+            LIMITS.tasks
+        ))
+    } else if folder_bytes > LIMITS.tree_bytes as u64 {
+        TaskSyncRefusal::DestinationTreeLimit.invalid(format!(
+            "the incoming folder holds {folder_bytes} bytes, more than the {} a folder may hold; resolve the merge so the shared folder stays within it, then import again",
+            LIMITS.tree_bytes
+        ))
+    } else {
+        return Ok(());
+    };
+    Err(refusal.into())
+}
+
+/// An export that writes no task file still publishes the memory component
+/// beside the folder as it stands, with its envelope advertising that
+/// component: refuse, before anything is written, a component that would
+/// take the folder past its size limit.
+///
+/// # Errors
+/// Refuses an oversized folder by name.
+pub(crate) fn admit_memories_beside(
+    folder: &Path,
+    task_bytes: u64,
+    memory_bytes: u64,
+) -> Result<()> {
+    let mut bytes = task_bytes.saturating_add(memory_bytes);
+    for name in ["project.json", ".gitignore", ".gitattributes"] {
+        if let Ok(meta) = fs::symlink_metadata(folder.join(name)) {
+            bytes = bytes.saturating_add(meta.len());
+        }
+    }
+    // [`enable_memory_profile`] adds the capability to an envelope that
+    // lacks it; one it cannot read is refused there by name. The read stays
+    // within the per-file limit even if the file is replaced meanwhile.
+    let read_bounded = |path: &Path| -> Option<Vec<u8>> {
+        let mut bytes = Vec::new();
+        fs::File::open(path)
+            .ok()?
+            .take(MAX_FILE_BYTES)
+            .read_to_end(&mut bytes)
+            .ok()?;
+        Some(bytes)
+    };
+    if let Ok(meta) = fs::symlink_metadata(folder.join("project.json"))
+        && meta.is_file()
+        && meta.len() <= MAX_FILE_BYTES
+        && let Some(before) = read_bounded(&folder.join("project.json"))
+        && let Ok(mut envelope) = crate::task_sync::parse::<FolderProjectDocument>(&before)
+        && envelope.memory_profile.is_none()
+    {
+        envelope.memory_profile = Some(crate::task_sync::memories::FORMAT.into());
+        let advertised = u64::try_from(pretty(&envelope)?.len())?;
+        bytes = bytes.saturating_add(advertised.saturating_sub(meta.len()));
+    }
+    if bytes > LIMITS.tree_bytes as u64 {
+        return Err(TaskSyncRefusal::DestinationTreeLimit
+            .invalid(format!(
+                "the folder's files and the selected memory component together hold {bytes} bytes, more than the {} a folder may hold; nothing was written. Select fewer memories, or remove tasks from the exchange",
+                LIMITS.tree_bytes
+            ))
+            .into());
+    }
+    Ok(())
+}
+
 fn occupied() -> crate::storage::StoreError {
     TaskSyncRefusal::DestinationOccupied
         .invalid("export destination already contains a different candidate")
@@ -900,7 +1109,9 @@ pub(crate) fn committed_memory_envelope(bytes: &[u8], head: &str) -> Result<(Fol
     Ok((basis, envelope.memory_profile.is_some()))
 }
 
-fn require_task_only_head(data: &super::data_worktree::DataWorktree) -> Result<()> {
+/// Refuses a task-only export onto a data HEAD that carries memories, or
+/// whose committed envelope or memory capability is missing or invalid.
+pub(crate) fn require_task_only_head(data: &super::data_worktree::DataWorktree) -> Result<()> {
     let Some(head) = &data.head else {
         return Ok(());
     };

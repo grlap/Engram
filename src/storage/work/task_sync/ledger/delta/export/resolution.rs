@@ -29,14 +29,14 @@ impl SqliteStore {
                 guard,
                 &request,
             )?;
-            let mut ledger = super::commit::checked_with_resolution_on(
+            let operation = super::commit::checked_with_resolution_on(
                 &transaction,
                 &input.original,
                 &input.selection,
                 Some(input),
                 guard,
             )?;
-            require(ledger.events.values().any(|event| event.binding == input.original.binding_id
+            require(operation.events.iter().any(|(_, event)| event.binding == input.original.binding_id
                 && matches!(&event.transition, Transition::DeltaLocalCommitRecorded {prepared,commit}
                     if prepared == &input.selection.prepared && commit == &input.selection.commit)),
                 "delta resolution original selected commit missing")?;
@@ -44,19 +44,43 @@ impl SqliteStore {
                 prepared: input.selection.prepared.clone(),
                 reconciliation: Box::new(input.recipe.clone()),
             };
-            if let Some((id, _)) = ledger.events.iter().find(|(_, event)| {
+            if let Some((id, _)) = operation.events.iter().find(|(_, event)| {
                 event.binding == input.original.binding_id && event.transition == transition
             }) {
                 return Ok(id.clone());
             }
-            let OutgoingReconciliation::DeltaResolved { resolved, .. } = &input.recipe else {
+            let OutgoingReconciliation::DeltaResolved {
+                resolved, payload, ..
+            } = &input.recipe
+            else {
                 return Err(invalid("delta resolution recipe missing"));
             };
+            // The merged Git membership is admitted as a change to the
+            // original preparation's export membership. Its graph is checked
+            // on the component the change touches, both ways, so an unchanged
+            // task still pointing at a removed one refuses without a read of
+            // every merged task.
+            crate::storage::work::task_sync::closure::overlay::check_export_change_on(
+                &transaction,
+                &input.original.binding_id,
+                &input.original.binding.project,
+                &input.original.intent.candidate.output,
+                &payload.documents,
+            )?;
             require(
-                !ledger.events.values().any(|event| {
-                    event.transition.retention_operation() == Some(resolved.operation)
-                        || event.transition.retention_key() == Some(resolved.key.as_str())
-                }),
+                super::view::read::request_by(
+                    &transaction,
+                    &input.original.binding_id,
+                    resolved.operation,
+                    &resolved.key,
+                )?
+                .is_none()
+                    && super::view::read::reconciliation_parent_for_operation(
+                        &transaction,
+                        &input.original.binding_id,
+                        resolved.operation,
+                    )?
+                    .is_none(),
                 "delta resolution operation or key already retained",
             )?;
             // The common reducer proves the exact failure predecessor, original
@@ -64,8 +88,18 @@ impl SqliteStore {
             input
                 .recheck_files()
                 .map_err(|error| invalid(error.to_string()))?;
-            let object =
-                super::super::append(&transaction, &mut ledger, &input.original, transition, now)?;
+            let mut chain = super::super::Chain::resume(
+                &transaction,
+                &input.original,
+                &input.selection.prepared,
+            )?;
+            let object = super::super::append_keyed(
+                &transaction,
+                &mut chain,
+                &input.original,
+                transition,
+                now,
+            )?;
             transaction.commit()?;
             Ok(object.key().clone())
         })

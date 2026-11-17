@@ -97,7 +97,7 @@ fn delta_retry_progress_start_once_unknown_restart_and_exact_confirmation_keep_o
 }
 
 #[test]
-fn delta_retry_progress_recovers_exact_start_and_observation_ack_without_new_permission() {
+fn delta_retry_progress_recovers_exact_ack_and_owes_an_unacknowledged_start_once() {
     for observed in [false, true] {
         let mut f = ExportFixture::new(2);
         let input = admitted(&mut f);
@@ -130,9 +130,19 @@ fn delta_retry_progress_recovers_exact_start_and_observation_ack_without_new_per
         drop(f.store);
         let mut store = SqliteStore::open(&f.binding.store.database).unwrap();
         let before = state(&store);
+        // A start whose private acknowledgement never settled returned no
+        // success, so it handed out no dispatch: the exact retry carries it,
+        // once. An observation is never a dispatch.
         assert_eq!(
             store
                 .record_task_sync_delta_retry_once(&input, &progress, at(46))
+                .unwrap(),
+            (event.clone(), !observed)
+        );
+        assert_eq!(state(&store), before);
+        assert_eq!(
+            store
+                .record_task_sync_delta_retry_once(&input, &progress, at(47))
                 .unwrap(),
             (event, false)
         );

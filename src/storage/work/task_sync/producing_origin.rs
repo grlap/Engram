@@ -225,20 +225,25 @@ pub(super) fn with_custody_audit<T>(
                 .map_err(|error| super::invalid(error.to_string()))
         })
         .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+    for reservation in reservations.values() {
+        reservation
+            .recover_pending_journal()
+            .map_err(|error| super::invalid(error.to_string()))?;
+    }
     if let Some(audit) = &guard.state().audit {
         if &audit.request != request {
             return Err(private::pending_audit_error(audit));
         }
     } else {
         if let Some((repository, operation)) = incoming_bootstrap {
-            guard.capture_custody(
+            guard.capture_cold_custody(
                 &store.connection,
                 Some(repository),
                 Some(request),
                 Some(operation),
             )?;
         } else {
-            guard.capture_custody(&store.connection, None, None, None)?;
+            guard.capture_cold_custody(&store.connection, None, None, None)?;
         }
         if let Some(retirement) = retirement {
             guard.admit_retained_construction(&store.connection, retirement)?;
@@ -671,6 +676,19 @@ fn with_exchange_inner<T>(
         // writer, without writing a new private request or resetting a witness.
         return effect(store, Some(&guard));
     }
+    // The witness advances to the origin's committed anchor before any call
+    // returns success. This exact request still pending over an anchor the
+    // committed origin has since moved past therefore means the call that
+    // committed the step returned none: its one-time result, such as
+    // PushStarted's dispatch, is still owed to this retry. A replay of an
+    // acknowledged step reserves its request over the advanced anchor, so a
+    // replay that failed afterwards leaves nothing owed.
+    if witness.pending_exchange.as_ref() == Some(request)
+        && super::ledger::origin_anchor_on(&store.connection, project, &origin.origin_id)?
+            != witness.exchange
+    {
+        guard.mark_resumed();
+    }
     if witness
         .pending_exchange
         .as_ref()
@@ -746,26 +764,197 @@ fn with_exchange_inner<T>(
     };
     // The writer succeeded; independently derive its actual committed tail.
     // A failed private write leaves the exact pending request recoverable.
-    capture_exchange_context(
-        &mut guard,
-        &store.connection,
-        repository,
-        request,
-        operation,
-        local_activation.as_ref(),
-        mode,
-    )?;
-    let transaction = store.begin_work_mutation()?;
-    let checked = check_inner(&transaction, project, &guard, Some(request))?;
-    checked.require_on(&transaction)?;
-    let mut next = reserved.clone();
-    next.cut = cut_on(&transaction, project)?;
-    next.exchange = super::ledger::origin_anchor_on(&transaction, project, &origin.origin_id)?;
-    next.pending_exchange = None;
-    drop(checked);
-    drop(transaction);
-    private::advance(&database, &reserved, &next)?;
+    // Every managed repository reservation is held across the capture and
+    // its check when it can be had shortly, so no other writer moves the
+    // journal or writes an artifact in between, and the committed effect,
+    // such as PushStarted's one dispatch, is confirmed rather than lost. A
+    // reservation held longer elsewhere leaves the bounded recapture below.
+    let fence = fence_managed_custody(&guard)?;
+    let mut recaptures = 0;
+    let next = loop {
+        let derived = (|| {
+            capture_exchange_context(
+                &mut guard,
+                &store.connection,
+                repository,
+                request,
+                operation,
+                local_activation.as_ref(),
+                mode,
+            )?;
+            #[cfg(test)]
+            AFTER_POST_COMMIT_CAPTURE.with(|hook| {
+                if let Some(hook) = hook.borrow_mut().as_mut() {
+                    hook();
+                }
+            });
+            let transaction = store.begin_work_mutation()?;
+            let checked = check_inner(&transaction, project, &guard, Some(request))?;
+            checked.require_on(&transaction)?;
+            let mut next = reserved.clone();
+            next.cut = cut_on(&transaction, project)?;
+            next.exchange =
+                super::ledger::origin_anchor_on(&transaction, project, &origin.origin_id)?;
+            next.pending_exchange = None;
+            Ok::<_, StoreError>(next)
+        })();
+        match derived {
+            Ok(next) => break next,
+            Err(_)
+                if recaptures < POST_COMMIT_RECAPTURES
+                    && guard
+                        .custody()
+                        .values()
+                        .any(super::ledger::custody::Observed::managed_journal_moved) =>
+            {
+                recaptures += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    };
+    // Settlement takes the reservations itself.
+    drop(fence);
+    // The replacement can fail after it is already in place, as when the
+    // directory sync after the rename fails: a witness that already records
+    // this step is its acknowledgement, so the caller still receives the
+    // result, PushStarted's one dispatch included, rather than an error no
+    // retry could recover.
+    if let Err(error) = private::advance(&database, &reserved, &next) {
+        if private::read(&database, project)
+            .ok()
+            .and_then(|state| state.witness)
+            .as_ref()
+            != Some(&next)
+        {
+            return Err(error);
+        }
+        eprintln!("task-sync origin witness advanced, but its write reported: {error}");
+    }
+    // Settlement requires canonical custody without the current operation's
+    // pre-commit exception. Only then can the exact observed pending writes
+    // leave the repository journal; a lost acknowledgement remains replayable.
+    let settlement = settle_exchange_custody(store, project, repository, &mut guard);
+    if let Err(error) = settlement {
+        // The SQL result and origin witness already committed. In particular,
+        // PushStarted's first receipt must still authorize its one dispatch.
+        eprintln!("task-sync custody settlement remains pending: {error}");
+    }
     Ok(result)
+}
+
+/// How often a committed exchange step reads its custody again when another
+/// writer moved the managed journal between the capture and its check.
+const POST_COMMIT_RECAPTURES: usize = 3;
+
+/// How long a committed exchange step waits for another writer's managed
+/// repository reservation before checking its custody without the fence.
+const POST_COMMIT_FENCE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Every managed repository reservation of the captured custody, in the
+/// origin-before-repository order settlement uses, with any publication a
+/// crashed writer left behind recovered under it. Empty when one of them is
+/// still held elsewhere after a short wait: the caller then checks unfenced.
+///
+/// # Errors
+/// Refuses lock failures other than contention and an unrecoverable pending
+/// journal.
+fn fence_managed_custody(
+    guard: &PreparedContinuity,
+) -> Result<
+    std::collections::BTreeMap<
+        std::path::PathBuf,
+        crate::task_sync::retention::audit::AuditReservation,
+    >,
+    StoreError,
+> {
+    let mut fence = std::collections::BTreeMap::new();
+    for root in guard
+        .custody()
+        .iter()
+        .filter(|(_, observed)| observed.is_managed())
+        .map(|(root, _)| root)
+    {
+        match crate::task_sync::retention::audit::AuditReservation::acquire_waiting(
+            root,
+            POST_COMMIT_FENCE_WAIT,
+        )
+        .map_err(|error| super::invalid(error.to_string()))?
+        {
+            Some(reservation) => {
+                fence.insert(root.clone(), reservation);
+            }
+            None => return Ok(std::collections::BTreeMap::new()),
+        }
+    }
+    for reservation in fence.values() {
+        reservation
+            .recover_pending_journal()
+            .map_err(|error| super::invalid(error.to_string()))?;
+    }
+    Ok(fence)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Runs after each post-commit custody capture, before its check.
+    pub(in crate::storage::work::task_sync) static AFTER_POST_COMMIT_CAPTURE: std::cell::RefCell<Option<Box<dyn FnMut()>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The journal revision alone cannot fence an artifact created after an
+/// earlier no-effect observation. Hold every managed repository reservation
+/// across a fresh observation, its canonical check and acknowledgement.
+pub(super) fn settle_exchange_custody(
+    store: &mut crate::storage::SqliteStore,
+    project: &ProjectId,
+    repository: &std::path::Path,
+    guard: &mut PreparedContinuity,
+) -> Result<(), StoreError> {
+    // BTreeMap order keeps the existing origin-before-repository lock order
+    // deterministic for a project with several bound repositories.
+    let reservations = guard
+        .custody()
+        .iter()
+        .filter(|(_, observed)| observed.is_managed())
+        .map(|(root, _)| {
+            crate::task_sync::retention::audit::AuditReservation::acquire(root)
+                .map(|reservation| (root.clone(), reservation))
+                .map_err(|error| super::invalid(error.to_string()))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+    if reservations.is_empty() {
+        return Ok(());
+    }
+    // A publication a crashed writer left behind is resolved under the
+    // reservations held here, never waited on by the observation below.
+    for reservation in reservations.values() {
+        reservation
+            .recover_pending_journal()
+            .map_err(|error| super::invalid(error.to_string()))?;
+    }
+    guard.capture_custody(&store.connection, Some(repository), None, None)?;
+    for (root, observed) in guard.custody() {
+        crate::task_sync::ledger::require(
+            !observed.is_managed() || reservations.contains_key(root),
+            "managed custody changed before settlement; retry the exact request",
+        )?;
+    }
+    {
+        let transaction = store.begin_work_mutation()?;
+        super::ledger::check_origin_custody_on(
+            &transaction,
+            project,
+            guard.custody(),
+            None,
+            None,
+            None,
+        )?;
+    }
+    for (root, observed) in guard.custody() {
+        if let Some(reservation) = reservations.get(root) {
+            observed.settle_managed(reservation)?;
+        }
+    }
+    Ok(())
 }
 
 fn capture_exchange_context(

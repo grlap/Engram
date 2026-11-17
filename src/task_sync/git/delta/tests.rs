@@ -10,6 +10,7 @@ mod mixed_evidence;
 mod resolution;
 mod snapshot;
 mod validation;
+mod verified;
 
 #[test]
 fn memory_sync_task_delta_skips_memory_files_and_tree_entries() {

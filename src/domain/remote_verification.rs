@@ -48,6 +48,15 @@ pub enum RemoteRunMode {
     Focused,
 }
 
+impl RemoteRunMode {
+    pub(crate) const fn word(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Focused => "focused",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemoteRunVerdict {
@@ -59,7 +68,7 @@ pub enum RemoteRunVerdict {
 }
 
 impl RemoteRunVerdict {
-    const fn word(self) -> &'static str {
+    pub(crate) const fn word(self) -> &'static str {
         match self {
             Self::Pass => "PASS",
             Self::Fail => "FAIL",
@@ -497,8 +506,9 @@ pub struct RemoteVerificationAssociationRecord {
 }
 
 impl RemoteVerificationAssociationRecord {
-    /// Whether the record stands on its destination's feeds. A stale or
-    /// unsupported delivery was never admitted to that item's scope.
+    /// Whether the destination was admitted to its item's execution scope.
+    /// A stale or unsupported delivery may be listed as a root-scoped audit
+    /// observation, but it never stands on the item's run feed.
     #[must_use]
     pub fn is_in_item_scope(&self) -> bool {
         !matches!(

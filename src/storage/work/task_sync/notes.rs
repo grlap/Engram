@@ -94,7 +94,11 @@ pub(super) fn capture(
             continue;
         }
         let retained = notes.iter().find(|note| note.id == id);
+        // A comparison capture publishes nothing, as for activity: a retained
+        // note keeps its own alias there whatever alias the caller compares
+        // under, and only a capture for publication refuses a changed one.
         if let Some(retained) = retained
+            && !comparison
             && machine.is_some_and(|machine| machine != retained.origin_machine)
         {
             return Err(TaskSyncRefusal::DivergentPlanning.invalid(

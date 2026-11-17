@@ -20,48 +20,219 @@ local store with `engram init` and provision its data worktree explicitly with
 branch and defaults to `engram-data`; it must match the observed worktree.
 
 ```text
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --origin-machine host-A
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --include-notes --origin-machine host-A
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis --dry-run
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --basis OWN_EXPORT/project.json --json
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --include-notes --origin-machine host-A
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --json
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --basis OWN_EXPORT/project.json
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --rebuild
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --rebuild --basis OWN_EXPORT/project.json
 ```
 
-The two homes contain isolated stores for the same stable project id. Each host
-selects its own main-code marker and dedicated data worktree. Export
-publishes a new Git folder containing `project.json` and
-`tasks/<full-uuid>.json`. An existing equivalent folder is left byte-for-byte
-unchanged, including ordinary `.gitignore` and `.gitattributes` policy files;
-a different folder is refused. Export does not replace a resolved merge or advance
-a branch. The optional memory export preserves this task contract and writes
-only its own component and capability. Publication prepares a sibling staging
-directory, reads it back, and moves it without replacing an existing
-destination. An operating system that cannot perform that directory move
-without replacement refuses publication.
+Each host selects its own main-code marker, store home and dedicated data
+worktree for the same stable project id. The ordinary cycle is: export, commit
+the folder in the data worktree, merge the other host's data branch and commit
+the merge, then import. Both commands are incremental by default: they write or
+read only the tasks that changed since this host's last export or import, so
+their cost follows the change, not the size of the folder. `--rebuild` is the
+explicit complete route; each receipt names its `route`. Export does not
+replace a resolved merge or advance a branch. The optional memory export
+preserves this task contract and writes only its own component and capability.
 
-A folder's `project.json` holds three members. `project` is the planning
-document: `format: "engram-task-planning-v1"`, `project_id`, and
-`notes_included: true` for an opt-in note export (otherwise the field and task
-note arrays are absent). `profile` is the disclosure profile the export used:
-`include_notes`, which both hosts share, and the exporting host's own asserted
-`origin_machine` alias, or `null`.
-`folder_exchange` marks the folder `complete` and carries its
-`export_basis.inventory_fingerprint`, the content fingerprint of the planning
-documents it holds. Activity is independent of note selection. There is no
-store identity or runtime cursor.
+A folder holds `project.json` and `tasks/<full-uuid>.json`, beside ordinary
+`.gitignore` and `.gitattributes` policy files that export leaves alone.
+`project.json` holds three members. `project` is the planning document:
+`format: "engram-task-planning-v1"`, `project_id`, and `notes_included: true`
+for an opt-in note export (otherwise the field and task note arrays are
+absent). `profile` is the disclosure profile the export used: `include_notes`,
+which both hosts share, and the exporting host's own asserted `origin_machine`
+alias, or `null`. `folder_exchange` marks the folder `complete` and carries its
+`incremental` membership basis: the order-independent `inventory_root` and
+`task_count` of the task files and the exporter's own project-feed `cut`. A
+complete export also carries `export_basis.inventory_fingerprint`, the ordered
+content fingerprint of every document, which an incremental export cannot keep
+without reading every task. A build that knows only the fingerprint refuses
+the membership basis rather than misreading it. Activity is independent of note
+selection. There is no store identity or runtime cursor.
 
 ## Git folder exchange
 
 `task-sync export` and `task-sync import` are the folder route; no other
 command exchanges this folder profile. Private snapshots may be retained under
 `target/` for merge bases; they are not accepted as public import/export paths.
-Export reads the store in one snapshot and
-publishes its shared planning together with that snapshot's export basis. The
-first export of a store with no exchange history publishes its whole planning.
 
-Import applies a resolved folder against a destination basis that the caller
-selects. Exactly one selection is required:
+Each export and import records a folder head per project and note selection:
+the folder it left on disk (its membership root and count), the project-feed
+cut it reflects, the data commit the last import read (the next import's diff
+base), how the folder on disk relates to the data branch, the tasks an import
+held, and the local changes an import passed over. An import records its head
+in its own transaction, with the cut read there, so no change committed after
+it can be mistaken for part of the folder. Recording a head checks that its
+predecessor is still current, so a concurrent export or import refuses as a
+moved head; the remedy is to export or import again. One export or import at
+a time holds the data worktree's folder lock; another refuses until it ends.
+Heads are a rebuildable projection over immutable records.
+
+**Export.** The first export of a store, and `--rebuild`, write the complete
+folder: every exported task, with every other task file removed. The first
+export writes only into an empty folder, or over exactly the planning it
+writes; a folder already holding other planning refuses as
+`task_sync_destination_occupied`, naming an import first (`--basis` or
+`--empty-basis`) or `--rebuild`. `--rebuild` overwrites the folder with this
+host's planning, including any other host's edits merged into it but not yet
+imported; import those first. Otherwise
+export first proves that the folder on disk is still the one the head records,
+reading only what changed since: after an import, the folder must be that
+commit, or a later one whose task changes, read through a rooted Git diff,
+come to the same membership root; after an incremental export, the files it
+wrote must be on disk as written, and either uncommitted on top of the commit
+it wrote onto or committed in a commit with the same rooted result. A folder
+written by a complete export or a loose-file import is read whole once. Task
+changes on the data branch that this host has not imported refuse as
+`task_sync_incremental_basis_unavailable` with "import them first"; other
+changes to the folder refuse the same way and name commit or restore. The
+folder's state is read with every Git filter driver disabled, and a task or
+envelope file whose index entry is marked assume-unchanged or skip-worktree is
+refused by name, because Git would not report an edit to it. When
+that import in turn refuses because this host changed the same planning, the
+exit only moves the data branch forward: a new commit restores the task files
+of the commit holding this host's last export
+(`git restore --source=COMMIT --staged --worktree -- .engram/tasks`), this host
+exports and commits on top, and `git revert` of that set-aside commit brings
+the other host's changes back for the import. A task both hosts changed can
+conflict in that revert; it is resolved as an agent merge and committed before
+the import. Both refusals name that exit,
+with the commit itself when the head records it. Export
+then takes the tasks the project feed changed since the head's cut, with any
+local changes an import passed over, reads the old file of only those tasks,
+writes only those files and updates the membership root by arithmetic. When
+nothing changed it writes nothing and reports `route: "unchanged"`. An export
+under another note selection than its head's, or after the project feed lost
+its anchor, refuses and names `--rebuild`. The origin-machine alias is each
+host's own and may differ between hosts, but one host keeps one: an export
+under another alias than the one this host last exported under refuses and
+names `--origin-machine` with that alias, or `--rebuild`, which rewrites every
+task under the new one. Before anything is written, the export checks the
+candidate limits the readers enforce: each written file within the per-file
+limit, and the resulting folder within the task-count and size limits, from the
+bytes its task files hold as stored, which the head keeps and every import and
+export updates from the files and blobs it touches, without reading unchanged
+tasks. The
+export journals its exact file operations, each path's preimage and its next
+head in the data worktree's Git directory, records the head, and only then
+touches the folder. The next export or import finishes an interrupted
+publication whose head was recorded when every path it writes is still at its
+preimage or already published, and, for a write onto a clean commit, over that
+same commit or a later one whose task files are still exactly that commit's,
+such as a set-aside commit; otherwise it keeps the journal and refuses, so a
+later edit is
+never overwritten. It drops one whose head was not recorded. A dry-run import
+refuses while such a journal is pending, since it cannot finish it.
+
+**Import.** With a head that names an applied commit, import is incremental. It
+requires the folder committed in the data worktree (otherwise
+`task_sync_commit_context_required`) and reads, through Git, only the task
+paths changed between that commit and the worktree's HEAD. That commit must be
+an ancestor of HEAD: a force-moved branch refuses as
+`task_sync_source_history_diverged`, and a shallow clone that cannot prove it as
+`task_sync_source_history_unavailable`, which names `git fetch --unshallow`;
+both name `--rebuild`. The tasks the last import held are read again at the
+incoming commit. So are the tasks this host's incremental exports wrote since
+that import and a commit published: another host may have returned one to
+exactly its bytes at that commit, or removed one this host added, which the
+diff cannot show, and each one no longer as this host wrote it is taken like a
+changed task, while one still as this host wrote it joins the import baseline
+as shared. Like any removal, another host's removal of a published task
+applies only to a task without execution here: a task this host created
+always has a run, so its removal is refused by name (`execution_history`), and
+the task joins the baseline with this host's document and stays held instead
+of published again, so each later import decides its removal as a member's.
+A published task whose incoming change the import holds or refuses, such as
+another host's edit of a task claimed here, joins the baseline the same way,
+so a later removal of it is a member's too. An applied removal of such a task
+stays retired, so no later export publishes it again. An export is only
+written onto a commit whose task files are this host's own state, and the
+import checks it: from the inventory that export recorded for that commit, the
+commits since must reach the incoming commit's root, or it refuses and names
+the complete import. A task whose last export was discarded before a commit is
+then read at that commit and at the incoming one. The same bytes carry nothing new: the task joins the
+baseline as shared, and the discarded edit stays owed to the next export.
+Anything else there, a removal or another host's return to older bytes
+included, meets that owed edit as divergent planning, and the refusal names
+that commit and how to set the other host's changes aside with it: nothing is
+overwritten, and no rebuild is needed. Before anything is admitted, the import
+baseline takes every task this host published since that import as this host
+wrote it, so another host's changes are judged against this host's last
+published folder as a whole graph: an edit of such a task, or a new task
+linked to one, never meets a mixture of those documents with older ones. A
+task the last import held keeps the baseline it was held at, and a published
+document whose link names a task neither holds yet joins after admission,
+beside the change that brings that task in. An
+export whose last files were
+discarded names the import as the way on. A removal of a task this host never
+published, such as one whose only file was a discarded loose edit, leaves it
+this host's own and owed to the next export. After a complete export, which no commit binds, its tasks are
+not read again: the next import reads the whole folder against this host's head
+and, like every complete import, keeps a local task the folder lacks that the
+baseline does not hold, which the next export publishes again.
+The changed tasks are admitted one by one inside one
+transaction; a local change not yet exported to any task the admission reads
+refuses as divergent planning: export and commit it, merge, then import again.
+Only a change to what governs a task diverges: a task whose governing fields
+are still as this host last agreed them, touched here only by a claim, its
+renewal or release, or a note of this host's own, never refuses. What this
+host last agreed is the version it published since the last import, when a
+commit took that export, and the baseline otherwise; an import moves the
+baseline to the version the incoming commit holds as this host wrote it. So a
+local edit made after an export, a return to older bytes included, still
+refuses. Nor,
+as in a strict delta, does one whose incoming change leaves its governing
+fields as this host holds them and only adds shared notes or activity. A held task's planning
+counts only its governing fields: a note of this host's own on a held task
+never conflicts with the held edit, and stays owed to the export once the hold
+resolves.
+Local changes to other tasks stay owed to the next export, although the head's
+cut moves past them, and so do the files an export wrote that no commit since
+its base holds, as when they were discarded before a commit; Git is asked only
+about the commits that touch those paths. A file a commit holds was published,
+even when another host changed it again later. An export never rewrites a file
+that already holds the same document. A removal of
+a task this host never applied is skipped, and so is one of a task the import
+baseline already holds as removed, such as a retired task whose refused return
+left the folder again: it changes nothing and stays held no longer. A task
+whose id another project in
+the store already holds, or one whose parent, prerequisite or replacement is
+such a task, means the folder carries another project's task: the incremental
+import then refuses as a whole, before anything is written
+(`task_sync_id_collision`), naming each such task with its project. A task the
+last import held is read again at every import, so this lasts until the folder
+no longer carries those tasks. The refusal names both exits: remove them, and
+every task that names them, from the folder and commit; until then, import with
+`engram task-sync import --rebuild --basis OWN_EXPORT/project.json`, whose
+complete import refuses each such task by name, holds the tasks that depend on
+it and applies the rest. `--basis` and `--empty-basis`
+select the complete route, which records a fresh head (`route: "complete"`)
+even once imports are incremental. An incoming commit equal to the recorded
+one, with nothing held and no memories included, reports
+`route: "unchanged"`.
+
+With `--include-memories`, either route imports the memory component after
+the tasks in the same transaction, under the memory publication fence, and an
+export writes it beside the incremental or rebuilt task files, counting its
+bytes against the folder's size limit and advertising it in the envelope. A
+folder that advertises the memory component refuses an export or import
+without `--include-memories` as `memory_profile_requires_opt_in`. A memory key
+whose historical retirement target is a task the last import holds out of the
+folder, as when another host's removal of it is held, is withheld from the
+export with that reason, since no receiving host could resolve the target. A
+key the folder already holds cannot be withheld, so the export refuses as
+`task_sync_removed_planning`, naming the key and the task, before it writes
+anything: decide the held removal, as the import that held it names, then
+export again.
+
+The complete route, the first import of a store, an explicit basis or
+`--rebuild`, reads the whole folder against a destination basis that the
+caller selects:
 
 - `--basis FILE` names this host's own `project.json` from its export before
   the Git merge, for example as written by
@@ -71,14 +242,18 @@ selects. Exactly one selection is required:
 - `--empty-basis` imports into a destination that holds no shared planning yet.
   The import checks inside its write transaction that the destination is empty.
 
-The folder's own embedded basis is never used for this comparison, and
-omitting both flags is a usage error, not a fallback. A basis must belong to
-this project and share the folder's note selection (`include_notes`). The
-origin-machine alias is host-local: each host exports under its own alias, so
-a folder from another host may carry a different one. Import compares the
-destination's current planning, exported under the basis's own profile, with
-the selected basis inside its write transaction; any local planning change
-since that export refuses as divergent planning, and nothing is written.
+Selecting both is a usage error; selecting neither on the complete route
+refuses and names both. The folder's own embedded basis is never used for this
+comparison. A basis must belong to this project and share the folder's note
+selection (`include_notes`). The origin-machine alias is host-local: each host
+exports under its own alias, so a folder from another host may carry a
+different one. Import compares the destination's current planning, exported
+under the basis's own profile, with the selected basis inside its write
+transaction; any local planning change since that export refuses as divergent
+planning, and nothing is written. A basis written by an incremental export
+carries no fingerprint; it is accepted when it is this host's recorded folder
+head with no local change since, held tasks included, and is otherwise
+compared by membership root and count.
 
 The basis is a content comparison, not an authenticated host identity. Equal
 bytes from another host cannot be told apart from this host's own, so
@@ -107,15 +282,29 @@ is unapplied, both import and `--dry-run` exit `3`, distinct from a whole-import
 refusal (`1`). Stdout still contains the complete JSON receipt, including all
 applied changes and each held/refused task's reason. Stderr names the task
 files that need attention. Applied changes stay applied; dry run writes nothing.
-Do not advance the incoming commit as the exchange base on exit `3`. Keep its
-task documents and Git commit before the next export:
-replacing them with a routine local export would overwrite the incoming edits.
-The existing export-overwrite refusal remains in force. After local execution
-ends, prepare a fresh local export and basis while preserving the incoming commit.
-Re-merge that retained commit against the fresh export using the common commit,
-preserving newer local edits, and import the newly resolved documents. Do not
-replay the old incoming documents against the fresh basis. Only a complete import
-advances the caller's base. No separate durable pending-document queue is introduced.
+On exit `3` the head records the held tasks, and its diff base advances to the
+commit the import read. A first import of a store that applies nothing,
+because every incoming change is held, records neither a baseline nor a head:
+the next import is the same complete one, with its basis. Their incoming bytes stay in the folder: no export,
+the complete route included, rewrites a held task's file, and a complete
+export restores one that went missing from the commit the import read. The
+head also records each held task's local planning document, as a content
+fingerprint taken without this host's own execution activity: a claim and its
+release leave it unchanged. While a held task still has that fingerprint, its
+local planning has not changed and the next import may apply it. One whose
+local planning changed since conflicts with the held bytes: the import holds it
+alone, as `local_planning_changed`, and goes ahead with the rest; the export
+refuses it as `task_sync_import_conflict`, naming the exit: apply the held
+edits from the folder to this host's planning first, then `export --rebuild`
+writes this host's version over the held one, stops holding it and lists it as
+`superseded` in its receipt, so the replacement is never silent; a held edit
+not applied here is lost. To keep the other host's version instead, undo the
+local change and import again. Resolve
+why each other task was held here, for example by releasing the claim, then
+import again: every import reads the held tasks again at its incoming commit,
+so a partial first import retries incrementally too. A complete import also
+records, as owed to the next export, every local task it kept that the folder
+leaves out or holds differently.
 
 A later export keeps the note selection its baseline was recorded with; an
 export under another note selection refuses.
@@ -921,7 +1110,7 @@ replacement.
 | `task_sync_native_state` | The plain candidate import targets a project that already holds native work or execution state, or whose project feed has begun (an exchange baseline among others), so imported tasks would be invisible to change capture. Complete-folder import instead uses its selected export basis and per-task admission; existing native work alone does not cause this refusal. |
 | `task_sync_reconciliation_held` | An unresolved reconciliation hold covers the work; fresh claims, handoffs, governing planning, evaluations and work-bound control admission wait while original owners settle or resolve that candidate. |
 | `task_sync_divergent_planning` | The candidate changes or adds to the planning, notes or activity the store already holds without removing a task; the destination's planning differs from its selected basis; the basis or export note selection differs from the folder's or the baseline's; or export meets native activity that conflicts with a retained entry. |
-| `task_sync_removed_planning` | The candidate omits a task the store already holds. |
+| `task_sync_removed_planning` | The candidate omits a task the store already holds; or a memory export would publish a key the folder already holds whose retirement target the last import holds out of the folder. |
 | `task_sync_id_collision` | A candidate task, blocker, note or activity id already belongs to another record, task or project. |
 | `task_sync_invalid_graph` | The candidate is malformed, or fails its graph, reference or disclosure admission; or a folder envelope or basis file is malformed, incomplete or inconsistent with its own fingerprint. |
 | `task_sync_origin_mismatch` | The candidate or the selected basis names another project, an import origin binding differs, or export meets an externally imported item. |
@@ -941,8 +1130,14 @@ replacement.
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
 | `task_sync_import_conflict` | A complete-folder import changes project-level fields or has a graph or batch conflict that cannot be attributed to individual tasks; the whole import is refused with exit 1. Strict delta admission also uses this code to refuse the whole candidate when any task is inadmissible. Attributable complete-folder conflicts instead leave independent changes applied and report every changed task in the receipt's `tasks` list, with `applied`, `held` or `refused` and a reason and detail for unapplied tasks; there is no 20-task receipt limit. A partial real import or dry run exits 3. [Per-task admission](#edits-on-an-enrolled-destination) supports title, outcome, acceptance and its bindings, priority, labels, assignment, prerequisite and blocker edits, additions referencing native endpoints, and reported completions under the rules above. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
 | `task_sync_incremental_basis_unavailable` | An incremental exchange's recorded project-feed cut no longer continues the store's feed: the cut is ahead of the feed head, or its anchor names a different object. The check reads the anchor's entry alone, never the interval since the cut. A first capture, from position zero, also refuses while the project holds tasks that no project-feed entry names, as a loaded graph's tasks are. Commit-delta intake also uses this code when Git completes its lookup but the selected commit is unavailable. The changed tasks cannot be named exactly; a full scan happens only on an explicit rebuild. |
+| `task_sync_feed_projection_gap` | The changed-task index does not cover every project-feed position of the interval a change capture asked for, so it cannot name every changed task. `engram doctor` names the missing rows; `engram doctor --repair-projections` rebuilds them from the feed. The capture never answers with fewer changes or a full scan. |
+| `task_sync_commit_context_required` | An incremental folder import found the data folder's task files or envelope uncommitted; it reads the commit, not loose files. Commit the merged folder, or import the complete folder with `--rebuild`. |
+| `task_sync_source_history_diverged` | The commit the last import read is not an ancestor of the incoming one, as after a force-moved data branch. Import the complete folder with `--rebuild`. |
+| `task_sync_source_history_unavailable` | A shallow clone cannot prove the incoming commit descends from the commit the last import read; nothing is fetched. Fetch the full history (`git fetch --unshallow`), or import the complete folder with `--rebuild`. |
+| `task_sync_inventory_root_mismatch` | The membership root a verified Git delta derives differs from the one the exchange declared or recorded. Import the complete folder with `--rebuild`. |
 | `task_sync_git_query_failed` | A local Git read could not complete, including repository/process failures or the query deadline. Correct that failure and retry; this does not request a rebuild. A response over its bound instead uses the file or tree limit code, and a blob refusal names the document path. |
 | `task_sync_baseline_head_moved` | An exchange baseline names a previous baseline that is no longer the project's latest one: another exchange was recorded after the one it was planned against. Each baseline continues exactly one predecessor, so the later exchange is refused and nothing is written; plan it again against the current baseline. |
+| `task_sync_folder_busy` | Another `task-sync export` or `import` holds the data worktree's folder. Nothing is written; run this one again when that one finishes. |
 
 ## Reading a commit delta
 

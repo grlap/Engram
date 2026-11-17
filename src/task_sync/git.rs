@@ -6,7 +6,12 @@ mod path;
 mod query;
 mod snapshot;
 
-pub use delta::{CommitTaskDelta, read_task_delta};
+#[cfg(test)]
+pub(crate) use delta::take_blob_reads;
+pub use delta::{
+    ChangedTask, CommitTaskDelta, VerifiedTaskDelta, read_rooted_task_diff, read_task_delta,
+    read_tasks_at, read_verified_task_delta,
+};
 pub(crate) use evidence::read_selected_evidence_remaining;
 pub use evidence::{CommitEvidenceBatch, SelectionMismatch, read_selected_evidence};
 pub use path::plain_path;
@@ -21,6 +26,7 @@ pub(crate) use query::run_observed as query_observed;
 pub(crate) use query::test_clock::PendingQuery;
 #[cfg(test)]
 pub(crate) use query::wait_until_exit;
+pub(crate) use query::{MAX_LISTING_BYTES, run_listing_observed as query_listing};
 pub(crate) use snapshot::observe_commit;
 pub use snapshot::read_memory_snapshot;
 pub(crate) use snapshot::read_task_snapshot_bounded;

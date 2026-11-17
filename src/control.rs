@@ -43,45 +43,84 @@ pub fn remote_result_disqualification(
     _now: chrono::DateTime<chrono::Utc>,
 ) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
     use crate::domain::{
-        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunMode, RemoteRunVerdict,
+        NEW_UNTRACKED_ONLY_REASON, RemoteRunMode, RemoteRunVerdict,
         RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
-        RemoteVerificationUse as Use,
     };
     let result = &completion.result;
     if completion.is_authoritative_terminal()
         && result.verdict == RemoteRunVerdict::Fail
         && result.reason == NEW_UNTRACKED_ONLY_REASON
     {
-        return Some((Reason::UntrackedDebrisPendingDisposition, None));
+        return Some((
+            Reason::UntrackedDebrisPendingDisposition,
+            Some(format!(
+                "check=native_debris observed_verdict={} observed_reason={} expected_verdict=PASS; remedy=resolve the reported untracked files and deliver a new passing run; the recorded FAIL remains uncredited",
+                result.verdict.word(),
+                result.reason,
+            )),
+        ));
     }
     if !completion.is_authoritative_terminal() || result.verdict != RemoteRunVerdict::Pass {
-        return Some((Reason::ResultNotPass, None));
+        return Some((
+            Reason::ResultNotPass,
+            Some(remote_result_detail(completion)),
+        ));
     }
     if completion.finished_at.is_none() {
         return Some((
             Reason::ResultNotPass,
-            Some("the passed run states no finish time".to_owned()),
+            Some(remote_result_detail(completion)),
         ));
     }
     if intended_use.purpose() == Purpose::LandingGate && completion.mode != RemoteRunMode::Full {
-        return Some((Reason::NotFullMode, None));
+        return Some((
+            Reason::NotFullMode,
+            Some(format!(
+                "check=run_mode observed_mode={} expected_mode=full purpose=landing_gate; remedy=deliver a full run for the landing gate, or request verification when only verification is intended",
+                completion.mode.word()
+            )),
+        ));
     }
-    let input = match &completion.input {
+    remote_input_disqualification(&completion.input, intended_use)
+}
+
+fn remote_input_disqualification(
+    input: &crate::domain::RemoteRunInput,
+    intended_use: &crate::domain::RemoteVerificationUse,
+) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
+    use crate::domain::{
+        RemoteRunInput, RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
+        RemoteVerificationUse as Use,
+    };
+    let input = match input {
         RemoteRunInput::SourceId(input) => {
             let Some(source) = input.matching_source_id() else {
                 return Some((
                     Reason::SourceIdMissingOrChanged,
-                    Some("the before and after source_id must both be available and equal".into()),
+                    Some(format!(
+                        "check=source_id_endpoints observed_before={} observed_after={} observed_endpoints_match=false expected=two available and equal complete source_id objects; remedy=recover the original before and after source_id endpoints; if they are unavailable or differ, run the check on unchanged input and deliver the new run",
+                        remote_source_summary(input.source_id_before.as_ref()),
+                        remote_source_summary(input.source_id_after.as_ref()),
+                    )),
                 ));
             };
             return match intended_use {
                 Use::CommittedInput {
                     expected_commit, ..
-                } if source.commit != *expected_commit => Some((Reason::CommitMismatch, None)),
+                } if source.commit != *expected_commit => Some((
+                    Reason::CommitMismatch,
+                    Some(remote_commit_detail(Some(&source.commit), expected_commit)),
+                )),
                 Use::AuthorizedTestRef { expected_tree, .. }
                     if source.tree != expected_tree.as_str() =>
                 {
-                    Some((Reason::TreeMismatch, None))
+                    Some((
+                        Reason::TreeMismatch,
+                        Some(remote_tree_detail(
+                            Some(&source.tree),
+                            expected_tree.as_str(),
+                        )),
+                    ))
                 }
                 _ => None,
             };
@@ -95,11 +134,14 @@ pub fn remote_result_disqualification(
             None => {
                 return Some((
                     Reason::CommitMismatch,
-                    Some("the result names no tested commit".to_owned()),
+                    Some(remote_commit_detail(None, expected_commit)),
                 ));
             }
             Some(commit) if commit != expected_commit => {
-                return Some((Reason::CommitMismatch, None));
+                return Some((
+                    Reason::CommitMismatch,
+                    Some(remote_commit_detail(Some(commit), expected_commit)),
+                ));
             }
             Some(_) => {}
         },
@@ -107,11 +149,17 @@ pub fn remote_result_disqualification(
             None => {
                 return Some((
                     Reason::TreeMismatch,
-                    Some("the result names no tested tree".to_owned()),
+                    Some(remote_tree_detail(None, expected_tree.as_str())),
                 ));
             }
             Some(tree) if tree != expected_tree => {
-                return Some((Reason::TreeMismatch, None));
+                return Some((
+                    Reason::TreeMismatch,
+                    Some(remote_tree_detail(
+                        Some(tree.as_str()),
+                        expected_tree.as_str(),
+                    )),
+                ));
             }
             Some(_) => {}
         },
@@ -119,10 +167,12 @@ pub fn remote_result_disqualification(
     if intended_use.purpose() == Purpose::LandingGate {
         match (&input.before_fingerprint, &input.after_fingerprint) {
             (Some(before), Some(after)) if before == after => {}
-            (Some(_), Some(_)) => {
+            (Some(before), Some(after)) => {
                 return Some((
                     Reason::SourceIdMissingOrChanged,
-                    Some("the before and after fingerprints differ".to_owned()),
+                    Some(format!(
+                        "check=legacy_input_endpoints observed_before={before} observed_after={after} expected=two present equal fingerprints; the before and after fingerprints differ; remedy=recover the original endpoints, or deliver a new full run on unchanged input",
+                    )),
                 ));
             }
             (before, after) => {
@@ -133,12 +183,48 @@ pub fn remote_result_disqualification(
                 };
                 return Some((
                     Reason::SourceIdMissingOrChanged,
-                    Some(format!("the result names no {missing}")),
+                    Some(format!(
+                        "check=legacy_input_endpoints observed_before={} observed_after={} expected=two present equal fingerprints; the result names no {missing}; remedy=recover the original endpoints, or deliver a new full run on unchanged input",
+                        before.as_deref().unwrap_or("missing"),
+                        after.as_deref().unwrap_or("missing"),
+                    )),
                 ));
             }
         }
     }
     None
+}
+
+fn remote_source_summary(source: Option<&crate::source::SourceId>) -> String {
+    source.map_or_else(
+        || "unavailable".into(),
+        |source| source.summary().description(),
+    )
+}
+
+fn remote_commit_detail(observed: Option<&str>, expected: &str) -> String {
+    format!(
+        "check=tested_commit observed_commit={} expected_commit={expected}; remedy=deliver the run that tested the expected commit, or correct the intended commit; if absent, recover the original tested commit (no tested commit is inferred)",
+        observed.unwrap_or("missing"),
+    )
+}
+
+fn remote_tree_detail(observed: Option<&str>, expected: &str) -> String {
+    format!(
+        "check=tested_tree observed_tree={} expected_tree={expected}; remedy=deliver the run that tested the expected tree, or correct the authorized test ref; if absent, recover the original tested tree (no tested tree is inferred)",
+        observed.unwrap_or("missing"),
+    )
+}
+
+fn remote_result_detail(completion: &crate::domain::RemoteRunCompletion) -> String {
+    format!(
+        "check=terminal_result observed_verdict={} observed_terminal={} observed_finished_at={} expected_verdict=PASS expected_terminal=true expected_finished_at=present; remedy=deliver the authoritative passing terminal with its recorded finish time; wait for a provisional run to finish, or fix a failed run and deliver a new run; never replace an already settled terminal",
+        completion.result.verdict.word(),
+        completion.result.terminal,
+        completion
+            .finished_at
+            .map_or_else(|| "missing".into(), |at| at.to_rfc3339()),
+    )
 }
 
 /// Reconstruct refusals already recorded under the earlier admission rules.
