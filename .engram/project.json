@@ -9,18 +9,15 @@
   },
   "folder_exchange": {
     "complete": true,
-    "export_basis": {
-      "inventory_fingerprint": "68cae161b721e42f0c36b5145eb7a14c0083a068048625101537862ac0ea5b13"
-    },
     "incremental": {
       "format": "engram-task-sync-folder-incremental-v1",
-      "inventory_root": "eb8501691cfb618fd11e7e1842ba0d48e321cacd796a6167c278a79d73e60930",
+      "inventory_root": "74a58d8a3bc06463917e016f5b74925ec551f22735905a97e119f4fdaabeeb1e",
       "task_count": 2169,
       "cut": {
-        "position": 229234,
+        "position": 7,
         "anchor": {
           "object_kind": "work_event",
-          "object_id": "eb88a63524e34e3881c91759441769b1"
+          "object_id": "00a6d5ab7cd643adae9be708585be213"
         }
       }
     }
