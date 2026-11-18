@@ -89,108 +89,114 @@ pub(crate) async fn apply_evidence_exchange_remaining(
     limits: RunLimits,
     cancel: &Cancellation,
 ) -> Result<CompletedExchange> {
-    let warning = crate::operation_time::Warning::start("task exchange apply evidence exchange");
-    if let Some(original) = store.completed_task_sync_evidence(binding_id, intent)? {
-        store.acknowledge_committed_task_sync_evidence(binding_id, intent, &original)?;
-        return Ok(original);
-    }
-    ensure!(
-        cfg!(windows),
-        "evidence exchange requires supported confined Git execution"
-    );
-    binding.validate()?;
-    intent.validate(binding_id, binding)?;
-    crate::storage::admit_live_actor_session(&intent.actor)?;
-    let started = std::time::Instant::now();
-    let retained = retention::evidence::read_recipe(binding_id, binding, intent)?;
-    let selected = GitSelection {
-        expected_head: intent.expected_head.as_deref(),
-        commit: &intent.source,
-        common_commit: None,
-        published_head: false,
-    };
-    // Observe the selected Git state before a fresh recipe exists, so any
-    // uncertain or unrelated Git refusal leaves nothing new behind. Its chain
-    // position is chosen only afterwards, together with its retention, and
-    // retention still precedes reading any selected pack bytes.
-    let observed = observe_git_selection(
-        binding,
-        selected,
-        remaining(limits, started)?,
-        std::time::Instant::now(),
-        cancel,
-    )
-    .await;
-    let carrier_retained = || -> Result<()> {
-        ensure!(
-            retention::commit_selection(&binding.repository.git_directory, intent.operation)?
-                .as_ref()
-                == Some(&intent.source),
-            "selected evidence carrier retention is missing or differs"
-        );
-        Ok(())
-    };
-    let mut construct = || -> Result<EvidenceImportRecipe> {
-        match &retained {
-            Some(original) => {
-                retention::evidence::retain_recipe(binding_id, binding, original)?;
-                Ok(original.clone())
-            }
-            None => Ok(store.retain_task_sync_evidence_recipe(binding_id, binding, intent, now)?),
+    crate::operation_time::observe("task exchange apply evidence exchange", async {
+        let warning =
+            crate::operation_time::Warning::start("task exchange apply evidence exchange");
+        if let Some(original) = store.completed_task_sync_evidence(binding_id, intent)? {
+            store.acknowledge_committed_task_sync_evidence(binding_id, intent, &original)?;
+            return Ok(original);
         }
-    };
-    if head_changed(&observed) {
-        // The fetch already retained this operation's carrier, and custody
-        // refuses every later exchange while a retained operation is unknown
-        // to the ledger. A definite head change is a known outcome whether or
-        // not construction was retained yet, so it always ends canonically.
+        ensure!(
+            cfg!(windows),
+            "evidence exchange requires supported confined Git execution"
+        );
+        binding.validate()?;
+        intent.validate(binding_id, binding)?;
+        crate::storage::admit_live_actor_session(&intent.actor)?;
+        let started = std::time::Instant::now();
+        let retained = retention::evidence::read_recipe(binding_id, binding, intent)?;
+        let selected = GitSelection {
+            expected_head: intent.expected_head.as_deref(),
+            commit: &intent.source,
+            common_commit: None,
+            published_head: false,
+        };
+        // Observe the selected Git state before a fresh recipe exists, so any
+        // uncertain or unrelated Git refusal leaves nothing new behind. Its chain
+        // position is chosen only afterwards, together with its retention, and
+        // retention still precedes reading any selected pack bytes.
+        let observed = observe_git_selection(
+            binding,
+            selected,
+            remaining(limits, started)?,
+            std::time::Instant::now(),
+            cancel,
+        )
+        .await;
+        let carrier_retained = || -> Result<()> {
+            ensure!(
+                retention::commit_selection(&binding.repository.git_directory, intent.operation)?
+                    .as_ref()
+                    == Some(&intent.source),
+                "selected evidence carrier retention is missing or differs"
+            );
+            Ok(())
+        };
+        let mut construct = || -> Result<EvidenceImportRecipe> {
+            match &retained {
+                Some(original) => {
+                    retention::evidence::retain_recipe(binding_id, binding, original)?;
+                    Ok(original.clone())
+                }
+                None => {
+                    Ok(store.retain_task_sync_evidence_recipe(binding_id, binding, intent, now)?)
+                }
+            }
+        };
+        if head_changed(&observed) {
+            // The fetch already retained this operation's carrier, and custody
+            // refuses every later exchange while a retained operation is unknown
+            // to the ledger. A definite head change is a known outcome whether or
+            // not construction was retained yet, so it always ends canonically.
+            carrier_retained()?;
+            let recipe = construct()?;
+            return stop_changed_selection(store, binding_id, binding, recipe);
+        }
+        observed?;
         carrier_retained()?;
         let recipe = construct()?;
-        return stop_changed_selection(store, binding_id, binding, recipe);
-    }
-    observed?;
-    carrier_retained()?;
-    let recipe = construct()?;
-    let (packs, stopped) = match crate::task_sync::git::read_selected_evidence_remaining(
-        binding_id,
-        binding,
-        intent,
-        remaining(limits, started)?.deadline,
-        &warning,
-    ) {
-        Ok(batch) => (batch.packs, None),
-        Err(error) => {
-            let Some(stopped) = known_stop(&error) else {
-                return Err(error);
-            };
-            (Vec::new(), Some(stopped))
+        let (packs, stopped) = match crate::task_sync::git::read_selected_evidence_remaining(
+            binding_id,
+            binding,
+            intent,
+            remaining(limits, started)?.deadline,
+            &warning,
+        ) {
+            Ok(batch) => (batch.packs, None),
+            Err(error) => {
+                let Some(stopped) = known_stop(&error) else {
+                    return Err(error);
+                };
+                (Vec::new(), Some(stopped))
+            }
+        };
+        let observed = observe_git_selection(
+            binding,
+            selected,
+            remaining(limits, started)?,
+            std::time::Instant::now(),
+            cancel,
+        )
+        .await;
+        if head_changed(&observed) {
+            return stop_changed_selection(store, binding_id, binding, recipe);
         }
-    };
-    let observed = observe_git_selection(
-        binding,
-        selected,
-        remaining(limits, started)?,
-        std::time::Instant::now(),
-        cancel,
-    )
-    .await;
-    if head_changed(&observed) {
-        return stop_changed_selection(store, binding_id, binding, recipe);
-    }
-    observed?;
-    let input = InspectedEvidence {
-        binding_id: binding_id.clone(),
-        binding: binding.clone(),
-        recipe,
-        packs,
-    };
-    input
-        .recheck_recipe()
-        .context("evidence construction is not retained exactly")?;
-    match stopped {
-        Some(stopped) => Ok(store.stop_task_sync_evidence_import(&input, &stopped)?),
-        None => Ok(store.apply_task_sync_evidence_import(&input)?),
-    }
+        observed?;
+        let input = InspectedEvidence {
+            binding_id: binding_id.clone(),
+            binding: binding.clone(),
+            recipe,
+            packs,
+        };
+        input
+            .recheck_recipe()
+            .context("evidence construction is not retained exactly")?;
+        match stopped {
+            Some(stopped) => Ok(store.stop_task_sync_evidence_import(&input, &stopped)?),
+            None => Ok(store.apply_task_sync_evidence_import(&input)?),
+        }
+    })
+    .await
 }
 
 /// The known stop for a selected-evidence read that definitely failed: the

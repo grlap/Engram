@@ -2,9 +2,11 @@
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 
+import { MINIMUM_MS, WARN_AFTER_MS, monotonicMs, startOperationWarning } from "./operation-time.mjs";
+
 const contract = "termal-durable-test-run-registration";
 const version = 1;
-const budgetMs = 8_000;
+const budgetMs = MINIMUM_MS;
 const responseLimit = 65_536;
 const hostMessageLimit = 384;
 const contextKeys = ["TERMAL_BASE_URL", "TERMAL_SESSION_ID", "TERMAL_CLI"];
@@ -82,10 +84,11 @@ async function json(response) {
   catch { throw new Error("invalid-response"); }
 }
 
-async function query(request, directory, host, send, signal) {
+async function query(request, directory, host, send, signal, checkDeadline) {
   const url = new URL(`/api/test-runs/${encodeURIComponent(request.runId)}`, host.base);
   let response;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    checkDeadline();
     try { response = await send(url, { signal, redirect: "manual" }); break; }
     catch (error) {
       if (attempt || signal.aborted || transportCode(error) !== "ECONNRESET") {
@@ -112,14 +115,37 @@ async function query(request, directory, host, send, signal) {
 // A single shared budget covers POST, response bodies, confirmation and a
 // detached worker's confirmation. Even an unresponsive transport cannot
 // postpone execution past it. A timeout is not evidence of failed persistence.
-async function bounded(milliseconds, operation) {
+async function bounded(timing, now, operation) {
+  const milliseconds = timing.deadline - now();
+  if (milliseconds <= 0) throw new Error("registration-timeout");
+  const finishWarning = timing.warned ? () => {} : startOperationWarning("test run registration", {
+    now, started: timing.started, afterMs: Math.max(0, timing.started + WARN_AFTER_MS - now()),
+    warn(message) {
+      timing.warned = true;
+      process.stderr.write(`${message}\n`);
+    },
+  });
   const controller = new AbortController();
+  const checkDeadline = () => {
+    if (now() >= timing.deadline) throw new Error("registration-timeout");
+  };
   let timer;
   const expired = new Promise((_, reject) => {
     timer = setTimeout(() => { controller.abort(); reject(new Error("registration-timeout")); }, milliseconds);
   });
-  try { return await Promise.race([operation(controller.signal), expired]); }
-  finally { clearTimeout(timer); controller.abort(); }
+  try {
+    const value = await Promise.race([operation(controller.signal, checkDeadline), expired]);
+    checkDeadline();
+    return value;
+  }
+  finally { finishWarning(); clearTimeout(timer); controller.abort(); }
+}
+
+function beginTiming(now, options) {
+  // Injection only shortens the production bound for deterministic fixtures.
+  const allowance = Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs));
+  const started = now();
+  return { started, deadline: started + allowance, warned: false };
 }
 
 function reason(error) {
@@ -135,17 +161,17 @@ export async function registerTestRun(request, directory, env = process.env, opt
   catch (error) { return unconfirmed(reason(error)); }
   if (host.standalone) return { state: "untracked", reason: "standalone", nativeWaitReady: false };
   const send = options.fetch ?? globalThis.fetch;
-  // Injection only shortens the production bound for deterministic fixtures.
-  const allowance = Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs));
-  const started = performance.now();
   const identity = requestIdentity(request);
+  const now = options.now ?? monotonicMs;
+  const timing = beginTiming(now, options);
   let refusal;
   try {
-    const source = await bounded(allowance, async (signal) => {
+    const source = await bounded(timing, now, async (signal, checkDeadline) => {
       const url = new URL(`/api/sessions/${encodeURIComponent(host.session)}/test-runs`, host.base);
       const body = JSON.stringify({ runId: request.runId, runDirectory: directory,
         ...(request.requestMessageId === undefined ? {} : { requestMessageId: request.requestMessageId }) });
       for (let attempt = 0; attempt < 2; attempt += 1) {
+        checkDeadline();
         let response;
         try {
           response = await send(url, { method: "POST", headers: { "content-type": "application/json" },
@@ -170,7 +196,7 @@ export async function registerTestRun(request, directory, env = process.env, opt
         if (ack.contract !== contract || ack.version !== version || ack.runId !== request.runId || ack.registered !== true) {
           throw new Error("invalid-acknowledgement");
         }
-        return await query(request, directory, host, send, signal);
+        return await query(request, directory, host, send, signal, checkDeadline);
       }
       throw new Error("registration-unconfirmed");
     });
@@ -178,7 +204,7 @@ export async function registerTestRun(request, directory, env = process.env, opt
     return { state: source === "index" ? "registered" : "registered-but-not-indexed", requestIdentity: identity,
       reason: source === "index" ? "confirmed-index" : "registration-only",
       nativeWaitReady: source === "index", hostOrigin: host.base.origin,
-      remainingMs: Math.max(0, allowance - (performance.now() - started)) };
+      timing };
   } catch (error) { return { ...unconfirmed(reason(error)), ...(refusal ?? {}) }; }
 }
 
@@ -192,14 +218,19 @@ export async function confirmDetachedRegistration(request, directory, env = proc
     const host = configuration(request, env);
     if (host.standalone || host.base.origin !== registration.hostOrigin) return unconfirmed("confirmation-unavailable");
     if (registration.requestIdentity !== requestIdentity(request)) return unconfirmed("request-changed");
-    const remaining = registration.remainingMs;
-    if (!Number.isFinite(remaining) || remaining <= 0) return unconfirmed("registration-timeout");
-    const source = await bounded(Math.min(budgetMs, remaining), (signal) =>
-      query(request, directory, host, options.fetch ?? globalThis.fetch, signal));
+    const now = options.now ?? monotonicMs;
+    const timing = registration.timing;
+    if (!Number.isFinite(timing?.started) || !Number.isFinite(timing?.deadline)
+        || typeof timing.warned !== "boolean" || timing.started > now()
+        || timing.deadline <= timing.started
+        || timing.deadline - timing.started > budgetMs) return unconfirmed("registration-timeout");
+    const source = await bounded({ ...timing }, now, (signal, checkDeadline) =>
+      query(request, directory, host, options.fetch ?? globalThis.fetch, signal, checkDeadline));
+    const { timing: _spent, ...confirmed } = registration;
     if (source === "registration" || registration.state === "registered-but-not-indexed") {
-      return { ...registration, state: "registered-but-not-indexed", reason: "registration-only", nativeWaitReady: false, remainingMs: 0 };
+      return { ...confirmed, state: "registered-but-not-indexed", reason: "registration-only", nativeWaitReady: false };
     }
-    return { ...registration, remainingMs: 0 };
+    return confirmed;
   } catch (error) { return unconfirmed(reason(error)); }
 }
 
@@ -214,9 +245,10 @@ export async function registerOwnRunWait(request, directory, env = process.env, 
   catch { return unavailable; }
   if (host.standalone || host.base.origin !== request.registration.hostOrigin) return unavailable;
   const send = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? monotonicMs;
   let refusal;
   try {
-    return await bounded(Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs)), async (signal) => {
+    return await bounded(beginTiming(now, options), now, async (signal) => {
       const url = new URL(`/api/sessions/${encodeURIComponent(host.session)}/test-run-waits`, host.base);
       const response = await send(url, { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ runIds: [request.runId], mode: "all" }), signal, redirect: "manual" });

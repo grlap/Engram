@@ -9,6 +9,8 @@ use crate::domain::{
 };
 use crate::{CarriedFailureRefusal, WorkRunId};
 
+mod composed_budget;
+
 /// Fields drop in order, so the fixture directory goes last, after the
 /// service that holds its database open.
 struct Scenario {

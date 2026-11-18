@@ -105,6 +105,7 @@ pub fn prepare(
     rebaseline: bool,
     capture: impl FnOnce(Option<&ExportCut>) -> Result<ExportCapture>,
 ) -> Result<PrepareReceipt> {
+    let _warning = crate::operation_time::Warning::start("task sync candidate preparation");
     // Identity reads the schema reference; do it outside the storage snapshot.
     let producer = crate::build_identity::current()
         .build_fingerprint

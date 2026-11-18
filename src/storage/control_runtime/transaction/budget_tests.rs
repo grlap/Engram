@@ -100,7 +100,7 @@ fn delayed_begin_rolls_back_before_the_body_and_restores_timeout() {
 fn expired_body_rolls_back_its_write_and_the_same_connection_can_retry() {
     let (mut connection, _scope) = fixture();
     let error = control_transaction(&mut connection, |transaction| {
-        assert_eq!(timeout(transaction), 15_000);
+        assert_eq!(timeout(transaction), 20_000);
         transaction.execute("INSERT INTO payload VALUES (1)", [])?;
         expire();
         Ok(())
@@ -185,4 +185,52 @@ fn unwind_restores_the_busy_policy_and_discards_uncommitted_changes() {
     assert!(connection.is_autocommit());
     assert_eq!(count(&connection), 0);
     assert_eq!(timeout(&connection), 20_000);
+}
+
+#[test]
+fn a_request_continues_past_the_warning_and_rolls_back_only_at_sixty_seconds() {
+    let (mut connection, _scope) = fixture();
+    let start = now();
+    let error = control_transaction(&mut connection, |transaction| {
+        transaction.execute("INSERT INTO payload VALUES (1)", [])?;
+        CLOCK.with(|clock| clock.set(start + Duration::from_secs(10)));
+        let budget = super::request_budget::current().unwrap();
+        budget.check()?;
+        assert_eq!(budget.remaining(), Duration::from_secs(50));
+        CLOCK.with(|clock| clock.set(start + Duration::from_secs(59)));
+        budget.check()?;
+        transaction.execute("INSERT INTO payload VALUES (2)", [])?;
+        CLOCK.with(|clock| clock.set(start + Duration::from_secs(60)));
+        budget.check()
+    })
+    .unwrap_err();
+    assert!(matches!(error, StoreError::ControlRequestExpired));
+    assert_eq!(count(&connection), 0);
+    assert!(connection.is_autocommit());
+    let _fresh = ControlRequestScope::with_clock(now);
+    control_transaction(&mut connection, |transaction| {
+        transaction.execute("INSERT INTO payload VALUES (1)", [])?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(count(&connection), 1);
+}
+
+#[test]
+fn expiry_of_a_later_transaction_preserves_the_earlier_commit() {
+    let (mut connection, _scope) = fixture();
+    control_transaction(&mut connection, |transaction| {
+        transaction.execute("INSERT INTO payload VALUES (1)", [])?;
+        Ok(())
+    })
+    .unwrap();
+    let error = control_transaction(&mut connection, |transaction| {
+        transaction.execute("INSERT INTO payload VALUES (2)", [])?;
+        expire();
+        super::request_budget::check_current()
+    })
+    .unwrap_err();
+    assert!(matches!(error, StoreError::ControlRequestExpired));
+    assert_eq!(count(&connection), 1);
+    assert!(connection.is_autocommit());
 }

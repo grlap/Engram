@@ -79,9 +79,10 @@ impl McpServer {
         let verbs = self.verbs();
         let diagnostic = crate::diagnostics::transaction::current();
         let traced = crate::phase_trace::active();
+        let warning = crate::operation_time::BlockingWarningContext::capture();
         *slot = Some(tokio::task::spawn_blocking(move || {
             let _diagnostic = diagnostic.map(crate::diagnostics::transaction::Scope::enter);
-            let run = || request.run(|| read(verbs));
+            let run = || warning.run(|| request.run(|| read(verbs)));
             if traced {
                 let (output, phases) = crate::phase_trace::capture(run);
                 (output, Some(phases))

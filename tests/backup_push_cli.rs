@@ -243,32 +243,29 @@ fn deadlines_too_far_off_for_the_clock_push_without_a_limit() {
 }
 
 #[test]
-fn a_transport_deadline_shorter_than_the_put_exits_one_and_leaves_the_attempt_pending() {
+fn a_short_transport_deadline_is_refused_without_changing_the_backup_record() {
     let root = test_support::temp_home().unwrap();
     setup(root.path());
     let copies = root.path().join("copies");
     fs::create_dir_all(&copies).unwrap();
     set_target(root.path(), &copies);
-
-    let push = engram(
-        root.path(),
-        &["backup", "push", "--json", "--transport-deadline-secs", "0"],
-    );
-    assert_eq!(push.status.code(), Some(1), "{}", text(&push.stderr));
-    let value: Value = serde_json::from_slice(&push.stdout).unwrap();
-    let report = &value["kinds"][0];
-    assert_eq!(report["outcome"], "failed", "{report}");
-    assert_eq!(report["code"], "backup_transport_deadline");
-    let pending = report["pending"].as_str().unwrap();
+    push_json(root.path(), true);
     let paths = RecordPaths::new(&root.path().join("home"), &project(), CopyKind::Store);
-    let state: Value = serde_json::from_slice(&fs::read(&paths.state).unwrap()).unwrap();
-    assert_eq!(state["pending"]["manifest"]["copy"], pending);
-    assert_eq!(state["newest_receipt"], Value::Null);
-    assert_eq!(state["last_attempt"]["code"], "backup_transport_deadline");
-
-    // With time to put it, the next push resolves the attempt, which never
-    // arrived, and puts the copy.
-    let report = push_json(root.path(), true);
-    assert_eq!(report["dropped"], pending, "{report}");
-    assert_eq!(report["outcome"], "uploaded");
+    let before = fs::read(&paths.state).unwrap();
+    for seconds in ["0", "59"] {
+        let push = engram(
+            root.path(),
+            &[
+                "backup",
+                "push",
+                "--json",
+                "--transport-deadline-secs",
+                seconds,
+            ],
+        );
+        assert_eq!(push.status.code(), Some(2), "{}", text(&push.stderr));
+        assert_eq!(push.stdout, [] as [u8; 0]);
+        assert!(text(&push.stderr).contains("--transport-deadline-secs"));
+        assert_eq!(fs::read(&paths.state).unwrap(), before);
+    }
 }

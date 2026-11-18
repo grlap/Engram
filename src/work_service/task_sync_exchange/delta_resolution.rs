@@ -22,15 +22,17 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<ObjectId> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = Instant::now();
-        let mut store = self.delta_resolution_store(input)?;
-        exchange::record_delta_resolution_remaining(
-            &mut store,
-            input,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = Instant::now();
+            let mut store = self.delta_resolution_store(input)?;
+            exchange::record_delta_resolution_remaining(
+                &mut store,
+                input,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -49,16 +51,18 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<(ObjectId, bool)> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = Instant::now();
-        let mut store = self.delta_resolution_store(input)?;
-        exchange::record_delta_retry_progress_remaining(
-            &mut store,
-            input,
-            progress,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = Instant::now();
+            let mut store = self.delta_resolution_store(input)?;
+            exchange::record_delta_retry_progress_remaining(
+                &mut store,
+                input,
+                progress,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -76,15 +80,17 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<exchange::PublicationAttempt> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = Instant::now();
-        let mut store = self.delta_resolution_store(input)?;
-        Box::pin(exchange::publish_delta_retry_remaining(
-            &mut store,
-            input,
-            exchange::remaining(limits, started)?,
-            cancel,
-        ))
+        crate::operation_time::observe("task exchange service", async {
+            let started = Instant::now();
+            let mut store = self.delta_resolution_store(input)?;
+            Box::pin(exchange::publish_delta_retry_remaining(
+                &mut store,
+                input,
+                exchange::remaining(limits, started)?,
+                cancel,
+            ))
+            .await
+        })
         .await
     }
 

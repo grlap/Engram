@@ -159,6 +159,7 @@ fn check_kind(
     settings: &CheckSettings,
     now: DateTime<Utc>,
 ) -> (CheckReport, Option<JoinHandle<()>>) {
+    let _warning = engram::operation_time::Warning::start("backup target check");
     let KindRecords::Configured {
         config,
         identity,

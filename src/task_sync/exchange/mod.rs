@@ -75,6 +75,7 @@ pub(crate) mod test_support {
     std::thread_local! {
         pub(crate) static LAUNCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
         pub(crate) static SERVICE_STARTED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+        pub(super) static YIELD_NEXT_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 }
 
@@ -253,9 +254,15 @@ pub async fn run(
 ) -> Result<RunOutput, RunError> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange run");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    run_remaining(target, operation, limits, cancel).await
+    crate::operation_time::observe("task exchange run", async {
+        #[cfg(test)]
+        if test_support::YIELD_NEXT_RUN.with(|yield_next| yield_next.replace(false)) {
+            tokio::task::yield_now().await;
+        }
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        run_remaining(target, operation, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

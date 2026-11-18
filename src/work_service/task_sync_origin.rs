@@ -18,6 +18,8 @@ impl LocalWorkService {
         request: &EnrollRequest,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, StoreError> {
+        let _warning =
+            crate::operation_time::Warning::start("task sync origin enrollment cancellation");
         self.require_task_sync_writer()?;
         let actor = self.actor("task_sync_origin", "cancel uncommitted origin enrollment");
         self.store_at(now)?
@@ -32,6 +34,7 @@ impl LocalWorkService {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Option<ProducingOrigin>, StoreError> {
+        let _warning = crate::operation_time::Warning::start("task sync origin read");
         self.read_store_at(now)?
             .task_sync_producing_origin(&self.project_id)
     }
@@ -46,6 +49,7 @@ impl LocalWorkService {
         request: &EnrollRequest,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<ProducingOrigin, StoreError> {
+        let _warning = crate::operation_time::Warning::start("task sync origin enrollment");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let actor = self.actor("task_sync_origin", "explicit origin enrollment");
@@ -63,6 +67,7 @@ impl LocalWorkService {
         request: &crate::task_sync::origin::recovery::RecoveryRequest,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<crate::task_sync::origin::recovery::RecoveryReceipt, StoreError> {
+        let _warning = crate::operation_time::Warning::start("task sync origin recovery");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let actor = self.actor("task_sync_origin", "explicit origin recovery");
@@ -79,6 +84,8 @@ impl LocalWorkService {
         request: &crate::task_sync::origin::recovery::RecoveryRequest,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, StoreError> {
+        let _warning =
+            crate::operation_time::Warning::start("task sync origin recovery cancellation");
         self.require_task_sync_writer()?;
         let actor = self.actor("task_sync_origin", "cancel uncommitted origin recovery");
         self.store_at(now)?

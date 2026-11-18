@@ -1,5 +1,31 @@
 use super::*;
 
+#[test]
+fn request_open_retries_and_sql_busy_callbacks_keep_the_original_budget() {
+    use crate::storage::control_runtime::request_budget::test_clock;
+    let _request = test_clock::scope();
+    let policy = LockWait::Timeout(LOCK_WAIT);
+    test_clock::advance(Duration::from_secs(40));
+    let now = Instant::now();
+    assert_eq!(policy.retry_limit(now), Some(now + Duration::from_secs(20)));
+    test_clock::advance(Duration::from_secs(15));
+    let now = Instant::now();
+    assert_eq!(policy.retry_limit(now), Some(now + Duration::from_secs(5)));
+    let connection = rusqlite::Connection::open_in_memory().unwrap();
+    policy.install(&connection).unwrap();
+    test_clock::advance(Duration::from_secs(5));
+    assert_eq!(policy.retry_pause(policy.retry_limit(now), now), None);
+    assert!(
+        !request_busy(0),
+        "a new SQLite episode cannot reset the request"
+    );
+    policy.restore(&connection).unwrap();
+    let timeout: u32 = connection
+        .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(timeout, 60_000);
+}
+
 fn at(start: Instant, offset: Duration) -> Instant {
     start.checked_add(offset).expect("a fixed instant")
 }
@@ -13,7 +39,7 @@ const fn ns(nanos: u64) -> Duration {
 }
 
 #[test]
-fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
+fn a_copy_wait_ends_at_the_deadline_or_sixty_seconds_after_it_began() {
     let start = Instant::now();
     let cases = [
         // A remainder under a millisecond still waits for it.
@@ -26,8 +52,8 @@ fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
         (ms(1500), Some(ms(1500)), Decision::Refuse),
         (ms(1712), Some(ms(1500)), Decision::Refuse),
         (ms(0), Some(ms(0)), Decision::Refuse),
-        // Without a deadline, or with a later one, a wait lasts five seconds.
-        (ms(4999), None, Decision::Wait(ms(1))),
+        // Without a deadline, or with a later one, a wait lasts sixty seconds.
+        (ms(59_999), None, Decision::Wait(ms(1))),
         (LOCK_WAIT, None, Decision::Refuse),
         (LOCK_WAIT, Some(ms(6000)), Decision::Refuse),
         (ms(4000), Some(ms(6000)), Decision::Wait(POLL)),
@@ -46,10 +72,10 @@ fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
 }
 
 #[test]
-fn a_new_lock_wait_restarts_its_five_seconds_but_never_the_deadline() {
+fn a_new_lock_wait_restarts_its_minute_but_never_the_deadline() {
     let start = Instant::now();
     let deadline = Some(at(start, Duration::from_secs(8)));
-    // A second wait that begins six seconds in has its own five seconds...
+    // A second wait that begins six seconds in has its own sixty seconds...
     let second = at(start, Duration::from_secs(6));
     assert_eq!(
         decide(at(second, Duration::from_secs(1)), second, deadline),
@@ -90,15 +116,15 @@ fn the_busy_handler_waits_inside_a_scope_until_the_deadline() {
 fn the_first_call_for_a_lock_starts_a_new_wait() {
     let _scope = CopyWaitScope::enter(None);
     let long_ago = Instant::now()
-        .checked_sub(Duration::from_secs(10))
-        .expect("an instant ten seconds ago");
+        .checked_sub(Duration::from_secs(70))
+        .expect("an instant seventy seconds ago");
     replace(Some(CopyWait {
         deadline: None,
         episode_start: long_ago,
     }));
     assert!(
         !copy_busy(3),
-        "a wait that began ten seconds ago has run out"
+        "a wait that began seventy seconds ago has run out"
     );
     assert!(copy_busy(0), "a new lock starts a new wait");
     let wait = current().expect("the scope");
@@ -176,7 +202,7 @@ fn a_retry_outside_the_busy_handler_keeps_to_the_same_limit() {
         assert_eq!(
             copy.retry_limit(start),
             Some(at(start, LOCK_WAIT)),
-            "without a deadline a copy retries for five seconds"
+            "without a deadline a copy retries for sixty seconds"
         );
     }
 }

@@ -211,10 +211,10 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         else {
             panic!("expected native admission refusal: {error:?}");
         };
-        // Retained limit: each pass really waits out the product's 10 s note
+        // Retained limit: each pass really waits out the product's 60 s note
         // window, and the window's start must leave it some budget.
-        assert!(budget_ms > 0 && budget_ms <= 10000);
-        assert_eq!(timeout(&store), 5000);
+        assert!(budget_ms > 0 && budget_ms <= 60000);
+        assert_eq!(timeout(&store), 60000);
         assert!(store.connection.is_autocommit());
         // Evidence protocol only: drain the waiter while the child's writer
         // is idle at the release barrier. Production ring writes remain
@@ -279,7 +279,7 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
             assert!(refused["event"]["store_transaction"]["acquired_interval_ms"].is_null());
             assert_eq!(
                 refused["event"]["store_transaction"]["budget"]["shared_window_ms"],
-                10000
+                60000
             );
             assert!(
                 settled["event"]["store_transaction"]["acquired_interval_ms"]
@@ -294,7 +294,7 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         }
         measurements.push(serde_json::json!({
             "capture": if capture { "full" } else { "no_observer" },
-            "configured_note_window_ms": 10000, "effective_allowance_ms": budget_ms,
+            "configured_note_window_ms": 60000, "effective_allowance_ms": budget_ms,
             "waiter_elapsed_ms": elapsed_ms, "holder_observed_interval_ms": held_ms,
             "retained_transaction_records": transactions.len(), "holder_pid": holder["pid"],
             "diagnostic_holder": transactions.iter()

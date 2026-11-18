@@ -1,7 +1,7 @@
 //! Explicit one-time note-index cutover; ordinary open never builds projections.
 
 use super::{
-    Connection, Duration, Path, SchemaDurability, SchemaOwner, SqliteStore, StoreError,
+    Connection, Path, SchemaDurability, SchemaOwner, SqliteStore, StoreError,
     current_schema_definition_issue, different_build_store_error, open_sqlite_file, work,
 };
 
@@ -10,6 +10,7 @@ impl SqliteStore {
         path: &Path,
         missing_note_index: bool,
     ) -> Result<Connection, StoreError> {
+        let _warning = crate::operation_time::Warning::start("SQLite projection maintenance");
         if !path.is_file() {
             return Err(StoreError::InvalidControlProjection(format!(
                 "projection-repair target {} is not an existing file",
@@ -17,7 +18,7 @@ impl SqliteStore {
             )));
         }
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(crate::operation_time::MINIMUM)?;
         connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;")?;
         if missing_note_index {
             work::note_index::require_missing_on(&connection)?;

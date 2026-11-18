@@ -10,16 +10,17 @@ use serde::Serialize;
 use super::schema::require_work_schema_version;
 use crate::storage::{SqliteStore, StoreError};
 
-const NOTE_ADMISSION_WINDOW: Duration = Duration::from_secs(10);
+const NOTE_ADMISSION_WINDOW: Duration = crate::operation_time::MINIMUM;
 
 /// Keeps imported-origin reads shared within this mutation's transaction.
 #[derive(Debug)]
-pub(super) struct WorkMutation<'connection> {
+pub(in crate::storage) struct WorkMutation<'connection> {
     // Drop the scope before the transaction rolls back on an early return.
     origin_scope: super::task_sync::OriginScopeGuard,
     transaction: Transaction<'connection>,
     // Field order is significant: implicit rollback precedes observation.
     timing: crate::storage::transaction_timing::TransactionTiming<'connection>,
+    budget: Option<crate::storage::control_runtime::request_budget::ControlRequestBudget>,
 }
 
 impl<'connection> Deref for WorkMutation<'connection> {
@@ -35,16 +36,25 @@ impl<'connection> WorkMutation<'connection> {
     pub(super) fn transaction_mut(&mut self) -> &mut Transaction<'connection> {
         &mut self.transaction
     }
-    pub(super) fn commit(self) -> rusqlite::Result<()> {
+    pub(in crate::storage) fn commit(self) -> Result<(), StoreError> {
         let Self {
             origin_scope,
             transaction,
             mut timing,
+            budget,
         } = self;
         drop(origin_scope);
+        if let Some(budget) = budget
+            && let Err(error) = budget.check()
+        {
+            let rollback = transaction.rollback();
+            timing.rolled_back(rollback.is_ok());
+            rollback?;
+            return Err(error);
+        }
         let result = transaction.commit();
         timing.committed(result.is_ok());
-        result
+        result.map_err(StoreError::Sqlite)
     }
 
     pub(super) fn rollback(self) -> rusqlite::Result<()> {
@@ -52,6 +62,7 @@ impl<'connection> WorkMutation<'connection> {
             origin_scope,
             transaction,
             mut timing,
+            budget: _,
         } = self;
         drop(origin_scope);
         let result = transaction.rollback();
@@ -177,9 +188,16 @@ impl SqliteStore {
         }
     }
 
-    pub(super) fn begin_work_mutation(&mut self) -> Result<WorkMutation<'_>, StoreError> {
+    pub(in crate::storage) fn begin_work_mutation(
+        &mut self,
+    ) -> Result<WorkMutation<'_>, StoreError> {
+        let _warning = crate::operation_time::Warning::start("SQLite work writer admission");
         #[cfg(test)]
         test_policy::before_acquisition();
+        let budget = crate::storage::control_runtime::request_budget::current();
+        if let Some(budget) = budget {
+            budget.check()?;
+        }
         let started = Instant::now();
         let ordinary_timeout = Duration::from_millis(u64::from(self.connection.query_row(
             "PRAGMA busy_timeout",
@@ -188,10 +206,12 @@ impl SqliteStore {
         )?));
         let window = self.writer_admission.as_ref();
         let allowance = window.map_or(ordinary_timeout, WriterAdmissionWindow::remaining);
+        let allowance = budget.map_or(allowance, |budget| allowance.min(budget.remaining()));
+        let cap_wait = window.is_some() || budget.is_some();
         #[cfg(test)]
         test_policy::observe_allowance(allowance);
         let autocommit = self.connection.is_autocommit();
-        if window.is_some() && autocommit {
+        if cap_wait && autocommit {
             self.connection.busy_timeout(allowance)?;
         }
         // The shared connection borrow allows restoring the handler before
@@ -211,18 +231,22 @@ impl SqliteStore {
             Ok(_) => timing.acquired(),
             Err(error) => timing.begin_failed(error, autocommit),
         }
-        if window.is_some() && autocommit {
+        if cap_wait && autocommit {
             // Restore on both acquisition outcomes, before any body runs.
             self.connection.busy_timeout(ordinary_timeout)?;
         }
         let transaction = acquired
             .map_err(|source| admission_error(source, autocommit, started.elapsed(), allowance))?;
+        if let Some(budget) = budget {
+            budget.check()?;
+        }
         require_work_schema_version(&transaction, self.work_schema_version)?;
         let origin_scope = super::task_sync::enter_origin_scope(&transaction)?;
         Ok(WorkMutation {
             origin_scope,
             transaction,
             timing,
+            budget,
         })
     }
 }

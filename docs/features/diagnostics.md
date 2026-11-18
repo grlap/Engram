@@ -86,8 +86,8 @@ transaction records. One word may have several separate transactions.
 observed transaction, submitting acquisition immediately after successful
 BEGIN. This finite reproduction/incident mode does not install SQL profiling,
 a monitor or a timer thread. It changes neither budgets nor results. The
-existing shared note admission window remains ten seconds; ordinary work
-acquisitions retain their configured timeout (normally five seconds), and
+existing shared note admission window is sixty seconds; ordinary work
+acquisitions retain their configured timeout (normally sixty seconds), and
 control retains its existing cooperative request allowance.
 
 Records have kind `store_transaction`, code `store_transaction_observation`,

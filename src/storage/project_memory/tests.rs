@@ -62,6 +62,49 @@ fn project_memory_request(
 
 struct RejectingRedactor;
 
+#[test]
+fn remembered_memory_rolls_back_when_its_write_allowance_expires() {
+    use crate::storage::control_request_test_clock as clock;
+
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let request = project_memory_request(
+        "memory-write-budget",
+        "memory-session",
+        Some("bounded-memory"),
+        "a bounded observation",
+        1_700_000_000_000,
+    );
+    {
+        let _request = clock::scope();
+        assert!(matches!(
+            store.remember_project_memory_with_admission(
+                &request,
+                &DevelopmentNoopRedactor,
+                |_, _| {
+                    clock::expire();
+                    Ok(())
+                }
+            ),
+            Err(StoreError::ControlRequestExpired)
+        ));
+    }
+    assert!(matches!(
+        store.project_memory_full(
+            &request.project_id,
+            &request.session_id,
+            &request.actor,
+            "bounded-memory",
+            None,
+        ),
+        Err(StoreError::ProjectMemoryNotFound(_))
+    ));
+    let retry = store
+        .remember_project_memory(&request, &DevelopmentNoopRedactor)
+        .expect("fresh write");
+    assert_eq!(retry.revision, 1);
+    assert!(!retry.duplicate);
+}
+
 impl Redactor for RejectingRedactor {
     fn inspect(&self, _prose: &str) -> Result<(), String> {
         Err("project-memory test refusal".into())

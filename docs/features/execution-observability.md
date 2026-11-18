@@ -1047,13 +1047,30 @@ policy, and requirement 5 applies.
 
 ### Request allowance
 
-The work-session producer gives each input frame a fixed 15,000-millisecond
+The work-session producer gives each input frame a fixed 60,000-millisecond
 cooperative allowance, measured from its first available byte. It takes no
 new request field. Admission checks the same monotonic allowance before
 dispatch, before `BEGIN IMMEDIATE`, after acquisition, and before `COMMIT`.
 The connection's current SQLite busy timeout is capped by the remaining
 allowance and restored after the attempt; this does not make a native wait
 or filesystem call preemptible.
+
+The `add`, `claim`, `done`, `evaluate`, `forget`, `gate`, `handoff`, `note`,
+`remember` and `update` words start this allowance before their first store
+open.
+The opener sidecar, SQLite admission and later writer acquisitions spend the
+same remaining time; entering a new phase or nested service call does not
+restart it. Native work transactions check again before committing and roll
+back on expiry. A word can have several transactions: expiry of a later one
+does not undo an earlier committed record or settle an earlier uncertain call.
+The exact retained attempt key must be read and reconciled on retry. A warning
+after ten seconds reports the operation and attempt without ending that work. Nested synchronous phases and async service calls share the outer warning; an inner phase neither prints another warning nor finishes the outer observer.
+
+Agent-word expiry says only that the expiring transaction was not committed.
+Earlier transactions of that word may already have committed; inspect current
+state and notes and reconcile the exact retained attempt key before retrying.
+The single-transaction control-frame certification below does not apply to
+the whole agent word.
 
 `control_request_expired` certifies that this invocation committed no
 changes: the transaction was not entered, or explicit rollback succeeded
@@ -1079,7 +1096,7 @@ reply, the outcome remains unknown until exact-key reconciliation succeeds;
 the host must never infer `control_request_expired` from its own timeout. A
 late or lost successful response is recovered from the original stored
 operation result. This is a cooperative pre-commit bound and eventual
-settlement contract, not a promise of delivery within 15 seconds under
+settlement contract, not a promise of delivery within 60 seconds under
 arbitrary OS or I/O stalls. Startup before the first frame is outside this
 allowance.
 
@@ -1109,7 +1126,7 @@ and `message`. The two reserved terminal codes and fixed messages are:
 Only a typed SQLite `DatabaseBusy` error selects `control_startup_busy`.
 Other startup errors select `control_startup_refused`; their original
 diagnostic stays on stderr. These codes are never emitted by a live server.
-The normal SQLite wait remains bounded at five seconds. The host bounds the
+The normal SQLite wait remains bounded at sixty seconds. The host bounds the
 wait for the first input frame with its request deadline.
 
 The host must evict the process after either code. Busy permits bounded

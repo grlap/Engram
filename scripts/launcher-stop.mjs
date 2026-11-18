@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { MINIMUM_MS, startOperationWarning } from "./operation-time.mjs";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -54,15 +55,18 @@ export async function withStopLock(runDir, action, { remove = rmSync, open = ope
   onReleaseError = (error) => process.stderr.write(`stop lock removal failed: ${error.code ?? "unknown"}\n`) } = {}) {
   const path = join(runDir, "stop.control.lock");
   // Product behaviour: how long a stop or a terminal save waits on this lock.
-  const deadline = Date.now() + 5000;
+  const deadline = performance.now() + MINIMUM_MS;
+  const finishWarning = startOperationWarning("launcher stop lock");
+  try {
   while (true) {
     try { closeSync(open(path, "wx", 0o600)); break; }
     catch (error) {
       if (!["EEXIST", "EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
-      if (Date.now() >= deadline) throw Object.assign(refused(`stop control is busy; retained lock: ${path}`), { stopLockTimeout: true });
+      if (performance.now() >= deadline) throw Object.assign(refused(`stop control is busy; retained lock: ${path}`), { stopLockTimeout: true });
       await pause(25);
     }
   }
+  finishWarning();
   try { return await action(); }
   finally {
     // A transient scanner refusal must not cost a committed result. A retained
@@ -70,6 +74,7 @@ export async function withStopLock(runDir, action, { remove = rmSync, open = ope
     try { await removeWithRetry(path, { remove }); }
     catch (error) { onReleaseError(error); }
   }
+  } finally { finishWarning(); }
 }
 
 // Only publishes intent. A request receipt never asserts that a process ended.
@@ -162,7 +167,7 @@ export function stopController(runDir, request, { readIntent = readStopIntent, r
 // Called only after the live child handle has reported helper closure. Never
 // send a terminating signal to this numeric group after its leader has exited.
 export async function waitForPosixGroupExit(pgid, { probe = (pid) => process.kill(-pid, 0),
-  timeoutMs = 30_000, now = () => performance.now(), sleep = pause } = {}) {
+  timeoutMs = MINIMUM_MS, now = () => performance.now(), sleep = pause } = {}) {
   const deadline = now() + timeoutMs;
   while (true) {
     try { probe(pgid); }
@@ -182,6 +187,8 @@ export async function runPosixCommand(command, args, { cwd, env, log, runDir, co
   const helper = fileURLToPath(new URL("./launcher-process-group.mjs", import.meta.url));
   const fd = openSync(log, "wx", 0o600);
   let unregister = () => {}, child, admitted = false, stopped = false, deadline;
+  let finishWarning;
+  const observeCleanup = () => { finishWarning ??= startOperationWarning("launcher POSIX cleanup"); };
   try {
     const outcome = await new Promise((done, reject) => {
       const spec = Buffer.from(JSON.stringify({ command, args, cwd, receipt })).toString("base64");
@@ -193,12 +200,13 @@ export async function runPosixCommand(command, args, { cwd, env, log, runDir, co
       unregister = control.register(() => {
         if (stopped) return;
         stopped = true;
+        observeCleanup();
         send({ kind: "stop" });
         deadline = setTimeout(() => {
           child.unref();
           if (child.connected) child.disconnect();
           reject(Object.assign(new Error("POSIX helper closure is unconfirmed"), { cleanupUnconfirmed: true }));
-        }, 31_000);
+        }, MINIMUM_MS);
       });
       child.once("message", (message) => {
         if (message?.ready !== true) { reject(new Error("invalid POSIX helper startup response")); return; }
@@ -217,6 +225,7 @@ export async function runPosixCommand(command, args, { cwd, env, log, runDir, co
     });
     // Closure/reaping precedes every group probe. Signal zero only observes;
     // EPERM must eventually become ESRCH, never merely be treated as success.
+    observeCleanup();
     await waitForPosixGroupExit(child.pid);
     const proof = read(receipt);
     if (proof.protocol !== posixStopProtocol || proof.pid !== child.pid || proof.cleanupStarted !== true
@@ -235,7 +244,7 @@ export async function runPosixCommand(command, args, { cwd, env, log, runDir, co
     if (child) { child.unref(); if (child.connected) child.disconnect(); }
     if (admitted || error.cleanupUnconfirmed) throw Object.assign(error, { cleanupUnconfirmed: true });
     throw Object.assign(error, { reason: "helper-start-failed" });
-  } finally { clearTimeout(deadline); unregister(); closeSync(fd); }
+  } finally { finishWarning?.(); clearTimeout(deadline); unregister(); closeSync(fd); }
 }
 
 // Walk each component before creating the next one. A pre-existing junction

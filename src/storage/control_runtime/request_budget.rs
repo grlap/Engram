@@ -10,9 +10,9 @@ use crate::storage::StoreError;
 /// Product behaviour (cli-mcp-and-work-protocols.md). Retained limit: a test that
 /// serves frames on the real clock is refused if one frame stalls this long at a
 /// check.
-pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = Duration::from_secs(15);
+pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = crate::operation_time::MINIMUM;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Allowance {
     started: Instant,
     now: fn() -> Instant,
@@ -41,7 +41,7 @@ impl Allowance {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ControlRequestBudget {
     allowance: Allowance,
 }
@@ -63,11 +63,11 @@ impl ControlRequestBudget {
         }
     }
 
-    pub(super) fn remaining(self) -> Duration {
+    pub(in crate::storage) fn remaining(self) -> Duration {
         self.allowance.remaining()
     }
 
-    pub(super) fn check(self) -> Result<(), StoreError> {
+    pub(in crate::storage) fn check(self) -> Result<(), StoreError> {
         if self.remaining().is_zero() {
             Err(StoreError::ControlRequestExpired)
         } else {
@@ -80,13 +80,18 @@ thread_local! {
     static CURRENT: Cell<Option<ControlRequestBudget>> = const { Cell::new(None) };
 }
 
-pub(super) fn current() -> Option<ControlRequestBudget> {
+pub(in crate::storage) fn current() -> Option<ControlRequestBudget> {
     CURRENT.with(Cell::get)
+}
+
+pub(in crate::storage) fn check_current() -> Result<(), StoreError> {
+    current().map_or(Ok(()), ControlRequestBudget::check)
 }
 
 /// This synchronous scope restores the previous frame on return or unwind.
 /// It carries no work claim, timestamp, retry key, or note admission policy.
 pub(crate) struct ControlRequestScope {
+    _warning: Option<crate::operation_time::Warning>,
     previous: Option<ControlRequestBudget>,
     _thread: PhantomData<Rc<()>>,
 }
@@ -103,7 +108,11 @@ impl ControlRequestScope {
     }
 
     fn enter(budget: ControlRequestBudget) -> Self {
+        let warning = current()
+            .is_none()
+            .then(|| crate::operation_time::Warning::start("control request"));
         Self {
+            _warning: warning,
             previous: CURRENT.with(|slot| slot.replace(Some(budget))),
             _thread: PhantomData,
         }

@@ -14,6 +14,7 @@ use super::StoreError;
 pub fn open_sqlite_file(path: &Path, flags: OpenFlags) -> Result<Connection, StoreError> {
     if path.as_os_str().is_empty() || path == Path::new(":memory:") {
         let connection = Connection::open_with_flags(path, flags)?;
+        connection.busy_timeout(crate::operation_time::MINIMUM)?;
         #[cfg(test)]
         super::work_cost::sqlite::install(&connection);
         return Ok(connection);
@@ -36,6 +37,7 @@ fn open_filename(path: &Path, name: &str, flags: OpenFlags) -> Result<Connection
         }
         _ => StoreError::Sqlite(source),
     })?;
+    connection.busy_timeout(crate::operation_time::MINIMUM)?;
     #[cfg(test)]
     super::work_cost::sqlite::install(&connection);
     Ok(connection)

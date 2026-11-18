@@ -463,8 +463,8 @@ This is the contract a host builds its push trigger on.
   and of the reads that build the compressed file, and once that file is
   written. When another connection holds a lock the copy needs, SQLite
   calls the copy's busy handler, which reads the clock after each short
-  sleep. One such wait ends at the deadline or five seconds after it
-  began, whichever comes first; a wait cut off by the five seconds fails
+  sleep. One such wait ends at the deadline or sixty seconds after it
+  began, whichever comes first; a wait cut off by the sixty seconds fails
   the push with outcome `failed`, code `storage_error` and SQLite's
   "database is locked" message, not with the `busy` outcome, which means
   another push holds the lock. A sleep can last longer than asked, so a
@@ -482,17 +482,10 @@ This is the contract a host builds its push trigger on.
   and writing the records, removing leftover stages and record files,
   removing the stage, and printing the report. These are local steps,
   usually brief but not guaranteed to be.
-- 0 is accepted and expires at once, unlike `backup status`'s
-  `--check-deadline-secs`, which must be at least 1. With a zero capture
-  deadline the push
-  still resolves an earlier pending attempt, which may ask the target, and
-  then fails with `backup_capture_deadline` before it creates a stage. With
-  a zero transport deadline no request starts and the push fails with
-  `backup_transport_deadline`: when an upload was due, its attempt is
-  recorded as pending and nothing is put; when the store equals the newest
-  copy, no new attempt is recorded. An attempt already pending stays
-  pending, since resolving it is a request too. Either way the failure is
-  recorded as the last attempt.
+- Every public backup deadline override must be at least 60 seconds. A smaller
+  value, including 0, is a usage error (exit 2) before any capture, target
+  request or backup-record update. It does not record a failed push or
+  resolve an earlier pending attempt. Existing longer defaults are retained.
 - A deadline too far off for the clock to represent, such as
   18446744073709551615 seconds, sets no limit on what it bounds.
 
@@ -613,10 +606,9 @@ changes nothing. A confirmation renews only the copy's last confirmation,
 never the time the store's content was observed in it, so an old copy that
 is confirmed again still reads `backup_stale`. A check stalled inside the
 operating system past its deadline ends the process, which still exits 0.
-The check deadline is at least 1 second: `--check-deadline-secs 0` is a
+The check deadline is at least 60 seconds. Every smaller override is a
 usage error, refused with exit 2 before anything is read, as every other
-usage error is. This differs from `backup push`, whose deadlines accept 0
-and expire at once.
+usage error is. The same minimum applies to push, list, fetch and restore.
 
 #### The `backup status --json` receipt
 
@@ -884,7 +876,7 @@ The line carries:
     call;
   - `store_mutex_wait`;
   - `begin_immediate`, including any wait for the write lock, whether it
-    ends in the lock or in the 5-second busy timeout;
+    ends in the lock or in the 60-second busy timeout;
   - `commit`, which counts every `COMMIT`, read transactions' included;
   - `receipt_serialize`;
   - `read_snapshot`, including nested and reused `work_read_snapshot` calls,

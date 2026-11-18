@@ -42,9 +42,11 @@ pub async fn publish_delta_retry(
 ) -> Result<PublicationAttempt> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange publish delta retry");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    Box::pin(publish_delta_retry_remaining(store, input, limits, cancel)).await
+    crate::operation_time::observe("task exchange publish delta retry", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        Box::pin(publish_delta_retry_remaining(store, input, limits, cancel)).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

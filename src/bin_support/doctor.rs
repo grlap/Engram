@@ -39,6 +39,7 @@ pub(crate) fn doctor(
     projection_maintenance: Option<ProjectionMaintenance>,
     landing_repository: Option<&Path>,
 ) -> Result<()> {
+    let _warning = engram::operation_time::Warning::start("doctor store inspection");
     // Doctor examines an existing store and never creates one, in every mode
     // that opens it: a project directory that holds only other files, such as
     // a restore's staging file, has no store, and neither does a link that

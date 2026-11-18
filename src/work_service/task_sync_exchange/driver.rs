@@ -29,54 +29,56 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> Result<StepReceipt> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        ensure!(
-            !cancel.is_cancelled(),
-            "exchange step cancelled before admission"
-        );
-        let started = std::time::Instant::now();
-        if !request.is_read_only() {
-            self.require_task_sync_writer()?;
-            self.require_task_sync_enabled()?;
-        }
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        match request {
-            StepRequest::QualifyVerification { .. }
-            | StepRequest::VerificationSummary { .. }
-            | StepRequest::QualifyAcceptance { .. }
-            | StepRequest::AcceptanceSummary { .. }
-            | StepRequest::ConsumeVerification { .. }
-            | StepRequest::ConsumeAcceptance { .. } => self.step_imported(request, now),
-            StepRequest::CaptureNative { .. } | StepRequest::ExportNative { .. } => {
-                self.step_native(request, now)
+        crate::operation_time::observe("task exchange service", async {
+            ensure!(
+                !cancel.is_cancelled(),
+                "exchange step cancelled before admission"
+            );
+            let started = std::time::Instant::now();
+            if !request.is_read_only() {
+                self.require_task_sync_writer()?;
+                self.require_task_sync_enabled()?;
             }
-            StepRequest::ReadBinding { .. }
-            | StepRequest::CompletedDelta { .. }
-            | StepRequest::ReadDeltaProgress { .. }
-            | StepRequest::CompletedEvidence { .. }
-            | StepRequest::CompletedSuccessor { .. } => self.step_read(request, now),
-            StepRequest::InspectTarget { .. }
-            | StepRequest::RetainData { .. }
-            | StepRequest::Activate { .. }
-            | StepRequest::AdvanceData { .. } => {
-                self.step_data(request, limits, cancel, started).await
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            match request {
+                StepRequest::QualifyVerification { .. }
+                | StepRequest::VerificationSummary { .. }
+                | StepRequest::QualifyAcceptance { .. }
+                | StepRequest::AcceptanceSummary { .. }
+                | StepRequest::ConsumeVerification { .. }
+                | StepRequest::ConsumeAcceptance { .. } => self.step_imported(request, now),
+                StepRequest::CaptureNative { .. } | StepRequest::ExportNative { .. } => {
+                    self.step_native(request, now)
+                }
+                StepRequest::ReadBinding { .. }
+                | StepRequest::CompletedDelta { .. }
+                | StepRequest::ReadDeltaProgress { .. }
+                | StepRequest::CompletedEvidence { .. }
+                | StepRequest::CompletedSuccessor { .. } => self.step_read(request, now),
+                StepRequest::InspectTarget { .. }
+                | StepRequest::RetainData { .. }
+                | StepRequest::Activate { .. }
+                | StepRequest::AdvanceData { .. } => {
+                    self.step_data(request, limits, cancel, started).await
+                }
+                StepRequest::PrepareDelta { .. }
+                | StepRequest::RetainIncomingDelta { .. }
+                | StepRequest::RecordExportCommit { .. }
+                | StepRequest::RecordPublication { .. }
+                | StepRequest::ApplyDelta { .. } => {
+                    self.step_delta(request, now, limits, cancel, started).await
+                }
+                StepRequest::ApplyEvidence { .. } | StepRequest::ApplySuccessor { .. } => {
+                    self.step_incoming(request, now, limits, cancel, started)
+                        .await
+                }
+                StepRequest::RecordResolution { .. } | StepRequest::RecordRetryProgress { .. } => {
+                    Box::pin(self.step_resolution(request, limits, cancel, started)).await
+                }
             }
-            StepRequest::PrepareDelta { .. }
-            | StepRequest::RetainIncomingDelta { .. }
-            | StepRequest::RecordExportCommit { .. }
-            | StepRequest::RecordPublication { .. }
-            | StepRequest::ApplyDelta { .. } => {
-                self.step_delta(request, now, limits, cancel, started).await
-            }
-            StepRequest::ApplyEvidence { .. } | StepRequest::ApplySuccessor { .. } => {
-                self.step_incoming(request, now, limits, cancel, started)
-                    .await
-            }
-            StepRequest::RecordResolution { .. } | StepRequest::RecordRetryProgress { .. } => {
-                Box::pin(self.step_resolution(request, limits, cancel, started)).await
-            }
-        }
+        })
+        .await
     }
 
     fn step_read(

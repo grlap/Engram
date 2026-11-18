@@ -84,9 +84,11 @@ pub async fn inspect_exchange(
 ) -> Result<InspectedExchange> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange inspect exchange");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    inspect_exchange_remaining(binding_id, binding, intent, limits, cancel).await
+    crate::operation_time::observe("task exchange inspect exchange", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        inspect_exchange_remaining(binding_id, binding, intent, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -378,9 +380,11 @@ pub async fn prepare_exchange(
 ) -> Result<ObjectId> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange prepare exchange");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    prepare_exchange_remaining(store, input, now, limits, cancel).await
+    crate::operation_time::observe("task exchange prepare exchange", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        prepare_exchange_remaining(store, input, now, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -409,9 +413,11 @@ pub async fn apply_exchange(
 ) -> Result<ImportReceipt> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange apply exchange");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    apply_exchange_remaining(store, input, dry_run, now, limits, cancel).await
+    crate::operation_time::observe("task exchange apply exchange", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        apply_exchange_remaining(store, input, dry_run, now, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -441,9 +447,11 @@ pub async fn record_exchange_progress(
 ) -> Result<ObjectId> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange record exchange progress");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    record_exchange_progress_remaining(store, input, progress, now, limits, cancel).await
+    crate::operation_time::observe("task exchange record exchange progress", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        record_exchange_progress_remaining(store, input, progress, now, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

@@ -91,11 +91,19 @@ impl std::fmt::Debug for CopyInterrupt {
 }
 
 impl CopyInterrupt {
-    /// An interrupt that fires once `limit` has passed from now.
+    /// An interrupt that fires once `limit` has passed from now, with a sixty-second minimum.
     #[must_use]
     pub fn after(limit: Duration) -> Self {
+        Self::after_remaining(limit.max(crate::operation_time::MINIMUM))
+    }
+
+    pub(crate) fn after_remaining(limit: Duration) -> Self {
+        Self::until(Instant::now().checked_add(limit))
+    }
+
+    pub(crate) fn until(deadline: Option<Instant>) -> Self {
         Self {
-            deadline: Instant::now().checked_add(limit),
+            deadline,
             fired: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             probe: None,

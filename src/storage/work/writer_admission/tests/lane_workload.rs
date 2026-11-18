@@ -374,14 +374,14 @@ fn seven_lane_real_words_preserve_admission_budgets() {
             for row in &rows {
                 let budget = &row["event"]["store_transaction"]["budget"];
                 if let Some(configured) = budget["configured_ms"].as_u64() {
-                    assert!(matches!(configured, 5000 | 10000), "{row}");
+                    assert!(matches!(configured, 60000), "{row}");
                     assert!(
                         budget["allowance_ms"].as_u64().unwrap()
                             <= budget["shared_window_ms"].as_u64().unwrap_or(configured)
                     );
                 }
                 if let Some(window) = budget["shared_window_ms"].as_u64() {
-                    assert_eq!(window, 10000);
+                    assert_eq!(window, 60000);
                 }
             }
             assert_eq!(measurements.len(), LANES);
@@ -401,7 +401,7 @@ fn seven_lane_real_words_preserve_admission_budgets() {
         "seven_lane_writer_measurement={}",
         json!({"began_at":began, "ended_at":Utc::now(),
         "gate_label_unverified":std::env::var("ENGRAM_CONTENTION_GATE_RUN").ok(),
-        "lanes":LANES, "rounds":ROUNDS, "configured_ordinary_ms":5000,
-        "configured_note_window_ms":10000, "cases":cases})
+        "lanes":LANES, "rounds":ROUNDS, "configured_ordinary_ms":60000,
+        "configured_note_window_ms":60000, "cases":cases})
     );
 }

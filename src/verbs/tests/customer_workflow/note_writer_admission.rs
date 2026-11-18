@@ -137,12 +137,9 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
         // right after these hooks meet, so waiting for them spends neither window.
         started.recv_timeout(WallDuration::from_secs(60)).unwrap();
         started.recv_timeout(WallDuration::from_secs(60)).unwrap();
-        // Both real BEGINs face the same real writer beyond the production 5 s
-        // timeout. This is the only long control; all negative cases are short.
-        // Product requirement: a note outlives the ordinary 5 s timeout inside
-        // its 10 s admission window (sqlite-store.md), so this stays on the real
-        // clock. Its speed limit is that window: 4.75 s past this hold, less the
-        // skew between the two threads leaving their meeting.
+        // Both real BEGINs outlive the raw SQLite fixture's five-second wait.
+        // Engram's note and ordinary writer now both allow sixty seconds; the
+        // shared-deadline and rollback controls use injected phase time.
         std::thread::sleep(WallDuration::from_millis(u64::from(old_timeout) + 250));
         transaction.commit().unwrap();
         owner.join().unwrap();
@@ -471,6 +468,7 @@ fn note_writer_admission_fresh_process_registration_uses_the_short_window() {
 fn note_writer_admission_word_scope_restores_after_return_and_unwind() {
     let (_directory, verbs, _path, _project) = fixture();
     let target = add(&verbs, "Scope restoration", None, false, 0);
+    let _request = crate::storage::control_request_test_clock::scope();
     with_writer_admission_test_policy(
         Some(WallDuration::from_millis(30)),
         || {},
@@ -483,7 +481,7 @@ fn note_writer_admission_word_scope_restores_after_return_and_unwind() {
             add(&verbs, "Ordinary word after note", None, false, 2);
             assert_eq!(
                 last_writer_admission_allowance(),
-                Some(WallDuration::from_secs(5))
+                Some(WallDuration::from_secs(60))
             );
 
             let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -498,7 +496,7 @@ fn note_writer_admission_word_scope_restores_after_return_and_unwind() {
             add(&verbs, "Ordinary word after unwind", None, false, 4);
             assert_eq!(
                 last_writer_admission_allowance(),
-                Some(WallDuration::from_secs(5))
+                Some(WallDuration::from_secs(60))
             );
         },
     );

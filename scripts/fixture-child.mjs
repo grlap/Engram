@@ -1,5 +1,7 @@
 // Ends a child that will never close. It says nothing about speed: on a loaded
 // host a clean shutdown can take far longer than it does alone.
+import { startOperationWarning } from "./operation-time.mjs";
+
 const SHUTDOWN_HANG_GUARD_MS = 60000;
 
 // Lifecycle evidence for children owned by the control dogfood fixtures.
@@ -89,12 +91,15 @@ export class FixtureChild {
     // Cache both outcomes. A late close cannot erase a timeout, and a second
     // caller never sends EOF or kills the child a second time.
     this.closePromise = new Promise((resolve, reject) => {
+      const finishWarning = startOperationWarning("fixture child shutdown");
       const finish = () => {
+        finishWarning();
         if (this.firstError) reject(this.error("shutdown failed", this.firstError));
         else resolve();
       };
       if (this.hasClosed) { finish(); return; }
       const timeout = () => {
+        finishWarning();
         this.mark("timeout");
         this.killIfRunning();
         reject(this.error("shutdown timed out", this.firstError));

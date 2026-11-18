@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { cpus } from "node:os";
+import { startOperationWarning, WARN_AFTER_MS } from "./operation-time.mjs";
 
 // Ends a server that will never close; it says nothing about speed. Locked rmcp
 // 3.1.4 may drain for 5 s, and a loaded host takes longer over the store and
@@ -110,7 +111,18 @@ export class McpCloseObservation {
     } finally { clearTimeout(timer); }
   }
 
-  async check({ started, child, pending = 0, stderr = "", collect = async () => ({ state: "unknown" }) }) {
+  async check(options) {
+    if (this.close) return this.checkWithinBudget(options);
+    const finishWarning = startOperationWarning("MCP server shutdown", {
+      afterMs: Math.max(0, WARN_AFTER_MS - (this.now() - options.started)),
+      now: this.now,
+      started: options.started,
+    });
+    try { return await this.checkWithinBudget(options); }
+    finally { finishWarning(); }
+  }
+
+  async checkWithinBudget({ started, child, pending = 0, stderr = "", collect = async () => ({ state: "unknown" }) }) {
     const readStderr = () => typeof stderr === "function" ? stderr() : stderr;
     const deadline = started + CLOSE_BUDGET_MS;
     let closed;
@@ -129,6 +141,12 @@ export class McpCloseObservation {
     const pendingAtDeadline = typeof pending === "function" ? pending() : pending;
     const stdinFinishedAtDeadline = child.stdin?.writableFinished;
     const stdinDestroyedAtDeadline = child.stdin?.destroyed;
+    // Deadline enforcement precedes diagnostic collection. A post-deadline
+    // observation window must never grant the running child more time.
+    let killError, terminationRequested = false;
+    if (!this.exit) {
+      try { terminationRequested = child.kill(); } catch (error) { killError = String(error); }
+    }
     // Both observations run concurrently. A stuck diagnostic collector cannot
     // hold the close observer or extend its absolute post-deadline window.
     const diagnostic = Promise.resolve().then(collect).catch(error => ({ state: "unknown", error: String(error) }));
@@ -141,7 +159,8 @@ export class McpCloseObservation {
     if (eventual && eventual.code === 0 && eventual.signal === null) {
       classification = exit && exit.at <= deadline ? "stdio_close_delayed" : "late_clean_exit";
     } else if (eventual || exit) {
-      classification = exit?.code === 0 && exit?.signal === null ? "clean_exit_stdio_open" : "failed_exit";
+      if (exit?.code === 0 && exit?.signal === null) classification = "clean_exit_stdio_open";
+      else classification = terminationRequested ? "exit_after_deadline_termination" : "failed_exit";
     }
     const details = {
       classification,
@@ -155,12 +174,10 @@ export class McpCloseObservation {
       stdin_finished_at_deadline: stdinFinishedAtDeadline,
       stdin_destroyed_at_deadline: stdinDestroyedAtDeadline,
       pending_at_deadline: pendingAtDeadline,
+      deadline_termination_requested: terminationRequested,
       shutdown_trace: this.shutdownReport(started),
+      ...(killError ? { kill_error: killError } : {}),
     };
-    if (!eventual) {
-      try { child.kill(); } catch (error) { details.kill_error = String(error); }
-      await this.until(this.closed, this.now() + 1000);
-    }
     // A late clean exit remains a failure, including under measured host load.
     const error = new Error(`MCP server did not close within deadline: ${JSON.stringify(details)}; stderr=${readStderr()}`);
     error.closeDiagnostic = details;

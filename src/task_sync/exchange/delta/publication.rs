@@ -50,9 +50,11 @@ pub async fn record_delta_publication(
 ) -> Result<(ObjectId, bool)> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange record delta publication");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    record_delta_publication_remaining(store, request, limits, cancel).await
+    crate::operation_time::observe("task exchange record delta publication", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        record_delta_publication_remaining(store, request, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

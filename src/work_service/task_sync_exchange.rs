@@ -45,29 +45,31 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<exchange::PublicationAttempt> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        anyhow::ensure!(
-            selected.binding.project == self.project_id
-                && selected.intent.local_cut.position.feed
-                    == crate::FeedId::Project(self.project_id.clone())
-                && selected.intent.local_cut.binding == *selected.binding_id
-                && selected.intent.actor.actor_id == self.actor_id
-                && selected.intent.actor.session_id.as_ref() == Some(&self.session_id),
-            "delta publication request belongs to another project, binding, actor or session"
-        );
-        let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
-        self.register_on(&mut store, now)?;
-        exchange::publish_delta_outgoing_remaining(
-            &mut store,
-            selected,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            anyhow::ensure!(
+                selected.binding.project == self.project_id
+                    && selected.intent.local_cut.position.feed
+                        == crate::FeedId::Project(self.project_id.clone())
+                    && selected.intent.local_cut.binding == *selected.binding_id
+                    && selected.intent.actor.actor_id == self.actor_id
+                    && selected.intent.actor.session_id.as_ref() == Some(&self.session_id),
+                "delta publication request belongs to another project, binding, actor or session"
+            );
+            let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
+            self.register_on(&mut store, now)?;
+            exchange::publish_delta_outgoing_remaining(
+                &mut store,
+                selected,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -85,29 +87,31 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<(crate::ObjectId, bool)> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        anyhow::ensure!(
-            request.binding.project == self.project_id
-                && request.intent.local_cut.position.feed
-                    == crate::FeedId::Project(self.project_id.clone())
-                && request.intent.local_cut.binding == *request.binding_id
-                && request.intent.actor.actor_id == self.actor_id
-                && request.intent.actor.session_id.as_ref() == Some(&self.session_id),
-            "delta publication request belongs to another project, binding, actor or session"
-        );
-        let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
-        self.register_on(&mut store, now)?;
-        exchange::record_delta_publication_remaining(
-            &mut store,
-            request,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            anyhow::ensure!(
+                request.binding.project == self.project_id
+                    && request.intent.local_cut.position.feed
+                        == crate::FeedId::Project(self.project_id.clone())
+                    && request.intent.local_cut.binding == *request.binding_id
+                    && request.intent.actor.actor_id == self.actor_id
+                    && request.intent.actor.session_id.as_ref() == Some(&self.session_id),
+                "delta publication request belongs to another project, binding, actor or session"
+            );
+            let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
+            self.register_on(&mut store, now)?;
+            exchange::record_delta_publication_remaining(
+                &mut store,
+                request,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -129,32 +133,34 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<crate::ObjectId> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        anyhow::ensure!(
-            binding.project == self.project_id
-                && intent.local_cut.position.feed
-                    == crate::FeedId::Project(self.project_id.clone())
-                && intent.local_cut.binding == *binding_id
-                && intent.actor.actor_id == self.actor_id
-                && intent.actor.session_id.as_ref() == Some(&self.session_id),
-            "delta commit request belongs to another project, binding, actor or session"
-        );
-        let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
-        self.register_on(&mut store, now)?;
-        exchange::record_delta_export_commit_remaining(
-            &mut store,
-            binding_id,
-            binding,
-            intent,
-            selection,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            anyhow::ensure!(
+                binding.project == self.project_id
+                    && intent.local_cut.position.feed
+                        == crate::FeedId::Project(self.project_id.clone())
+                    && intent.local_cut.binding == *binding_id
+                    && intent.actor.actor_id == self.actor_id
+                    && intent.actor.session_id.as_ref() == Some(&self.session_id),
+                "delta commit request belongs to another project, binding, actor or session"
+            );
+            let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
+            self.register_on(&mut store, now)?;
+            exchange::record_delta_export_commit_remaining(
+                &mut store,
+                binding_id,
+                binding,
+                intent,
+                selection,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -202,31 +208,33 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<exchange::PublicationAttempt> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        anyhow::ensure!(
-            input.binding.project == self.project_id
-                && input.intent.actor.actor_id == self.actor_id
-                && input.intent.actor.session_id.as_ref() == Some(&self.session_id)
-                && request.intent.actor == input.intent.actor
-                && request.binding == input.binding_id,
-            "publication request belongs to another project, actor or session"
-        );
-        // This awaited operation owns its connection. It never holds the
-        // ambient service mutex while waiting on a remote Git process.
-        let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
-        self.register_on(&mut store, now)?;
-        exchange::publish_outgoing_remaining(
-            &mut store,
-            input,
-            request,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            anyhow::ensure!(
+                input.binding.project == self.project_id
+                    && input.intent.actor.actor_id == self.actor_id
+                    && input.intent.actor.session_id.as_ref() == Some(&self.session_id)
+                    && request.intent.actor == input.intent.actor
+                    && request.binding == input.binding_id,
+                "publication request belongs to another project, actor or session"
+            );
+            // This awaited operation owns its connection. It never holds the
+            // ambient service mutex while waiting on a remote Git process.
+            let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
+            self.register_on(&mut store, now)?;
+            exchange::publish_outgoing_remaining(
+                &mut store,
+                input,
+                request,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 
@@ -244,27 +252,29 @@ impl LocalWorkService {
         cancel: &Cancellation,
     ) -> anyhow::Result<RunOutput> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        #[cfg(test)]
-        let started = exchange::test_support::SERVICE_STARTED
-            .with(std::cell::Cell::take)
-            .unwrap_or(started);
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        self.validate_read_attribution(chrono::Utc::now())?;
-        let target = exchange::ExchangeTarget::capture_remaining(
-            selection,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
-        .await?;
-        Ok(exchange::run_remaining(
-            &target,
-            operation,
-            exchange::remaining(limits, started)?,
-            cancel,
-        )
-        .await?)
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            #[cfg(test)]
+            let started = exchange::test_support::SERVICE_STARTED
+                .with(std::cell::Cell::take)
+                .unwrap_or(started);
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            self.validate_read_attribution(chrono::Utc::now())?;
+            let target = exchange::ExchangeTarget::capture_remaining(
+                selection,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await?;
+            Ok(exchange::run_remaining(
+                &target,
+                operation,
+                exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await?)
+        })
+        .await
     }
 }

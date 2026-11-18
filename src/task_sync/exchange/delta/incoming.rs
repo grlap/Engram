@@ -24,9 +24,12 @@ pub async fn retain_incoming_delta(
 ) -> Result<RetainedDeltaCandidate> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange retain incoming delta");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    retain_incoming_delta_remaining(store, binding_id, binding, intent, now, limits, cancel).await
+    crate::operation_time::observe("task exchange retain incoming delta", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        retain_incoming_delta_remaining(store, binding_id, binding, intent, now, limits, cancel)
+            .await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

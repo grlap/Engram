@@ -30,16 +30,19 @@ impl AgentVerbs {
         let retiring_target =
             parse_retiring_target(input.retires_with.as_deref(), input.clear_retires_with)?;
         let edit = super::super::memory_change::edit(input.append, input.section.as_deref())?;
-        let receipt = self.service.revise_project_memory_with_import_provenance(
-            input.text,
-            input.key,
-            input.revise,
-            input.expected_revision,
-            retiring_target,
-            &edit,
-            import_provenance,
-            now,
-        )?;
+        let receipt = self
+            .service
+            .revise_project_memory_with_import_provenance(
+                input.text,
+                input.key,
+                input.revise,
+                input.expected_revision,
+                retiring_target,
+                &edit,
+                import_provenance,
+                now,
+            )
+            .map_err(super::super::focus_change::word_expiry)?;
         let (changed, reads) = super::super::memory_change::lines(&receipt);
         let mut guidance = Guidance {
             reminders: Vec::new(),
@@ -183,7 +186,10 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when authorization, key resolution, or terminal
     /// lifecycle validation fails.
     pub fn forget(&self, input: ForgetInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let receipt = self.service.forget_project_memory(input.key, now)?;
+        let receipt = self
+            .service
+            .forget_project_memory(input.key, now)
+            .map_err(super::super::focus_change::word_expiry)?;
         let replay = if receipt.duplicate { " (replayed)" } else { "" };
         let lines = vec![format!("forgot project memory {}{replay}", receipt.key)];
         Ok(self.finish_mutation(Receipt::assemble(

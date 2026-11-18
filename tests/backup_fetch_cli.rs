@@ -237,7 +237,7 @@ fn a_bare_relative_out_is_written_in_the_current_directory() {
 }
 
 #[test]
-fn a_fetch_out_of_time_leaves_neither_the_file_nor_its_staging_and_says_why_in_json() {
+fn a_short_fetch_deadline_is_refused_without_creating_output_or_staging() {
     let homes = Homes::new();
     homes.succeeded("origin", &["init"]);
     homes.set_target("origin");
@@ -247,29 +247,54 @@ fn a_fetch_out_of_time_leaves_neither_the_file_nor_its_staging_and_says_why_in_j
     let out_dir = homes.path("out");
     fs::create_dir_all(&out_dir).unwrap();
     let out = out_dir.join("fetched.db");
-    // Two seconds leave the decode no time of its own: it stops at once and
-    // removes what it wrote.
-    let output = homes.engram(
-        "origin",
-        &[
-            "backup",
-            "fetch",
-            &copy,
-            "--out",
-            out.to_str().unwrap(),
-            "--deadline-secs",
-            "2",
-            "--json",
-        ],
-    );
-    assert!(!output.status.success());
-    let refusal: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(refusal["schema_version"], 1);
-    assert_eq!(refusal["code"], "backup_transport_deadline", "{refusal}");
-    assert!(!out.exists());
-    assert_eq!(
-        fs::read_dir(&out_dir).unwrap().count(),
-        0,
-        "no staging file is left"
-    );
+    for seconds in ["0", "2", "59"] {
+        let output = homes.engram(
+            "origin",
+            &[
+                "backup",
+                "fetch",
+                &copy,
+                "--out",
+                out.to_str().unwrap(),
+                "--deadline-secs",
+                seconds,
+                "--json",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.stdout, [] as [u8; 0]);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--deadline-secs"));
+        assert!(!out.exists());
+        assert_eq!(
+            fs::read_dir(&out_dir).unwrap().count(),
+            0,
+            "no staging file is left"
+        );
+    }
+}
+
+#[test]
+fn list_and_restore_refuse_short_deadlines_before_creating_a_home() {
+    let homes = Homes::new();
+    for seconds in ["0", "59"] {
+        for arguments in [
+            vec!["backup", "list", "--deadline-secs", seconds, "--json"],
+            vec![
+                "backup",
+                "restore",
+                "latest",
+                "--origin-retired-by",
+                "greg",
+                "--deadline-secs",
+                seconds,
+                "--json",
+            ],
+        ] {
+            let output = homes.engram("untouched", &arguments);
+            assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+            assert!(output.stdout.is_empty());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("--deadline-secs"));
+            assert!(!homes.path("untouched").exists());
+        }
+    }
 }

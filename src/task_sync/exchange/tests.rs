@@ -170,6 +170,36 @@ fn task_exchange_limits_and_ref_validation_refuse_before_launch() {
 pub(super) mod windows;
 
 #[tokio::test]
+async fn a_pending_exchange_does_not_own_an_unrelated_operation_warning() {
+    use crate::operation_time::{WARN_AFTER, Warning, test_clock::Probe};
+
+    let probe = Probe::install();
+    let mut target = target();
+    target.selection.repository = PathBuf::from("..");
+    let cancel = Cancellation::default();
+    test_support::YIELD_NEXT_RUN.with(|yield_next| yield_next.set(true));
+    let (result, ()) = tokio::join!(
+        run(
+            &target,
+            &ExchangeOperation::Observe,
+            RunLimits::default(),
+            &cancel,
+        ),
+        async {
+            assert!(probe.active("task exchange run"));
+            let _other = Warning::start("unrelated operation");
+            probe.advance(WARN_AFTER);
+        }
+    );
+    assert_eq!(result.unwrap_err(), RunError::InvalidSelection);
+    let events = probe.events();
+    assert_eq!(
+        events.iter().map(|event| event.0).collect::<Vec<_>>(),
+        ["task exchange run", "unrelated operation"]
+    );
+}
+
+#[tokio::test]
 async fn an_exchange_request_floor_is_checked_before_any_repository_or_process_effect() {
     let selection = TargetSelection {
         repository: PathBuf::from(".."),

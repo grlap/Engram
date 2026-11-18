@@ -69,7 +69,7 @@ test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => 
 
 test("MCP close deadline and diagnostic classifications", async (t) => {
   assert.equal(CLOSE_BUDGET_MS, 60000);
-  async function fixture(context) {
+  async function fixture(context, { closeOnKill = false } = {}) {
     context.mock.timers.enable({ apis: ["setTimeout"] });
     let milliseconds = 0;
     let kills = 0;
@@ -77,7 +77,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     const child = {
       pid: 123,
       stdin: { writableFinished: true, destroyed: true },
-      kill() { kills++; observation.exited(null, "SIGTERM"); observation.didClose(null, "SIGTERM"); },
+      kill() { kills++; if (closeOnKill) { observation.exited(null, "SIGTERM"); observation.didClose(null, "SIGTERM"); } return true; },
     };
     return {
       observation, child,
@@ -93,6 +93,23 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     };
   }
 
+  await t.test("warning does not stop shutdown and kill precedes post-budget diagnostics", async (context) => {
+    const run = await fixture(context, { closeOnKill: true });
+    const result = run.check(async () => {
+      assert.equal(run.kills(), 1, "the diagnostic collector cannot postpone termination");
+      return { state: "measured" };
+    });
+    await run.advance(10_000);
+    assert.equal(run.kills(), 0);
+    await run.advance(49_999);
+    assert.equal(run.kills(), 0);
+    await run.advance(1);
+    assert.equal(run.kills(), 1);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.classification, "exit_after_deadline_termination");
+    assert.equal(error.closeDiagnostic.deadline_termination_requested, true);
+    assert.deepEqual(error.closeDiagnostic.eventual, { code: null, signal: "SIGTERM" });
+  });
   await t.test("six-second clean close passes", async (context) => {
     const run = await fixture(context);
     const result = run.check();
@@ -114,7 +131,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
     assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
     assert.deepEqual(error.closeDiagnostic.host_load, load);
-    assert.equal(run.kills(), 0);
+    assert.equal(run.kills(), 1);
   });
   await t.test("an early timer cannot reject a close before the monotonic deadline", async (context) => {
     const run = await fixture(context);
@@ -169,7 +186,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
       assert.equal(error.closeDiagnostic.close_observed_ms, null);
       assert.equal(error.closeDiagnostic.eventual, null);
       assert.equal(error.closeDiagnostic.budget_ms, CLOSE_BUDGET_MS);
-      assert.equal(run.kills(), 1);
+      assert.equal(run.kills(), exitAt > CLOSE_BUDGET_MS ? 1 : 0);
     });
   }
   for (const [code, signal] of [[7, null], [null, "SIGTERM"]]) {
@@ -183,11 +200,11 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
         if (closes) run.observation.didClose(code, signal);
         else await run.advance(14000);
         const { error } = await result;
-        assert.equal(error.closeDiagnostic.classification, "failed_exit");
+        assert.equal(error.closeDiagnostic.classification, "exit_after_deadline_termination");
         assert.equal(error.closeDiagnostic.exit_observed_ms, CLOSE_BUDGET_MS + 1000);
         assert.equal(error.closeDiagnostic.close_observed_ms, closes ? CLOSE_BUDGET_MS + 1000 : null);
         assert.deepEqual(error.closeDiagnostic.eventual, closes ? { code, signal } : null);
-        assert.equal(run.kills(), closes ? 0 : 1);
+        assert.equal(run.kills(), 1);
       });
     }
   }
@@ -216,7 +233,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
     assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
     assert.equal(error.closeDiagnostic.host_load.state, "unknown");
-    assert.equal(run.kills(), 0);
+    assert.equal(run.kills(), 1);
   });
   for (const [code, signal] of [[7, null], [null, "SIGTERM"]]) {
     await t.test(`non-clean close code=${code} signal=${signal} fails`, async (context) => {

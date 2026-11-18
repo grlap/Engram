@@ -4,6 +4,8 @@ mod acceptance_binding_read;
 mod acceptance_verification_read;
 mod control_runtime;
 pub(crate) use control_runtime::request_budget::ControlRequestScope;
+#[cfg(test)]
+pub(crate) use control_runtime::request_budget::test_clock as control_request_test_clock;
 pub(crate) use transaction_timing::control::now as control_diagnostic_now;
 #[cfg(test)]
 pub(crate) use transaction_timing::control::test_clock as control_diagnostic_test_clock;
@@ -1218,6 +1220,10 @@ pub enum StoreError {
         "Control request allowance expired before commit; this attempt committed no changes. Retry only the same retained request and idempotency key on the current connection with a still-valid binding. Earlier uncertain attempts remain unresolved."
     )]
     ControlRequestExpired,
+    #[error(
+        "Agent word allowance expired; the expiring transaction was not committed. Earlier transactions of this word may already have committed. Inspect the item's current state and notes before retrying; reconcile a retained attempt with its exact idempotency key. Earlier uncertain attempts remain unresolved."
+    )]
+    WordRequestExpired,
     #[error("SQLite writer admission refused ({reason}): {source}")]
     WorkWriterAdmissionRefused {
         reason: WorkWriterAdmissionReason,
@@ -1865,7 +1871,13 @@ impl ColdOpenGate {
 /// that lock together.
 #[cfg(test)]
 pub(crate) fn hold_cold_open_at(gate: std::sync::Arc<ColdOpenGate>) {
-    BEFORE_OPEN_LOCK.with(|slot| *slot.borrow_mut() = Some(Box::new(move || gate.arrive())));
+    before_next_open_lock(move || gate.arrive());
+}
+
+/// Injects one phase action at the real opener boundary, on this thread only.
+#[cfg(test)]
+pub(crate) fn before_next_open_lock(action: impl FnOnce() + 'static) {
+    BEFORE_OPEN_LOCK.with(|slot| *slot.borrow_mut() = Some(Box::new(action)));
 }
 
 /// Runs this thread's held action, if any, where a writable open is about

@@ -10,6 +10,7 @@
 // from an existing Node gate so the required nine stay nine.
 
 import assert from "node:assert/strict";
+import { startOperationWarning, withSyncOperationWarning } from "./operation-time.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -65,12 +66,12 @@ export function childEnv() {
 }
 
 export function run(home, projectFile, args, extra = {}) {
-  const result = spawnSync(binary, ["--home", home, "--project-file", projectFile, ...args], {
+  const result = withSyncOperationWarning("root probe command", () => spawnSync(binary, ["--home", home, "--project-file", projectFile, ...args], {
     cwd: extra.cwd ?? repo,
     env: childEnv(),
     encoding: "utf8",
     timeout: extra.timeout ?? HANG_GUARD_MS,
-  });
+  }));
   if (result.error) throw result.error;
   return result;
 }
@@ -170,6 +171,7 @@ export class RootJournal extends EventEmitter {
   // This never retries a calibration, barrier, command or failed assertion.
   async startHandshake() {
     this.assertHealthy("before journal startup");
+    const finishWarning = startOperationWarning("root probe journal startup");
     const filename = `${BARRIER_PREFIX}startup`;
     const path = join(this.directory, filename);
     const from = this.cursor();
@@ -186,6 +188,7 @@ export class RootJournal extends EventEmitter {
         const finish = (error) => {
           if (settled) return;
           settled = true;
+          finishWarning();
           clearTimeout(timeout);
           clearInterval(writer);
           this.off("event", onEvent);
@@ -254,6 +257,7 @@ export class RootJournal extends EventEmitter {
         cleanupErrors.push(error);
       }
     }
+    finishWarning();
     if (failure) throwWithCleanup(failure, cleanupErrors);
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "journal startup cleanup failed");
   }
@@ -324,11 +328,13 @@ export class RootJournal extends EventEmitter {
     }
     if (predicate()) return;
     const waitStartedAt = performance.now();
+    const finishWarning = startOperationWarning("root probe journal event");
     await new Promise((resolvePromise, reject) => {
       let settled = false;
       const finish = (action) => {
         if (settled) return;
         settled = true;
+        finishWarning();
         clearTimeout(timer);
         this.off("event", onEvent);
         action();
@@ -512,11 +518,11 @@ export function assertExactOwnedFixture(directory) {
 }
 
 function pwsh(command, extraEnv) {
-  const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], {
+  const result = withSyncOperationWarning("root probe ACL command", () => spawnSync("pwsh", ["-NoProfile", "-Command", command], {
     encoding: "utf8",
     timeout: HANG_GUARD_MS,
     env: { ...childEnv(), ...extraEnv },
-  });
+  }));
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`pwsh ACL failed (${result.status}): ${result.stdout} ${result.stderr}`);
@@ -592,7 +598,8 @@ export class WindowsAclReader {
     if (this.failure) return Promise.reject(this.error(phase, operation, this.failure));
     if (this.pending) return Promise.reject(this.error(phase, operation, new Error("overlapping ACL reader requests")));
     return new Promise((resolveResponse, reject) => {
-      this.pending = { phase, operation, resolveResponse, reject };
+      this.pending = { phase, operation, resolveResponse, reject,
+        finishWarning: startOperationWarning("root probe ACL request", { setTimer: this.setTimer, clearTimer: this.clearTimer }) };
       this.pending.timer = this.setTimer(() => this.fail(Object.assign(new Error("observation deadline elapsed"), {
         code: "ETIMEDOUT",
       })), HANG_GUARD_MS);
@@ -603,6 +610,7 @@ export class WindowsAclReader {
     const pending = this.pending;
     this.pending = null;
     if (!pending) return;
+    pending.finishWarning();
     this.clearTimer(pending.timer);
     if (error) pending.reject(error);
     else pending.resolveResponse(value);
@@ -628,11 +636,12 @@ export class WindowsAclReader {
 
   async waitClosed(allowanceMs) {
     let timer;
+    const finishWarning = startOperationWarning("root probe ACL shutdown");
     try {
       return await Promise.race([this.closed, new Promise((resolveWait) => {
         timer = this.setTimer(() => resolveWait(null), allowanceMs);
       })]);
-    } finally { this.clearTimer(timer); }
+    } finally { finishWarning(); this.clearTimer(timer); }
   }
 
   close(force = false) {
@@ -987,10 +996,12 @@ export class McpSession {
     const message = { jsonrpc: "2.0", id, method };
     if (params !== undefined) message.params = params;
     return new Promise((resolvePromise, reject) => {
+      const finishWarning = startOperationWarning("root probe MCP request");
       let settled = false;
       const fail = (error) => {
         if (settled) return;
         settled = true;
+        finishWarning();
         clearTimeout(timer);
         this.pending.delete(String(id));
         reject(error);
@@ -1002,6 +1013,7 @@ export class McpSession {
         resolve: (value) => {
           if (settled) return;
           settled = true;
+          finishWarning();
           clearTimeout(timer);
           this.pending.delete(String(id));
           resolvePromise(value);

@@ -58,9 +58,11 @@ impl ExchangeTarget {
     ) -> Result<Self, RunError> {
         let started = std::time::Instant::now();
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange capture");
-        let limits = crate::task_sync::exchange::remaining(limits, started)?;
-        Self::capture_remaining(selection, limits, cancel).await
+        crate::operation_time::observe("task exchange capture", async {
+            let limits = crate::task_sync::exchange::remaining(limits, started)?;
+            Self::capture_remaining(selection, limits, cancel).await
+        })
+        .await
     }
 
     // The public ingress admitted the full budget; internal calls spend its remainder.

@@ -2,6 +2,7 @@ use super::*;
 
 mod contention;
 mod lane_workload;
+mod request_budget;
 mod transaction_diagnostics;
 
 fn timeout(store: &SqliteStore) -> u32 {
@@ -37,7 +38,7 @@ fn writer_admission_nested_transaction_is_untouched() {
             .unwrap(),
         1
     );
-    assert_eq!(timeout(&scoped), 5000);
+    assert_eq!(timeout(&scoped), 60000);
     scoped.connection.execute_batch("ROLLBACK").unwrap();
 }
 
@@ -49,7 +50,7 @@ fn writer_admission_restores_timeout_and_scope_on_schema_failure_and_unwind() {
         let mut scoped = store.note_writer_admission_with_budget(Duration::from_millis(20));
         assert!(scoped.begin_work_mutation().is_err());
         assert!(scoped.connection.is_autocommit());
-        assert_eq!(timeout(&scoped), 5000);
+        assert_eq!(timeout(&scoped), 60000);
     }
     assert!(store.writer_admission.is_none());
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -206,13 +207,13 @@ fn writer_admission_two_acquisitions_share_the_short_window() {
             };
             assert_eq!(first_budget, 30);
             assert_eq!(second_budget, 20);
-            assert_eq!(timeout(&scoped), 5000);
+            assert_eq!(timeout(&scoped), 60000);
             contender.execute_batch("COMMIT").unwrap();
             // An exhausted contention allowance still permits an immediate
             // acquisition.
             test_policy::advance_writer_admission_window(Duration::from_millis(20));
             scoped.begin_work_mutation().unwrap().commit().unwrap();
-            assert_eq!(timeout(&scoped), 5000);
+            assert_eq!(timeout(&scoped), 60000);
         },
     );
     assert!(store.writer_admission.is_none());

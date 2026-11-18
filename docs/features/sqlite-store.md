@@ -214,7 +214,7 @@ opens of one store are briefly serialized. When several openers switch and
 initialize a new store at once,
 SQLite on Windows can refuse every one of them with its locking-protocol
 error, twice. Another opener waits for the lock within the open's
-five-second lock wait, then refuses as a busy store, safe to open again.
+60-second lock wait, then refuses as a busy store, safe to open again.
 The open releases the lock explicitly, and the sidecar file holds no data
 and is never removed. The sidecar is named after the file the store's path
 resolves to, so a link to the store or to its directory names the same one.
@@ -253,11 +253,11 @@ ended the first attempt; it is classified as a busy store, safe to open
 again. A write transaction after the open does not start again on this
 refusal.
 
-Work-note writer admission uses one monotonic 10-second contention window
+Work-note writer admission uses one monotonic 60-second contention window
 across session registration, focus, attempt recording, note capture and result
 recording. Each `BEGIN IMMEDIATE` from autocommit uses SQLite's native busy
 handler for the remaining window, then restores the connection's prior
-timeout before running the transaction body (five seconds for ordinary store
+timeout before running the transaction body (60 seconds for ordinary store
 opening). There is no manual retry loop;
 transaction bodies, commits, words and transport calls are never replayed by
 this wait. Other work words retain their ordinary admission timeout.

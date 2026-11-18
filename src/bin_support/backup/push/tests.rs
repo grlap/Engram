@@ -734,10 +734,10 @@ fn deadlines_too_far_off_for_the_clock_set_no_limit() {
 }
 
 #[test]
-fn a_capture_past_its_own_deadline_fails_without_any_request_to_the_target() {
+fn a_capture_with_no_preparation_budget_fails_without_any_request_to_the_target() {
     let fixture = fixture();
     let mut hurried = settings();
-    hurried.capture_deadline = Duration::ZERO;
+    hurried.capture_remaining_after_copy = Some(Duration::ZERO);
     let run = fixture.push_with(&hurried);
     assert_eq!(run.report.outcome, Outcome::Failed);
     assert_eq!(run.report.code.as_deref(), Some("backup_capture_deadline"));
@@ -748,7 +748,7 @@ fn a_capture_past_its_own_deadline_fails_without_any_request_to_the_target() {
 }
 
 #[test]
-fn a_zero_capture_deadline_still_resolves_a_pending_attempt_first() {
+fn a_short_capture_override_resolves_a_pending_attempt_before_reusing_the_copy() {
     let fixture = fixture();
     assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
     let mut state = fixture.state();
@@ -759,8 +759,8 @@ fn a_zero_capture_deadline_still_resolves_a_pending_attempt_first() {
     let mut hurried = settings();
     hurried.capture_deadline = Duration::ZERO;
     let run = fixture.push_with(&hurried);
-    assert_eq!(run.report.outcome, Outcome::Failed);
-    assert_eq!(run.report.code.as_deref(), Some("backup_capture_deadline"));
+    assert_eq!(run.report.outcome, Outcome::Unchanged);
+    assert_eq!(run.report.code, None);
     // The attempt that never arrived was resolved before the capture.
     assert_eq!(
         run.report.dropped.as_deref(),
@@ -908,14 +908,9 @@ fn preparing_the_file_past_the_capture_deadline_fails_and_removes_the_stage() {
     let before = fixture.state();
     let files = fixture.files(&fixture.copies);
     fixture.change("second");
-    // The capture returns within its deadline; the hook then spends the
-    // whole deadline, so none is left to prepare the compressed file.
-    // Retained limit: the capture itself must finish inside these real 5 s,
-    // or the deadline falls earlier and the message below differs.
-    let deadline = Duration::from_secs(5);
+    // Spend the admitted allowance at the phase boundary without a minute sleep.
     let mut hurried = settings();
-    hurried.capture_deadline = deadline;
-    hurried.after_capture = Some(Arc::new(move || std::thread::sleep(deadline)));
+    hurried.capture_remaining_after_copy = Some(Duration::ZERO);
 
     let run = fixture.push_with(&hurried);
     assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
@@ -1443,3 +1438,55 @@ fn a_missing_newest_copy_is_recorded_before_its_replacement_so_a_failed_replacem
 }
 
 mod killed;
+
+#[test]
+fn a_short_capture_override_keeps_one_minimum_budget_through_preparation_and_replay() {
+    let fixture = fixture();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut short = settings();
+    short.capture_deadline = Duration::ZERO;
+    short.capture_accounting = Some(Arc::new({
+        let seen = Arc::clone(&seen);
+        move |accounting| seen.lock().unwrap().push(accounting)
+    }));
+    let first = fixture.push_with(&short);
+    assert_eq!(
+        first.report.outcome,
+        Outcome::Uploaded,
+        "{:?}",
+        first.report
+    );
+    let events = seen.lock().unwrap();
+    let after_copy = events
+        .iter()
+        .find_map(|event| match event {
+            CaptureAccounting::AfterCapture(left) => Some(*left),
+            _ => None,
+        })
+        .unwrap();
+    let (prepared, until) = events
+        .iter()
+        .find_map(|event| match event {
+            CaptureAccounting::Preparing { left, until } => Some((*left, *until)),
+            _ => None,
+        })
+        .unwrap();
+    assert!(!after_copy.is_zero());
+    assert!(after_copy <= engram::operation_time::MINIMUM);
+    assert!(!prepared.is_zero() && prepared <= after_copy);
+    assert!(until.is_some(), "preparation lost its admitted deadline");
+    drop(events);
+    let receipt = fixture.state().newest_receipt;
+    let files = fixture.files(&fixture.copies);
+    let replay = fixture.push_with(&short);
+    assert_eq!(
+        replay.report.outcome,
+        Outcome::Unchanged,
+        "{:?}",
+        replay.report
+    );
+    assert_eq!(fixture.state().newest_receipt, receipt);
+    assert_eq!(fixture.state().pending, None);
+    assert_eq!(fixture.files(&fixture.copies), files);
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}

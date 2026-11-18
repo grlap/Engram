@@ -194,6 +194,8 @@ impl LocalWorkService {
         import_provenance: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        let _warning = crate::operation_time::Warning::start("remember project memory");
+        let _request = crate::storage::ControlRequestScope::ensure()?;
         let mut actor = self.actor("remember", "record attributed project memory");
         if let Some(marked) = import_provenance {
             if *edit != crate::domain::ProjectMemoryEdit::Whole {
@@ -340,6 +342,8 @@ impl LocalWorkService {
         key: String,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        let _warning = crate::operation_time::Warning::start("forget project memory");
+        let _request = crate::storage::ControlRequestScope::ensure()?;
         let request = ForgetProjectMemoryRequest {
             project_id: self.project_id.clone(),
             session_id: self.session_id.clone(),

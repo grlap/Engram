@@ -114,9 +114,11 @@ pub async fn record_delta_resolution(
 ) -> Result<ObjectId> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange record delta resolution");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    record_delta_resolution_remaining(store, input, limits, cancel).await
+    crate::operation_time::observe("task exchange record delta resolution", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        record_delta_resolution_remaining(store, input, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -161,10 +163,11 @@ pub async fn record_delta_retry_progress(
 ) -> Result<(ObjectId, bool)> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning =
-        crate::operation_time::Warning::start("task exchange record delta retry progress");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    record_delta_retry_progress_remaining(store, input, progress, limits, cancel).await
+    crate::operation_time::observe("task exchange record delta retry progress", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        record_delta_retry_progress_remaining(store, input, progress, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -234,9 +237,11 @@ pub async fn inspect_delta_resolution(
 ) -> Result<InspectedDeltaResolution> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange inspect delta resolution");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    inspect_delta_resolution_remaining(store, request, limits, cancel).await
+    crate::operation_time::observe("task exchange inspect delta resolution", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        inspect_delta_resolution_remaining(store, request, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

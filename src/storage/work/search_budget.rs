@@ -34,7 +34,7 @@ impl Default for Limits {
             records: 100_000,
             bytes: 384 * 1024 * 1024,
             unit_bytes: 1024 * 1024,
-            elapsed: Duration::from_secs(10),
+            elapsed: crate::operation_time::MINIMUM,
         }
     }
 }
@@ -207,6 +207,7 @@ impl Request {
                 REQUEST.with_borrow_mut(|slot| *slot = self.0.take());
             }
         }
+        let _warning = crate::operation_time::Warning::start("catalog search");
         self.check()?;
         let _restore = Restore(REQUEST.with_borrow_mut(|slot| slot.replace(self.clone())));
         let result = read();

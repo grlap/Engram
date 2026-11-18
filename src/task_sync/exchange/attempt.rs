@@ -55,9 +55,11 @@ pub async fn publish_outgoing(
 ) -> Result<PublicationAttempt> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange publish outgoing");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    publish_outgoing_remaining(store, input, request, limits, cancel).await
+    crate::operation_time::observe("task exchange publish outgoing", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        publish_outgoing_remaining(store, input, request, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

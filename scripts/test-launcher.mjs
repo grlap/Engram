@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // One execution, durable logs, one completion. Notification retries never run tests.
+import { MINIMUM_MS, withSyncOperationWarning } from "./operation-time.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, accessSync, closeSync, createReadStream, existsSync, linkSync, lstatSync, mkdirSync,
@@ -401,7 +402,7 @@ export async function countTests(log, { cargoFrames = false } = {}) {
     if (tooLong) {
       // Only its beginning is known. Inside a summary, or beginning as one,
       // it is a summary line that does not read.
-      if (block || /^(?:test result:|(?:ℹ|#) tests(?:\s|$))/u.test(line)) {
+      if (block || /^(?:test result:|(?:\u2139|#) tests(?:\s|$))/u.test(line)) {
         if (cargoFrames) uncertainFrame("malformed-summary");
         else unknown("malformed-summary");
       }
@@ -441,13 +442,13 @@ export async function countTests(log, { cargoFrames = false } = {}) {
         return;
       }
     }
-    const first = /^(ℹ|#) tests (\d+)$/u.exec(line);
+    const first = /^(\u2139|#) tests (\d+)$/u.exec(line);
     if (first) {
       if (cargoFrames) uncertainFrame("ambiguous-summary");
       block = { mark: first[1], values: [Number(first[2])] }; return;
     }
     // A summary's first line that does not read is still a summary's.
-    if (/^(?:ℹ|#) tests(?:\s|$)/u.test(line)) {
+    if (/^(?:\u2139|#) tests(?:\s|$)/u.test(line)) {
       if (cargoFrames) uncertainFrame("malformed-summary");
       else unknown("malformed-summary");
       return;
@@ -603,7 +604,7 @@ function systemPowerShell(env) {
 // How long one identity query may take. A run whose executor could not ask
 // records that, and recover then treats it as a record without a creation
 // time, so a short bound costs nothing but that.
-const identityQueryMs = 15_000;
+const identityQueryMs = MINIMUM_MS;
 
 // Where macOS keeps ps.
 const systemPs = "/bin/ps";
@@ -617,8 +618,8 @@ export const systemProbes = {
     let childEnv;
     try { childEnv = powerShellEnvironment(root, key, env); }
     catch (error) { return { error }; }
-    return spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script],
-      { encoding: "utf8", windowsHide: true, timeout: identityQueryMs, env: childEnv });
+    return withSyncOperationWarning("process identity query", () => spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script],
+      { encoding: "utf8", windowsHide: true, timeout: identityQueryMs, env: childEnv }));
   },
   // Signal 0 only asks whether the process exists; nothing is sent to it.
   exists(pid) {
@@ -630,8 +631,8 @@ export const systemProbes = {
   // language, so that every query gives a process the same start text.
   ps(pid) {
     if (!existsSync(systemPs)) return { error: new Error(`${systemPs} is not present`) };
-    return spawnSync(systemPs, ["-o", "lstart=", "-p", String(pid)],
-      { encoding: "utf8", timeout: identityQueryMs, env: { ...process.env, TZ: "UTC", LC_ALL: "C" } });
+    return withSyncOperationWarning("process identity query", () => spawnSync(systemPs, ["-o", "lstart=", "-p", String(pid)],
+      { encoding: "utf8", timeout: identityQueryMs, env: { ...process.env, TZ: "UTC", LC_ALL: "C" } }));
   },
 };
 
@@ -908,7 +909,7 @@ async function readDiagnostics(log, failed) {
   let context = 0, errorContext = false;
   const accept = (line) => {
     const clean = line.replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "");
-    if (/^\s*(?:ok\s+\d+\b|# Subtest:|test\s+.*\.\.\.\s+ok\b|test result: ok\.|[✔✓])/u.test(clean)) {
+    if (/^\s*(?:ok\s+\d+\b|# Subtest:|test\s+.*\.\.\.\s+ok\b|test result: ok\.|[\u2714\u2713])/u.test(clean)) {
       // Concurrent runners can interleave passing rows with failure details.
       // Suppress that row without terminating the bounded diagnostic context.
       return;
@@ -917,7 +918,7 @@ async function readDiagnostics(log, failed) {
     const nodeWarning = /^\s*(?:#\s*)?\(node:\d+\)\s+(?:\[[^\]\r\n]+\]\s+)?[A-Za-z]*Warning:/u.test(clean);
     const warning = nodeWarning || /\bwarning(?:\b|\[)/iu.test(clean);
     const failure = !nodeWarning && !/^\s*(?:#\s*)?warning(?:\b|\[)/iu.test(clean)
-      && /\berror(?:\b|\[)|^\s*(?:test .*\.\.\. FAILED|test result: FAILED|FAIL\s|not ok\b|✖|failures:|thread .*panicked|Caused by:)/iu.test(clean);
+      && /\berror(?:\b|\[)|^\s*(?:test .*\.\.\. FAILED|test result: FAILED|FAIL\s|not ok\b|\u2716|failures:|thread .*panicked|Caused by:)/iu.test(clean);
     if (warning || failure) { context = 5; errorContext = failure; }
     if (context > 0) {
       const text = `${clean}\n`;

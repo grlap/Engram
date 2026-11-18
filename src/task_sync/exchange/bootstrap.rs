@@ -31,10 +31,11 @@ pub async fn audit_incoming_data_commit(
 ) -> Result<CustodyAuditReceipt> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning =
-        crate::operation_time::Warning::start("task exchange audit incoming data commit");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    audit_incoming_data_commit_remaining(store, request, actor, now, limits, cancel).await
+    crate::operation_time::observe("task exchange audit incoming data commit", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        audit_incoming_data_commit_remaining(store, request, actor, now, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.

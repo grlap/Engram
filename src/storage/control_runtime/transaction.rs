@@ -24,6 +24,7 @@ fn budgeted_transaction<T>(
     connection: &mut Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
+    let _warning = crate::operation_time::Warning::start("control transaction");
     let budget = request_budget::current();
     check_budget(budget)?;
     let policy = BusyPolicy::cap(connection, budget)?;

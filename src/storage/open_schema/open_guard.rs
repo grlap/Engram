@@ -69,6 +69,8 @@ impl OpenGuard {
     /// reads as a URI, and a store whose sidecar cannot be had or cannot be
     /// locked on its file system, take none.
     pub(super) fn acquire(database: &Path, lock_wait: LockWait) -> Result<Self, StoreError> {
+        let _warning = crate::operation_time::Warning::start("SQLite store open lock");
+        crate::storage::control_runtime::request_budget::check_current()?;
         if database.as_os_str().is_empty() || database == Path::new(":memory:") {
             return Ok(Self::none());
         }
@@ -105,6 +107,7 @@ impl OpenGuard {
         };
         let limit = lock_wait.retry_limit(Instant::now());
         loop {
+            crate::storage::control_runtime::request_budget::check_current()?;
             match file.try_lock() {
                 Ok(()) => break,
                 Err(TryLockError::WouldBlock) => {
@@ -251,7 +254,7 @@ fn open_lock_busy() -> StoreError {
 /// an idle host, and load cannot fail it. Any other error returns at once, and so
 /// does this one past the hang guard, so a lock never released still fails.
 /// Retained limit: once the lock is released, the rest of an open waits on
-/// SQLite's own five-second busy timeout.
+/// SQLite's ordinary sixty-second busy timeout.
 #[cfg(test)]
 pub(crate) fn again_while_another_opens<T, E: std::fmt::Display>(
     mut attempt: impl FnMut() -> Result<T, E>,

@@ -3,6 +3,7 @@
 // Produce a deterministic identity for exactly what read-only delegated
 // reviewers can inspect: HEAD, index, tracked worktree, and untracked objects.
 
+import { withSyncOperationWarning } from "./operation-time.mjs";
 import { createHash } from "node:crypto";
 import {
   lstatSync,
@@ -374,7 +375,7 @@ export function sourceIdDifference(before, after) {
   if (a.tree !== b.tree) add(`root tree: ${a.tree} -> ${b.tree}`);
   const repositories = [["", a.changes, b.changes]];
   const children = new Map(b.submodules.map((child) => [child.path, child]));
-  const label = (path) => JSON.stringify(path.slice(0, 160)) + (path.length > 160 ? "…" : "");
+  const label = (path) => JSON.stringify(path.slice(0, 160)) + (path.length > 160 ? "\u2026" : "");
   for (const child of a.submodules) {
     const later = children.get(child.path);
     if (!later) add(`child removed: ${label(child.path)}`);
@@ -406,11 +407,11 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
   const unavailable = (message, refusal) => Object.assign(new Error(
     `committed input unavailable (${binary}; set ENGRAM_SOURCE_BINARY to select an owner): ${message.slice(0, 4096)}`),
   { code: "ENGRAM_SOURCE_UNAVAILABLE", ...(refusal ? { refusal } : {}) });
-  const result = run(binary, ["source", "--root", root, "--json"], {
+  const result = withSyncOperationWarning("source owner", () => run(binary, ["source", "--root", root, "--json"], {
     cwd: root, env: sourceEnv, encoding: null, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     // Stop a hung child without supplying or extending the owner's source budget.
     timeout: ownerProcessHangGuardMs, maxBuffer: SOURCE_JSON_BYTES + 1,
-  });
+  }));
   if (result.error || result.signal || ![0, 1].includes(result.status)) {
     throw unavailable(result.error?.message ?? `owner exited ${result.status ?? "without a status"}${result.signal ? ` (${result.signal})` : ""}`);
   }

@@ -22,30 +22,33 @@ impl LocalWorkService {
         cancel: &task_sync::exchange::Cancellation,
     ) -> anyhow::Result<CustodyAuditReceipt> {
         limits.validate_request()?;
-        let _warning = crate::operation_time::Warning::start("task exchange service");
-        let started = std::time::Instant::now();
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        anyhow::ensure!(
-            request.expected_local_cut.position.feed == FeedId::Project(self.project_id.clone()),
-            "custody audit request belongs to another project",
-        );
-        let now = chrono::Utc::now();
-        self.validate_read_attribution(now)?;
-        let actor = self.actor(
-            "task_sync_custody_audit",
-            "explicit incoming data bootstrap",
-        );
-        let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
-        self.register_on(&mut store, now)?;
-        task_sync::exchange::audit_incoming_data_commit_remaining(
-            &mut store,
-            request,
-            &actor,
-            now,
-            task_sync::exchange::remaining(limits, started)?,
-            cancel,
-        )
+        crate::operation_time::observe("task exchange service", async {
+            let started = std::time::Instant::now();
+            self.require_task_sync_writer()?;
+            self.require_task_sync_enabled()?;
+            anyhow::ensure!(
+                request.expected_local_cut.position.feed
+                    == FeedId::Project(self.project_id.clone()),
+                "custody audit request belongs to another project",
+            );
+            let now = chrono::Utc::now();
+            self.validate_read_attribution(now)?;
+            let actor = self.actor(
+                "task_sync_custody_audit",
+                "explicit incoming data bootstrap",
+            );
+            let mut store = crate::storage::SqliteStore::open_unresolved(&self.database)?;
+            self.register_on(&mut store, now)?;
+            task_sync::exchange::audit_incoming_data_commit_remaining(
+                &mut store,
+                request,
+                &actor,
+                now,
+                task_sync::exchange::remaining(limits, started)?,
+                cancel,
+            )
+            .await
+        })
         .await
     }
 

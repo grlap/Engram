@@ -242,7 +242,7 @@ fn a_zero_check_deadline_is_refused_before_any_work() {
             "status",
             "--check-target",
             "--check-deadline-secs",
-            "1",
+            "60",
             "--json",
         ],
     );

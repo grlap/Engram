@@ -328,6 +328,7 @@ fn run<T: Send + 'static>(
     deadline: Duration,
     work: impl FnOnce(Duration) -> Result<T, ReadFailure> + Send + 'static,
 ) -> ReadRun<T> {
+    let _warning = engram::operation_time::Warning::start("backup target read");
     let mut transport = Transport {
         budget: deadline,
         used: Duration::ZERO,

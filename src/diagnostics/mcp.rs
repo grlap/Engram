@@ -14,6 +14,10 @@ use std::{
 };
 pub use transport::DiagnosticTransport;
 
+pub(crate) fn operation_label(name: &str) -> &'static str {
+    label(name)
+}
+
 tokio::task_local! { static FAULT: Cell<Option<Fault>>; }
 
 /// Captures typed errors before their display text or tool result is rendered.

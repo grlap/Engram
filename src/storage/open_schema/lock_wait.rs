@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 /// The longest one lock wait lasts on a copy's connection, as long as an
 /// ordinary open waits.
-pub(super) const LOCK_WAIT: Duration = Duration::from_secs(5);
+pub(super) const LOCK_WAIT: Duration = crate::operation_time::MINIMUM;
 
 /// The longest a copy's connection sleeps between two tries for a lock.
 const POLL: Duration = Duration::from_millis(2);
@@ -35,7 +35,17 @@ impl LockWait {
     /// timeout it had.
     pub(super) fn install(self, connection: &rusqlite::Connection) -> rusqlite::Result<()> {
         match self {
-            Self::Timeout(timeout) => connection.busy_timeout(timeout),
+            Self::Timeout(timeout) => {
+                if crate::storage::control_runtime::request_budget::current().is_some() {
+                    REQUEST_WAIT.set(Some(RequestWait {
+                        timeout,
+                        started: Instant::now(),
+                    }));
+                    connection.busy_handler(Some(request_busy))
+                } else {
+                    connection.busy_timeout(timeout)
+                }
+            }
             Self::CopyDeadline => connection.busy_handler(Some(copy_busy)),
         }
     }
@@ -45,7 +55,7 @@ impl LockWait {
     /// no limit, and so no retry.
     pub(super) fn retry_limit(self, now: Instant) -> Option<Instant> {
         match self {
-            Self::Timeout(timeout) => Some(now + timeout),
+            Self::Timeout(timeout) => Some(now + request_remaining(timeout)),
             Self::CopyDeadline => current().and_then(|wait| limit(now, wait.deadline)),
         }
     }
@@ -55,13 +65,59 @@ impl LockWait {
     pub(super) fn retry_pause(self, limit: Option<Instant>, now: Instant) -> Option<Duration> {
         let limit = limit?;
         match self {
-            Self::Timeout(_) => (now < limit).then_some(JOURNAL_RETRY_PAUSE),
+            Self::Timeout(_) => {
+                if crate::storage::control_runtime::request_budget::current().is_none() {
+                    return (now < limit).then_some(JOURNAL_RETRY_PAUSE);
+                }
+                let left = request_remaining(limit.saturating_duration_since(now));
+                (!left.is_zero()).then(|| left.min(JOURNAL_RETRY_PAUSE))
+            }
             Self::CopyDeadline => {
                 let left = limit.saturating_duration_since(now);
                 (!left.is_zero()).then(|| left.min(JOURNAL_RETRY_PAUSE))
             }
         }
     }
+
+    /// An admitted cached connection keeps its ordinary policy between words.
+    /// The request's clock is consulted again at its next writer acquisition.
+    pub(super) fn restore(self, connection: &rusqlite::Connection) -> rusqlite::Result<()> {
+        match self {
+            Self::Timeout(timeout) => connection.busy_timeout(timeout),
+            Self::CopyDeadline => Ok(()),
+        }
+    }
+}
+
+fn request_remaining(timeout: Duration) -> Duration {
+    crate::storage::control_runtime::request_budget::current()
+        .map_or(timeout, |budget| timeout.min(budget.remaining()))
+}
+
+#[derive(Clone, Copy)]
+struct RequestWait {
+    timeout: Duration,
+    started: Instant,
+}
+
+thread_local! {
+    static REQUEST_WAIT: Cell<Option<RequestWait>> = const { Cell::new(None) };
+}
+
+fn request_busy(count: i32) -> bool {
+    let Some(mut wait) = REQUEST_WAIT.get() else {
+        return false;
+    };
+    if count == 0 {
+        wait.started = Instant::now();
+        REQUEST_WAIT.set(Some(wait));
+    }
+    let left = request_remaining(wait.timeout.saturating_sub(wait.started.elapsed()));
+    if left.is_zero() {
+        return false;
+    }
+    std::thread::sleep(left.min(POLL));
+    !request_remaining(wait.timeout.saturating_sub(wait.started.elapsed())).is_zero()
 }
 
 /// The copy whose connections this thread is using: its deadline, and when

@@ -441,4 +441,102 @@ test("registration validates exact replies, retries only ambiguous transport, an
     }
   });
 });
+
+test("registration warns at ten seconds, aborts at sixty, and exact resubmission keeps one intent", async (t) => {
+  await repository(async (root) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let elapsed = 0;
+    const now = () => elapsed;
+    const advance = (milliseconds) => {
+      elapsed += milliseconds;
+      t.mock.timers.tick(milliseconds);
+    };
+    const warnings = [];
+    t.mock.method(process.stderr, "write", (message) => { warnings.push(String(message)); return true; });
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const posts = [];
+    let signal;
+    const pending = registerTestRun(request, root, registrationEnv, { now, fetch: async (_url, options) => {
+      posts.push(options.body);
+      signal = options.signal;
+      return await new Promise(() => {});
+    } });
+    assert.equal(posts.length, 1);
+    advance(9999);
+    assert.equal(signal.aborted, false);
+    advance(1);
+    assert.equal(warnings.filter(line => line.includes("test run registration is still running")).length, 1);
+    assert.equal(signal.aborted, false);
+    advance(49999);
+    assert.equal(signal.aborted, false);
+    advance(1);
+    const timedOut = await pending;
+    assert.equal(timedOut.reason, "registration-timeout");
+    assert.equal(signal.aborted, true);
+    assert.equal(posts.length, 1, "unknown persistence is not automatically resubmitted");
+    const replay = await registerTestRun(request, root, registrationEnv, { now, fetch: async (_url, options) => {
+      if (options.method === "POST") {
+        posts.push(options.body);
+        return response(registrationAck(request));
+      }
+      return response(registrationQuery(request, root));
+    } });
+    assert.equal(replay.state, "registered");
+    assert.equal(posts[1], posts[0], "explicit recovery resubmits exactly the original intent");
+    advance(60000);
+    assert.equal(warnings.filter(line => line.includes("test run registration is still running")).length, 1);
+  });
+});
+
+test("detached confirmation spends the original registration deadline and warning", async (t) => {
+  await repository(async (root) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const warnings = [];
+    t.mock.method(process.stderr, "write", (message) => { warnings.push(String(message)); return true; });
+    let elapsed = 0;
+    let finishPost;
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const now = () => elapsed;
+    const advance = (milliseconds) => {
+      elapsed += milliseconds;
+      t.mock.timers.tick(milliseconds);
+    };
+    const registration = registerTestRun(request, root, registrationEnv, {
+      now,
+      fetch: async (_url, options) => options.method === "POST"
+        ? await new Promise(resolve => { finishPost = resolve; })
+        : response(registrationQuery(request, root)),
+    });
+    advance(50_000);
+    finishPost(response(registrationAck(request)));
+    request.registration = JSON.parse(JSON.stringify(await registration));
+    assert.equal(request.registration.state, "registered");
+
+    advance(5_000);
+    let confirmationSignal;
+    const confirmation = confirmDetachedRegistration(request, root, registrationEnv, {
+      now,
+      fetch: async (_url, { signal }) => {
+        confirmationSignal = signal;
+        return await new Promise(() => {});
+      },
+    });
+    advance(4_999);
+    assert.equal(confirmationSignal.aborted, false);
+    advance(1);
+    assert.equal((await confirmation).reason, "registration-timeout");
+    assert.equal(confirmationSignal.aborted, true);
+
+    advance(5_000);
+    const expired = await confirmDetachedRegistration(request, root, registrationEnv, {
+      now,
+      fetch: () => assert.fail("confirmation cannot launch after the original deadline"),
+    });
+    assert.equal(expired.reason, "registration-timeout");
+    assert.equal(warnings.filter(line => line.includes("test run registration is still running")).length, 1);
+  });
+});
+
 }

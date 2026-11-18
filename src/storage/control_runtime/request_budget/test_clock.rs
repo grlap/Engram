@@ -17,7 +17,11 @@ pub(crate) fn scope() -> ControlRequestScope {
 }
 
 pub(crate) fn expire() {
-    CLOCK.with(|clock| clock.set(clock.get() + CONTROL_REQUEST_ALLOWANCE));
+    advance(CONTROL_REQUEST_ALLOWANCE);
+}
+
+pub(crate) fn advance(by: Duration) {
+    CLOCK.with(|clock| clock.set(clock.get() + by));
 }
 
 /// The operation result is inserted after the operation's durable writes.

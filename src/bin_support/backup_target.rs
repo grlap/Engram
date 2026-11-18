@@ -56,12 +56,12 @@ pub(crate) enum BackupCommand {
         /// confirmation or a missing copy under the push lock.
         #[arg(long)]
         check_target: bool,
-        /// Seconds a target check may take, at least 1.
+        /// Seconds a target check may take, at least 60.
         #[arg(
             long,
             value_name = "SECONDS",
             default_value_t = DEFAULT_CHECK_DEADLINE.as_secs(),
-            value_parser = clap::value_parser!(u64).range(1..),
+            value_parser = clap::value_parser!(u64).range(60..),
             requires = "check_target"
         )]
         check_deadline_secs: u64,
@@ -76,10 +76,10 @@ pub(crate) enum BackupCommand {
         #[arg(long)]
         json: bool,
         /// Seconds the capture may take.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_CAPTURE_DEADLINE.as_secs())]
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_CAPTURE_DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(60..))]
         capture_deadline_secs: u64,
         /// Seconds the requests to the target may take together.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_TRANSPORT_DEADLINE.as_secs())]
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_TRANSPORT_DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(60..))]
         transport_deadline_secs: u64,
     },
     /// Print the manifests of the copies the configured target holds for
@@ -90,7 +90,7 @@ pub(crate) enum BackupCommand {
         #[arg(long)]
         json: bool,
         /// Seconds the requests to the target may take together.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(60..))]
         deadline_secs: u64,
     },
     /// Write one copy, decoded to no more than the length its manifest
@@ -109,7 +109,7 @@ pub(crate) enum BackupCommand {
         #[arg(long)]
         json: bool,
         /// Seconds the requests to the target may take together.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(60..))]
         deadline_secs: u64,
     },
     /// Install one `store` copy from the configured target onto this home,
@@ -140,6 +140,7 @@ pub(crate) enum BackupCommand {
             long,
             value_name = "SECONDS",
             default_value_t = DEFAULT_READ_DEADLINE.as_secs(),
+            value_parser = clap::value_parser!(u64).range(60..),
             conflicts_with = "abandon_pending"
         )]
         deadline_secs: u64,

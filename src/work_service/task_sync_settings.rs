@@ -16,6 +16,7 @@ impl LocalWorkService {
         request: &Request,
         now: DateTime<Utc>,
     ) -> Result<Status, Error> {
+        let _warning = crate::operation_time::Warning::start("task sync settings");
         let refuse = |code, message| {
             Error::new(
                 Some(&self.project_id),

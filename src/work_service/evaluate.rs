@@ -74,6 +74,7 @@ impl LocalWorkService {
         input: &WorkEvaluateInput,
         now: DateTime<Utc>,
     ) -> Result<WorkEvaluateResult, StoreError> {
+        let _request = crate::storage::ControlRequestScope::ensure()?;
         let ParsedEvaluation {
             mode,
             verdicts,

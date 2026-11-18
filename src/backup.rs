@@ -9,7 +9,7 @@
 use std::{
     fmt, io,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
@@ -238,10 +238,27 @@ impl StoreCapture {
         project: &ProjectId,
         deadline: Duration,
     ) -> Result<(), BackupError> {
+        self.check_in_full_until(
+            project,
+            Instant::now().checked_add(deadline.max(crate::operation_time::MINIMUM)),
+        )
+    }
+
+    /// Finish an existing capture within its already admitted absolute deadline.
+    /// `None` retains an allowance beyond the clock's representable range.
+    ///
+    /// # Errors
+    /// Refuses an invalid staged store or an expired capture deadline.
+    pub fn check_in_full_until(
+        &mut self,
+        project: &ProjectId,
+        deadline: Option<Instant>,
+    ) -> Result<(), BackupError> {
+        let _warning = crate::operation_time::Warning::start("backup captured store verification");
         if self.check == CaptureCheck::Full {
             return Ok(());
         }
-        let interrupt = CopyInterrupt::after(deadline);
+        let interrupt = CopyInterrupt::until(deadline);
         let copy = SqliteStore::verify_settled_store_copy(&self.staged, project, &interrupt)
             .map_err(|error| {
                 if interrupt.expired() || is_interrupted(&error) {
@@ -299,12 +316,28 @@ pub fn capture_store(
     project: &ProjectId,
     options: &CaptureOptions<'_>,
 ) -> Result<StoreCapture, BackupError> {
-    let interrupt = CopyInterrupt::after(options.deadline);
+    capture_store_with_interrupt(
+        home,
+        project,
+        options,
+        &CopyInterrupt::after(options.deadline),
+    )
+}
+
+fn capture_store_with_interrupt(
+    home: &Path,
+    project: &ProjectId,
+    options: &CaptureOptions<'_>,
+    interrupt: &CopyInterrupt,
+) -> Result<StoreCapture, BackupError> {
+    let _warning = crate::operation_time::Warning::start("backup store capture");
     #[cfg(test)]
-    let interrupt = match &options.copy_probe {
-        Some(probe) => interrupt.with_probe(probe.clone()),
-        None => interrupt,
-    };
+    let probed = options
+        .copy_probe
+        .as_ref()
+        .map(|probe| interrupt.clone().with_probe(probe.clone()));
+    #[cfg(test)]
+    let interrupt = probed.as_ref().unwrap_or(interrupt);
     let observe = |phase| {
         if let Some(observer) = options.observer {
             observer(phase);
@@ -391,7 +424,7 @@ pub fn capture_store(
             build_fingerprint,
         },
         options,
-        &interrupt,
+        interrupt,
         &observe,
     );
     match captured {

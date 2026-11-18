@@ -50,6 +50,7 @@ impl LocalWorkService {
         profile: &ExportProfile,
         now: DateTime<Utc>,
     ) -> Result<TaskSyncFolderExport, StoreError> {
+        let _warning = crate::operation_time::Warning::start("task sync folder export");
         self.require_task_sync_enabled()?;
         self.read_store_at(now)?
             .export_task_sync_folder(&self.project_id, profile)
@@ -211,6 +212,7 @@ impl LocalWorkService {
         ),
         StoreError,
     > {
+        let _warning = crate::operation_time::Warning::start("task sync folder import");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let (export_basis, profile) = match basis {

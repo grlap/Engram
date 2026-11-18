@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./operation-time.test.mjs";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";

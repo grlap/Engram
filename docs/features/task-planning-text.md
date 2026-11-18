@@ -1162,7 +1162,7 @@ documents receive the shared document-field, note/activity disclosure and
 local shape checks; graph relationships and identity collisions with retained
 documents still need the caller's admission. Unchanged task blobs are not
 opened or revalidated. Missing commits, malformed changed documents, unexpected
-paths and non-ordinary modes refuse. The operation has a 30-second query budget,
+paths and non-ordinary modes refuse. The operation has a 60-second query budget,
 a one-MiB bound per Git response and a 128-MiB changed-payload bound.
 
 This seam opens no SQLite store, retains no cursor or receipt, imports nothing,
@@ -1323,7 +1323,7 @@ kill-on-close Job Object, and then resumes it. Git's helpers and descendants
 remain in that job. Root exit, cancellation, output overflow, deadline and
 dropping the execution future terminate the owned tree; concurrent bounded
 pipe reads avoid waiting indefinitely for inherited handles. The default
-budget is 30 seconds, 1 MiB stdout and 64 KiB stderr. Callers may select up to
+budget is 60 seconds, 1 MiB stdout and 64 KiB stderr. Callers may select from 60 to
 120 seconds and 1 MiB per stream. These are execution/output limits, not a
 download, object-store or repository-size quota. Native synchronous spawn is
 not preempted by the async deadline.

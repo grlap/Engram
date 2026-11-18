@@ -613,11 +613,12 @@ fn unhex(hex: &str) -> Result<Vec<u8>, MigrationError> {
 /// Refuses an existing `out`, a source that is not a store, and a value that
 /// cannot be written as JSON. No partial file is left behind.
 pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, MigrationError> {
+    let _warning = crate::operation_time::Warning::start("store migration export");
     if out.try_exists()? {
         return Err(refused("export destination already exists"));
     }
     let connection = super::open_sqlite_file(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    connection.busy_timeout(crate::operation_time::MINIMUM)?;
     connection.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF; BEGIN;")?;
     let (tables, rebuilt) = source_tables(&connection)?;
     if tables.is_empty() {
@@ -756,6 +757,7 @@ fn header_of(
 /// Refuses a damaged or truncated file, an unknown table or column, a broken
 /// reference between rows, and a result the doctor finds unhealthy.
 pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationError> {
+    let _warning = crate::operation_time::Warning::start("store migration import");
     let staged_path = Staged::path_beside(out);
     #[cfg(windows)]
     {

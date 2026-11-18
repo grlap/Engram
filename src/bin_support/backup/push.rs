@@ -83,6 +83,9 @@ pub(crate) struct PushSettings {
     /// so a test can spend the rest of the capture's deadline.
     #[cfg(test)]
     pub after_capture: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Inject already-spent capture time at the preparation boundary.
+    #[cfg(test)]
+    pub capture_remaining_after_copy: Option<Duration>,
     /// Runs immediately before compression of a new copy begins.
     #[cfg(test)]
     pub before_prepare: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
@@ -127,6 +130,8 @@ impl PushSettings {
             before_confirm: None,
             #[cfg(test)]
             after_capture: None,
+            #[cfg(test)]
+            capture_remaining_after_copy: None,
             #[cfg(test)]
             before_prepare: None,
             #[cfg(test)]
@@ -333,6 +338,7 @@ pub(crate) fn push(
 }
 
 fn push_kind(home: &Path, project: &ProjectId, kind: CopyKind, settings: &PushSettings) -> PushRun {
+    let _warning = engram::operation_time::Warning::start("backup push");
     let finished = |report| PushRun {
         report,
         abandoned: None,
@@ -484,8 +490,12 @@ impl Push<'_> {
             .as_ref()
             .filter(|receipt| receipt.target_identity == self.target.identity)
             .map(|receipt| receipt.manifest.capture.clone());
+        let capture_budget = self
+            .settings
+            .capture_deadline
+            .max(engram::operation_time::MINIMUM);
         let options = CaptureOptions {
-            deadline: self.settings.capture_deadline,
+            deadline: capture_budget,
             compressed_in_stage: true,
             host_name: host_name(),
             free_space: &free_space,
@@ -503,10 +513,11 @@ impl Push<'_> {
         // now, a full check a replacement may still need, and the stored
         // file prepared below. Time spent asking the target belongs to the
         // transport's.
-        let mut capture_left = self
-            .settings
-            .capture_deadline
-            .saturating_sub(capture_started.elapsed());
+        let mut capture_left = capture_budget.saturating_sub(capture_started.elapsed());
+        #[cfg(test)]
+        if let Some(left) = self.settings.capture_remaining_after_copy {
+            capture_left = capture_left.min(left);
+        }
         #[cfg(test)]
         if let Some(hook) = &self.settings.capture_accounting {
             hook(CaptureAccounting::AfterCapture(capture_left));
@@ -588,7 +599,7 @@ impl Push<'_> {
             && capture.check != CaptureCheck::Full
         {
             capture
-                .check_in_full(self.project, capture_left)
+                .check_in_full_until(self.project, Instant::now().checked_add(capture_left))
                 .map_err(|error| Failure::new(error.code(), error.to_string()))?;
             self.report.capture_check = Some(capture.check);
         }

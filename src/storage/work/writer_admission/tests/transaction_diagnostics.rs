@@ -76,7 +76,7 @@ fn work_cleanup_is_observed_after_commit_rollback_drop_and_unwind() {
         drop(scope);
         store.connection.commit_hook(None::<fn() -> bool>).unwrap();
         assert!(store.connection.is_autocommit(), "{mode}");
-        assert_eq!(timeout(&store), 5000);
+        assert_eq!(timeout(&store), 60000);
         assert_eq!(count(&store), i64::from(mode == "commit"));
         drain(&sink);
         let rows = settled(home.path());

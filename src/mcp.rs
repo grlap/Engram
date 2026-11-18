@@ -227,26 +227,36 @@ impl ServerHandler for McpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        if let Some(observer) = &self.diagnostics {
-            let ticket = observer.started(&context, &request.name);
-            let transaction_context = observer
-                .transaction_context(ticket, self.work_service.diagnostic_store_fingerprint());
-            let (result, fault) = crate::diagnostics::transaction::scoped(
-                transaction_context,
-                crate::diagnostics::mcp::scoped(self.call_tool_traced(request, context)),
-            )
-            .await;
-            let fault = fault.or_else(|| match &result {
-                Err(_) => Some(crate::diagnostics::Fault::rpc_error()),
-                Ok(CallToolResponse::Complete(response)) if response.is_error == Some(true) => {
-                    Some(crate::diagnostics::Fault::tool_error())
+        Box::pin(crate::operation_time::observe(
+            crate::diagnostics::mcp::operation_label(&request.name),
+            async {
+                if let Some(observer) = &self.diagnostics {
+                    let ticket = observer.started(&context, &request.name);
+                    let transaction_context = observer.transaction_context(
+                        ticket,
+                        self.work_service.diagnostic_store_fingerprint(),
+                    );
+                    let (result, fault) = crate::diagnostics::transaction::scoped(
+                        transaction_context,
+                        crate::diagnostics::mcp::scoped(self.call_tool_traced(request, context)),
+                    )
+                    .await;
+                    let fault = fault.or_else(|| match &result {
+                        Err(_) => Some(crate::diagnostics::Fault::rpc_error()),
+                        Ok(CallToolResponse::Complete(response))
+                            if response.is_error == Some(true) =>
+                        {
+                            Some(crate::diagnostics::Fault::tool_error())
+                        }
+                        Ok(_) => None,
+                    });
+                    observer.settled(ticket, fault);
+                    return result;
                 }
-                Ok(_) => None,
-            });
-            observer.settled(ticket, fault);
-            return result;
-        }
-        self.call_tool_traced(request, context).await
+                self.call_tool_traced(request, context).await
+            },
+        ))
+        .await
     }
 }
 

@@ -146,7 +146,7 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(crate::operation_time::MINIMUM),
             retry,
         )
     }
@@ -220,7 +220,7 @@ impl SqliteStore {
             )));
         }
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(crate::operation_time::MINIMUM)?;
         connection.pragma_update(None, "query_only", true)?;
         Self::diagnose_control_policy_records_on(&connection)
     }
@@ -515,7 +515,7 @@ impl SqliteStore {
         let store = Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(crate::operation_time::MINIMUM),
             ProtocolRetry::Never,
         )?;
         if let Some(interrupt) = interrupt {
@@ -588,7 +588,7 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(crate::operation_time::MINIMUM),
             ProtocolRetry::Once,
         )
     }
@@ -598,12 +598,15 @@ impl SqliteStore {
         identity: Option<HostPathPolicy>,
         retry: ProtocolRetry,
     ) -> Result<Self, StoreError> {
+        let _warning = crate::operation_time::Warning::start("SQLite store open");
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionOpen,
         );
-        let lock_wait = LockWait::Timeout(Duration::from_secs(5));
+        let lock_wait = LockWait::Timeout(crate::operation_time::MINIMUM);
+        super::control_runtime::request_budget::check_current()?;
         // Before SQLite opens the file: see `open_guard`.
         let mut guard = OpenGuard::acquire(path, lock_wait)?;
+        super::control_runtime::request_budget::check_current()?;
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::default())?;
         // A traced control process notes when each BEGIN IMMEDIATE and
         // COMMIT starts and how long it ran, from its first statement on.
@@ -724,7 +727,7 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             host_path_policy,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(crate::operation_time::MINIMUM),
             ProtocolRetry::Once,
         )
     }
@@ -761,12 +764,14 @@ impl SqliteStore {
         retry: ProtocolRetry,
         guard: &mut OpenGuard,
     ) -> Result<Self, StoreError> {
+        let _warning = crate::operation_time::Warning::start("SQLite store admission");
         #[cfg(test)]
         super::copy_trace::admission_entered();
         let mut restarted = false;
         // Where the refusal ended the first attempt, once the open retried.
         let mut retried_after: Option<OpenPhase> = None;
         loop {
+            super::control_runtime::request_budget::check_current()?;
             let mut phase = OpenPhase::ProbeSnapshot;
             let attempt = Self::open_attempt(
                 &mut connection,
@@ -789,6 +794,8 @@ impl SqliteStore {
                 Ok(OpenAttempt::Opened {
                     work_schema_version,
                 }) => {
+                    super::control_runtime::request_budget::check_current()?;
+                    lock_wait.restore(&connection)?;
                     return Ok(Self {
                         connection,
                         writer_admission: None,
@@ -1125,6 +1132,7 @@ impl SqliteStore {
                     "injected cold-schema failure before commit".into(),
                 ));
             }
+            super::control_runtime::request_budget::check_current()?;
             connection.execute_batch("COMMIT;")?;
             guard.release();
             protocol_retry::enter_phase(phase, OpenPhase::StoreSetup)?;

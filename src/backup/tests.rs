@@ -544,7 +544,14 @@ fn capture_with_a_deadline_shorter_than_the_copy_fails_typed_and_removes_its_sta
     let mut options = options(&plenty);
     options.deadline = deadline;
     options.copy_probe = Some(probe);
-    let error = capture_store(home.path(), &project, &options).unwrap_err();
+    // Exercise an internal remaining allowance, after public sixty-second admission.
+    let error = capture_store_with_interrupt(
+        home.path(),
+        &project,
+        &options,
+        &CopyInterrupt::after_remaining(options.deadline),
+    )
+    .unwrap_err();
     assert!(began.elapsed() >= deadline);
     assert!(
         staged_existed.load(Ordering::SeqCst),
@@ -647,7 +654,14 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     let mut options = options(&plenty);
     options.deadline = Duration::from_millis(1500);
     options.observer = Some(&observer);
-    let error = capture_store(home.path(), &project, &options).unwrap_err();
+    // Exercise an internal remaining allowance, after public sixty-second admission.
+    let error = capture_store_with_interrupt(
+        home.path(),
+        &project,
+        &options,
+        &CopyInterrupt::after_remaining(options.deadline),
+    )
+    .unwrap_err();
     let took = began.elapsed();
     crate::storage::copy_trace::mark(|| format!("capture: returned {}", error.code()));
     let trace = crate::storage::copy_trace::take();
@@ -708,7 +722,14 @@ fn capture_waits_for_the_first_identity_reading_only_until_its_deadline() {
     options.deadline = Duration::from_millis(300);
     options.observer = Some(&observer);
     let began = Instant::now();
-    let error = capture_store(home.path(), &project, &options).unwrap_err();
+    // Exercise an internal remaining allowance, after public sixty-second admission.
+    let error = capture_store_with_interrupt(
+        home.path(),
+        &project,
+        &options,
+        &CopyInterrupt::after_remaining(options.deadline),
+    )
+    .unwrap_err();
     let took = began.elapsed();
     assert!(
         matches!(
@@ -822,4 +843,31 @@ fn a_capture_killed_during_its_copy_leaves_the_live_store_usable_and_only_a_stag
     let capture = capture_store(home.path(), &project, &options(&plenty)).unwrap();
     assert_eq!(capture.manifest.cut, raw_cut(&database, &project));
     capture.discard().unwrap();
+}
+
+#[test]
+fn a_short_public_verification_budget_does_not_reset_an_expired_capture_allowance() {
+    let (home, project, _) = fixture(3, 64);
+    let mut options = options(&plenty);
+    options.deadline = Duration::ZERO;
+    let first = capture_store(home.path(), &project, &options).unwrap();
+    options.same_as = Some(&first.manifest);
+    let mut equal = capture_store(home.path(), &project, &options).unwrap();
+    assert_eq!(equal.check, CaptureCheck::SameBytesAsNewest);
+    let before = serde_json::to_value(&equal.manifest).unwrap();
+    let staged = std::fs::read(&equal.staged).unwrap();
+    let error = equal
+        .check_in_full_until(&project, Some(Instant::now()))
+        .unwrap_err();
+    assert_eq!(error.code(), "backup_capture_deadline");
+    assert_eq!(equal.check, CaptureCheck::SameBytesAsNewest);
+    assert_eq!(serde_json::to_value(&equal.manifest).unwrap(), before);
+    assert_eq!(std::fs::read(&equal.staged).unwrap(), staged);
+    // A fresh public request has at least sixty seconds even with a zero override.
+    equal.check_in_full(&project, Duration::ZERO).unwrap();
+    assert_eq!(equal.check, CaptureCheck::Full);
+    equal.check_in_full(&project, Duration::ZERO).unwrap();
+    assert_eq!(std::fs::read(&equal.staged).unwrap(), staged);
+    equal.discard().unwrap();
+    first.discard().unwrap();
 }

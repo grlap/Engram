@@ -1,3 +1,4 @@
+import { startOperationWarning } from "../operation-time.mjs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { HostLoadSamples, McpCloseObservation } from "../mcp-close.mjs";
@@ -188,21 +189,30 @@ class McpClient {
     const message = { jsonrpc: "2.0", id, method };
     if (params !== undefined) message.params = params;
     return new Promise((resolvePromise, reject) => {
+      const finishWarning = startOperationWarning("MCP request");
       const timer = setTimeout(() => {
+        finishWarning();
         this.pending.delete(String(id));
         reject(new Error(`MCP request timed out: ${method}; stderr=${this.stderr}`));
       }, REQUEST_HANG_GUARD_MS);
       this.pending.set(String(id), {
         resolve: (value) => {
+          finishWarning();
           clearTimeout(timer);
           resolvePromise(value);
         },
         reject: (error) => {
+          finishWarning();
           clearTimeout(timer);
           reject(error);
         },
       });
-      this.child.stdin.write(`${JSON.stringify(message)}\n`);
+      try { this.child.stdin.write(`${JSON.stringify(message)}\n`); }
+      catch (error) {
+        const pending = this.pending.get(String(id));
+        this.pending.delete(String(id));
+        pending?.reject(error);
+      }
     });
   }
 

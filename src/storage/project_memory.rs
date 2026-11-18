@@ -293,9 +293,7 @@ impl SqliteStore {
         let work_schema_version = self.opened_work_schema_version();
         // Refuse invalid input before registering a process-default session.
         validate_remember_request(request, edit, redactor)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(now) = register_at {
             super::work::register_process_default_in_write(
                 &transaction,
@@ -606,9 +604,7 @@ impl SqliteStore {
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
         validate_forget_request(request, redactor)?;
         let work_schema_version = self.opened_work_schema_version();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(now) = register_at {
             super::work::register_process_default_in_write(
                 &transaction,

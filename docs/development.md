@@ -438,7 +438,7 @@ Engram home refuses as `input_unavailable` when a fallback is needed; configure
 temp outside those locations for the production reader. Unix directories use
 0700 permissions; on Windows they inherit the temp folder's ACL, so that folder
 must be private to the user. Configuration discovery and every Git query share the existing
-thirty-second deadline, output bound and empty-stderr requirement. The EOL policy adds no JSON field or refusal code. Shared real-Git fixtures exercise actual
+sixty-second deadline, output bound and strict stderr validation (allowing only the bounded source warning). The EOL policy adds no JSON field or refusal code. Shared real-Git fixtures exercise actual
 CRLF checkouts with forced stat rechecks, local overrides, system/global/XDG
 precedence and changed-content controls; adapters consume the owner's verdict.
 Unit-test readers inject isolated null machine scopes and scratch under `target/`;
@@ -701,7 +701,7 @@ can retain recovery details while using its host's process-completion wait.
 Under TermAl, both full and focused runs register through the host's existing
 test-run endpoint before capturing the input `source_id`. The initiating session
 owns the registration; a different `--notify` recipient does not change its
-project. Registration and a detached worker's confirmation share an eight-second
+project. Registration and a detached worker's confirmation share a sixty-second
 budget. For foreground and different-session notification runs, outside TermAl
 or when that handshake is unavailable or unconfirmed,
 the command still executes and retains its ordinary result and notification
@@ -741,7 +741,7 @@ Own-run detachment refuses before stages when registration is unavailable
 (`test-run-wait-refused`), or its acknowledgement is uncertain
 (`test-run-wait-unconfirmed`). The receipt retains result/log paths and any
 bounded HTTP refusal diagnostic instead of claiming a completion wake.
-The wait request has its own eight-second budget and a 65,536-byte response
+The wait request has its own sixty-second budget and a 65,536-byte response
 limit. A timeout or lost response may mean the wait was persisted. Wait POSTs
 have no deduplication contract: do not retry them automatically or rerun tests
 to repair delivery. Retain the original run and report the uncertain outcome.
@@ -828,10 +828,10 @@ unreadable after its bounded transient-read retries reports
 cleanup remains refused receives a `warning:` line, while the published stop
 intent remains available to the worker.
 The reason is `process-cleanup-unconfirmed` in the result, summary and
-notification. Cleanup observation has a 30-second confirmation allowance;
-Windows expiry reports the residual count, while POSIX expiry reports that
+notification. After termination is requested, Windows retains its 30-second observation
+allowance and reports a residual count on expiry; POSIX allows 60 seconds and reports that
 group disappearance is unconfirmed, rather than waiting forever. A POSIX
-helper that does not close within 31 seconds of a stop is also unconfirmed.
+helper that does not close within 60 seconds of a stop is also unconfirmed.
 Missing helper outcome or cleanup-initiation proof remains uncertainty even
 if the group is absent. This does not
 promise that an OS call itself can be interrupted. A helper startup failure
@@ -844,7 +844,7 @@ is removed after helper exit; the workload receives the prepared stage
 environment, including its TEMP, TMP and PSModulePath.
 
 Stop-lock removal retries transient file-sharing refusals. A worker that cannot
-acquire the stop lock within five seconds rechecks the latest retained intent
+acquire the stop lock within 60 seconds rechecks the latest retained intent
 and saves its terminal result with a warning; a leftover caller lock cannot
 silently discard completion or notification. It never deletes that lock on a
 guess about its owner. This fallback does not certify an intent that another

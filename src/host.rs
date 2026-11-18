@@ -1177,6 +1177,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         // is reported only by the CLI's structured --json rendering.
         StoreError::TaskSyncRefused { inner, .. } => store_error_code(inner),
         StoreError::Json(_)
+        | StoreError::WordRequestExpired
         | StoreError::Sqlite(_)
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::SqlitePath { .. }

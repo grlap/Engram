@@ -24,6 +24,7 @@ impl LocalWorkService {
         branch: &str,
         request: &task_sync::data_worktree::StagedCommitRequest,
     ) -> anyhow::Result<task_sync::ledger::RetainedCommit> {
+        let _warning = crate::operation_time::Warning::start("task sync data commit service");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         self.validate_read_attribution(chrono::Utc::now())?;
@@ -44,6 +45,8 @@ impl LocalWorkService {
         marker: &Path,
         branch: &str,
     ) -> anyhow::Result<task_sync::data_worktree::Initialization> {
+        let _warning =
+            crate::operation_time::Warning::start("task sync data initialization service");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         self.validate_read_attribution(chrono::Utc::now())?;
@@ -86,6 +89,7 @@ impl LocalWorkService {
         branch: &str,
         assertions: setup::Assertions,
     ) -> anyhow::Result<setup::Receipt> {
+        let _warning = crate::operation_time::Warning::start("task sync setup preparation");
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         self.validate_read_attribution(chrono::Utc::now())?;
@@ -116,6 +120,7 @@ impl LocalWorkService {
         marker: &Path,
         selection: &setup::MaterializeSelection,
     ) -> anyhow::Result<setup::MaterializeReceipt> {
+        let _warning = crate::operation_time::Warning::start("task sync setup materialization");
         self.require_task_sync_writer()?;
         self.validate_read_attribution(chrono::Utc::now())?;
         setup::materialize(

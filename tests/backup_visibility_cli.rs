@@ -218,18 +218,16 @@ fn a_capture_the_store_refuses_is_seen_as_a_failed_push_with_the_store_s_code() 
 }
 
 #[test]
-fn a_capture_that_passes_its_deadline_is_seen_as_a_failed_push_with_its_code() {
-    let home = Home::configured();
-    let push = home.engram(&["backup", "push", "--capture-deadline-secs", "0"]);
-    assert!(!push.status.success(), "the capture must be refused");
-
-    let status = home.assert_visible(
-        "backup: mode local (store: backup_never_confirmed); the last store push failed: backup_capture_deadline; see engram backup status",
-    );
-    assert_eq!(status["durability"]["mode"], "local");
-    let attempt = &status["kinds"][0]["target"]["last_attempt"];
-    assert_eq!(attempt["outcome"], "failed");
-    assert_eq!(attempt["code"], "backup_capture_deadline");
+fn a_short_capture_deadline_does_not_record_a_failed_push() {
+    let home = Home::pushed();
+    let before = fs::read(home.state_path()).unwrap();
+    for seconds in ["0", "59"] {
+        let push = home.engram(&["backup", "push", "--capture-deadline-secs", seconds]);
+        assert_eq!(push.status.code(), Some(2));
+        assert_eq!(push.stdout, [] as [u8; 0]);
+        assert!(String::from_utf8_lossy(&push.stderr).contains("--capture-deadline-secs"));
+        assert_eq!(fs::read(home.state_path()).unwrap(), before);
+    }
 }
 
 #[test]

@@ -1391,6 +1391,8 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
     let ((traced, phases, traced_elapsed), (untraced, untraced_elapsed, untraced_begins)) =
         std::thread::scope(|scope| {
             let traced = scope.spawn(|| {
+                let _request = crate::storage::control_request_test_clock::scope();
+                crate::storage::control_request_test_clock::advance(Duration::from_secs(59));
                 let started = Instant::now();
                 let (result, phases) = block_on(scoped(async {
                     try_add(&traced_verbs, "Times out traced", 3)
@@ -1398,6 +1400,8 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
                 (result, phases, started.elapsed())
             });
             let untraced = scope.spawn(|| {
+                let _request = crate::storage::control_request_test_clock::scope();
+                crate::storage::control_request_test_clock::advance(Duration::from_secs(59));
                 let cost = crate::storage::work_cost::sqlite::start();
                 let started = Instant::now();
                 let result = try_add(&untraced_verbs, "Times out untraced", 4);
@@ -1424,15 +1428,16 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
         format!("{:?}", traced.guidance()),
         format!("{:?}", untraced.guidance())
     );
-    // Both were refused on the same configured timeout, read from their own
-    // connections, and both really waited it out.
+    // Both request scopes have already spent 59 of their 60 seconds. Each
+    // real SQLite BEGIN waits the same remaining second exactly once; the
+    // trace changes neither that remaining allowance nor the refusal.
     let configured = |error: &crate::storage::StoreError| match error {
         crate::storage::StoreError::WorkWriterAdmissionRefused { budget_ms, .. } => *budget_ms,
         other => panic!("not a writer admission refusal: {other:?}"),
     };
-    assert_eq!(configured(&traced.error), 5_000);
-    assert_eq!(configured(&untraced.error), 5_000);
-    let bound = Duration::from_secs(4);
+    assert_eq!(configured(&traced.error), 1_000);
+    assert_eq!(configured(&untraced.error), 1_000);
+    let bound = Duration::from_millis(900);
     assert!(traced_elapsed >= bound, "{traced_elapsed:?}");
     assert!(untraced_elapsed >= bound, "{untraced_elapsed:?}");
     assert_eq!(

@@ -17,7 +17,7 @@ use engram::{HostPathPolicy, ProjectId, SqliteStore, storage::RecordedLanding};
 use super::refusals::{Phase, report_error, with_build};
 
 /// How long one git call may run before the check gives up on it.
-const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const GIT_TIMEOUT: Duration = engram::operation_time::MINIMUM;
 
 /// The most output the check reads from one git call; the one call it reads
 /// prints a single object name.
@@ -106,6 +106,7 @@ fn spawn_failure(error: &std::io::Error) -> GitRun {
 }
 
 fn run(mut command: Command) -> GitRun {
+    let _warning = engram::operation_time::Warning::start("doctor Git command");
     match command.spawn() {
         Ok(mut child) => wait(&mut child, GIT_TIMEOUT),
         Err(error) => spawn_failure(&error),
@@ -124,9 +125,9 @@ fn run_reading(command: Command) -> (GitRun, String) {
 /// pipe beyond it: on Windows `git.exe` is often a launcher whose own child,
 /// the real git, holds the pipe and can outlive a stopped launcher. Output
 /// that has not arrived by then makes the call a failure, never an empty
-/// answer. A git that exits right at the bound still gets a second for its
-/// output to arrive.
+/// answer. Output draining shares the original absolute deadline.
 fn run_reading_within(mut command: Command, bound: Duration) -> (GitRun, String) {
+    let _warning = engram::operation_time::Warning::start("doctor Git output");
     command.stdout(Stdio::piped());
     let started = Instant::now();
     let mut child = match command.spawn() {
@@ -141,13 +142,11 @@ fn run_reading_within(mut command: Command, bound: Duration) -> (GitRun, String)
             let _ = sender.send(printed);
         });
     }
-    let ended = wait(&mut child, bound);
+    let ended = wait(&mut child, bound.saturating_sub(started.elapsed()));
     if !matches!(ended, GitRun::Exit(_)) {
         return (ended, String::new());
     }
-    let left = bound
-        .saturating_sub(started.elapsed())
-        .max(Duration::from_secs(1));
+    let left = bound.saturating_sub(started.elapsed());
     match receiver.recv_timeout(left) {
         Ok(printed) => (ended, String::from_utf8_lossy(&printed).into_owned()),
         Err(_) => (
@@ -289,6 +288,7 @@ fn answer(run: GitRun, no: LandingStatus) -> Result<(), LandingStatus> {
 /// may have been written around validation, then the commit, then the remote
 /// branch's local ref, then whether the branch contains the commit.
 pub(crate) fn check_landing(repository: &Path, recorded: &RecordedLanding) -> LandingStatus {
+    let _warning = engram::operation_time::Warning::start("doctor landing inspection");
     let landing = &recorded.landing;
     if let Err(reason) = landing.validate() {
         return LandingStatus::Malformed(reason);
@@ -417,6 +417,7 @@ pub(crate) fn check_landings(
     repository: &Path,
     json: bool,
 ) -> Result<()> {
+    let _warning = engram::operation_time::Warning::start("doctor landing inventory");
     let store = match SqliteStore::open_with_host_path_identity(database, identity) {
         Ok(store) => store,
         Err(error) => return report_error(database, project_id, &error, json, Phase::Open),

@@ -84,8 +84,14 @@ impl AgentVerbs {
         &self,
         word: impl FnOnce() -> Result<Receipt, VerbError>,
     ) -> Result<Receipt, VerbError> {
+        // Start before even the focus read opens the store. Nested service
+        // calls keep this absolute allowance through every acquisition.
+        let _request = crate::storage::ControlRequestScope::ensure().map_err(word_expiry)?;
         let journal = self.service.focus_journal();
-        let outcome = word();
+        let outcome = word().map_err(|mut error| {
+            error.error = word_expiry(error.error);
+            error
+        });
         let Some(change) = journal.finish() else {
             return outcome;
         };
@@ -94,5 +100,33 @@ impl AgentVerbs {
             Ok(receipt) => Ok(receipt.with_focus_change(&disclosure)),
             Err(error) => Err(error.with_focus_change(disclosure)),
         }
+    }
+}
+
+pub(super) fn word_expiry(error: crate::storage::StoreError) -> crate::storage::StoreError {
+    match error {
+        crate::storage::StoreError::ControlRequestExpired => {
+            crate::storage::StoreError::WordRequestExpired
+        }
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod expiry_tests {
+    use super::*;
+
+    #[test]
+    fn word_expiry_discloses_possible_earlier_commits() {
+        let error = word_expiry(crate::storage::StoreError::ControlRequestExpired);
+        assert!(matches!(
+            error,
+            crate::storage::StoreError::WordRequestExpired
+        ));
+        assert_eq!(crate::host::store_error_code(&error), "storage_error");
+        let receipt = super::super::error_rendering::store_error_value(&error);
+        let message = receipt.to_string();
+        assert!(message.contains("Earlier transactions of this word may already have committed"));
+        assert!(!message.contains("this attempt committed no changes"));
     }
 }

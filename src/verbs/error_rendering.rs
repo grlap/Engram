@@ -454,6 +454,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
         | StoreError::ControlRequestExpired
+        | StoreError::WordRequestExpired
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::Sqlite(_)
         | StoreError::SqlitePath { .. }

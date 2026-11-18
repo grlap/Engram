@@ -3,6 +3,7 @@
 //! A warning owns no cancellation, database connection, or retry. One shared
 //! observer serves blocking and async callers, including a blocked native call.
 
+use std::cell::RefCell;
 use std::io::Write;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
@@ -15,8 +16,42 @@ pub const WARN_AFTER: Duration = Duration::from_secs(10);
 
 /// Run the complete asynchronous operation, including its result processing.
 pub async fn observe<T>(name: &'static str, operation: impl std::future::Future<Output = T>) -> T {
-    let _warning = Warning::start(name);
-    operation.await
+    let warning = Warning::inherited().unwrap_or_else(|| Warning::owned(name));
+    ASYNC_PARENT
+        .scope(Arc::clone(&warning.pending), operation)
+        .await
+}
+
+thread_local! {
+    static SYNC_PARENT: RefCell<Weak<Pending>> = const { RefCell::new(Weak::new()) };
+}
+
+tokio::task_local! {
+    static ASYNC_PARENT: Arc<Pending>;
+}
+
+/// Carries an existing operation into a synchronous worker without starting
+/// another timer. The owning async operation still settles its warning.
+pub(crate) struct BlockingWarningContext(Option<Arc<Pending>>);
+
+impl BlockingWarningContext {
+    pub(crate) fn capture() -> Self {
+        Self(Warning::inherited().map(|warning| Arc::clone(&warning.pending)))
+    }
+
+    pub(crate) fn run<T>(self, operation: impl FnOnce() -> T) -> T {
+        struct Restore(Weak<Pending>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SYNC_PARENT.with(|parent| parent.replace(std::mem::take(&mut self.0)));
+            }
+        }
+        let Some(parent) = self.0 else {
+            return operation();
+        };
+        let _restore = Restore(SYNC_PARENT.with(|slot| slot.replace(Arc::downgrade(&parent))));
+        operation()
+    }
 }
 
 #[cfg(test)]
@@ -141,14 +176,38 @@ impl Monitor {
 
 /// Keep this guard alive until the named operation settles, including unwinding.
 /// Labels must be fixed operation names, never caller text, paths, or credentials.
+/// Use [`observe`] for an operation that can yield to another future.
 #[derive(Debug)]
 #[must_use]
 pub struct Warning {
     pending: Arc<Pending>,
+    owns_completion: bool,
 }
 
 impl Warning {
     pub fn start(operation: &'static str) -> Self {
+        if let Some(warning) = Self::inherited() {
+            return warning;
+        }
+        let warning = Self::owned(operation);
+        SYNC_PARENT.with(|parent| parent.replace(Arc::downgrade(&warning.pending)));
+        warning
+    }
+
+    fn inherited() -> Option<Self> {
+        let parent = ASYNC_PARENT
+            .try_with(Arc::clone)
+            .ok()
+            .or_else(|| SYNC_PARENT.with(|parent| parent.borrow().upgrade()));
+        parent
+            .filter(|pending| pending.state.load(Ordering::Acquire) != FINISHED)
+            .map(|pending| Self {
+                pending,
+                owns_completion: false,
+            })
+    }
+
+    fn owned(operation: &'static str) -> Self {
         static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
         let started = now();
         let pending = Arc::new(Pending {
@@ -160,7 +219,10 @@ impl Warning {
         });
         #[cfg(test)]
         if test_clock::register(&pending) {
-            return Self { pending };
+            return Self {
+                pending,
+                owns_completion: true,
+            };
         }
         let monitor = Monitor::shared();
         monitor
@@ -170,12 +232,18 @@ impl Warning {
             .0
             .push(Arc::downgrade(&pending));
         monitor.changed.notify_one();
-        Self { pending }
+        Self {
+            pending,
+            owns_completion: true,
+        }
     }
 }
 
 impl Drop for Warning {
     fn drop(&mut self) {
+        if !self.owns_completion {
+            return;
+        }
         self.pending.state.store(FINISHED, Ordering::Release);
         #[cfg(test)]
         if test_clock::owns(&self.pending) {
@@ -188,6 +256,79 @@ impl Drop for Warning {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_phases_warn_once_without_finishing_the_outer_operation() {
+        let probe = test_clock::Probe::install();
+        let outer = Warning::start("outer operation");
+        {
+            let _inner = Warning::start("SQLite writer");
+            probe.advance(WARN_AFTER);
+        }
+        probe.advance(WARN_AFTER);
+        assert_eq!(probe.events().len(), 1);
+        assert_eq!(probe.events()[0].0, "outer operation");
+        assert!(probe.active("outer operation"));
+        drop(outer);
+        let _next = Warning::start("next operation");
+        probe.advance(WARN_AFTER);
+        assert_eq!(probe.events().len(), 2);
+        assert_eq!(probe.events()[1].0, "next operation");
+    }
+
+    #[tokio::test]
+    async fn async_warning_scope_coalesces_phases_across_a_yield() {
+        let probe = test_clock::Probe::install();
+        observe("MCP operation", async {
+            tokio::task::yield_now().await;
+            let _inner = Warning::start("control request");
+            probe.advance(WARN_AFTER);
+            observe("nested service", async {
+                tokio::task::yield_now().await;
+                probe.advance(WARN_AFTER);
+            })
+            .await;
+        })
+        .await;
+        assert_eq!(probe.events().len(), 1);
+        assert_eq!(probe.events()[0].0, "MCP operation");
+        assert!(!probe.active("MCP operation"));
+    }
+
+    #[tokio::test]
+    async fn unrelated_async_operations_each_keep_their_warning() {
+        let probe = test_clock::Probe::install();
+        tokio::join!(
+            observe("first", async {
+                tokio::task::yield_now().await;
+                probe.advance(WARN_AFTER);
+            }),
+            observe("second", async {
+                tokio::task::yield_now().await;
+                probe.advance(WARN_AFTER);
+            })
+        );
+        let labels: Vec<_> = probe.events().iter().map(|event| event.0).collect();
+        assert_eq!(labels, ["first", "second"]);
+    }
+
+    #[tokio::test]
+    async fn a_blocking_worker_inherits_its_async_call_warning() {
+        let probe = test_clock::Probe::install();
+        observe("MCP search", async {
+            let context = BlockingWarningContext::capture();
+            let worker_label = tokio::task::spawn_blocking(move || {
+                context.run(|| Warning::start("catalog search").pending.operation)
+            })
+            .await
+            .unwrap();
+            assert_eq!(worker_label, "MCP search");
+            probe.advance(WARN_AFTER);
+        })
+        .await;
+        assert_eq!(probe.events().len(), 1);
+        assert_eq!(probe.events()[0].0, "MCP search");
+    }
 
     #[test]
     fn task_data_query_warns_once_and_keeps_its_sixty_second_deadline() {
@@ -264,6 +405,7 @@ mod tests {
         });
         let guard = Warning {
             pending: Arc::clone(&pending),
+            owns_completion: true,
         };
         let mut queue = Queue(vec![Arc::downgrade(&pending)]);
         let _ = std::panic::catch_unwind(|| {

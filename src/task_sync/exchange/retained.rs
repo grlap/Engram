@@ -30,9 +30,11 @@ pub async fn retain_commit(
 ) -> Result<RetainedCommit> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange retain commit");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    retain_commit_remaining(repository, operation, commit, limits, cancel).await
+    crate::operation_time::observe("task exchange retain commit", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        retain_commit_remaining(repository, operation, commit, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
@@ -116,9 +118,11 @@ pub async fn verify_retained_commit(
 ) -> Result<()> {
     let started = std::time::Instant::now();
     limits.validate_request()?;
-    let _warning = crate::operation_time::Warning::start("task exchange verify retained commit");
-    let limits = crate::task_sync::exchange::remaining(limits, started)?;
-    verify_retained_commit_remaining(repository, retained, limits, cancel).await
+    crate::operation_time::observe("task exchange verify retained commit", async {
+        let limits = crate::task_sync::exchange::remaining(limits, started)?;
+        verify_retained_commit_remaining(repository, retained, limits, cancel).await
+    })
+    .await
 }
 
 // The public ingress admitted the full budget; internal calls spend its remainder.
