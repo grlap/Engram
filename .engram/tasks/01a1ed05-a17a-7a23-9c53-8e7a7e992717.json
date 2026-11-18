@@ -1,0 +1,29 @@
+{
+  "id": "01a1ed05-a17a-7a23-9c53-8e7a7e992717",
+  "external_ref": null,
+  "title": "Refuse outgoing task-sync keys with unchanged Git bytes before retaining preparation",
+  "outcome": "An outgoing preparation refuses a declared task key that cannot produce a raw Git change, while allowing a real byte change even if the decoded task value is equal.",
+  "acceptance": [
+    "An outgoing request with an unchanged task path is refused before preparation or custody is retained, naming that key and the remedy.",
+    "The admission check compares actual Git bytes at the selected basis and accepts a genuine raw reformat whose decoded document is unchanged.",
+    "An executable regression covers unchanged and reformatted task paths through the normal preparation and commit-basis owners."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
