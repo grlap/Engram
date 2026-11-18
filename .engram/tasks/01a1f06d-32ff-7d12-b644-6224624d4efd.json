@@ -1,0 +1,31 @@
+{
+  "id": "01a1f06d-32ff-7d12-b644-6224624d4efd",
+  "external_ref": null,
+  "title": "Import with the host's own basis refuses as divergent when the incoming folder only holds that same own export",
+  "outcome": "Import with the host's own basis refuses as divergent when the incoming folder only holds that same own export",
+  "acceptance": [
+    "Importing a data folder whose content equals the host's own basis export (no foreign change) into a store that has changed since that export succeeds: local changes win, nothing is reported as a conflict, and the folder is recorded as imported",
+    "task_sync_divergent_planning is reported only when the incoming folder changes a task relative to the basis and the local store also changed that task",
+    "A store whose own export was written by an older build can rejoin its data branch with one documented command, without a full rebuild"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "refusals",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
