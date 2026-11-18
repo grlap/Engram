@@ -1,0 +1,29 @@
+{
+  "id": "01a1edb9-94d0-77f2-8da9-7a5f2d935dad",
+  "external_ref": null,
+  "title": "Check the task-sync memory reader's deadline between keys and before returning a committed memory snapshot",
+  "outcome": "Check the task-sync memory reader's deadline between keys and before returning a committed memory snapshot",
+  "acceptance": [
+    "The committed memory read (task_sync::git snapshot memories::read) checks the reader's existing operation deadline while decoding keys after the body batches and before returning a snapshot, so a read whose deadline expires during decoding is refused with the existing deadline refusal instead of returning a successful basis.",
+    "A test drives a reader whose deadline expires after the last body batch and shows the read is refused, while a read within its deadline still returns the snapshot."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
