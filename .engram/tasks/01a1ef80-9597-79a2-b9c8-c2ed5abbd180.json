@@ -1,0 +1,28 @@
+{
+  "id": "01a1ef80-9597-79a2-b9c8-c2ed5abbd180",
+  "external_ref": null,
+  "title": "Lighten Windows evidence apply and retained-carrier Git work",
+  "outcome": "Measure and reduce Windows Git process and wall-time cost for applying an evidence exchange against an already retained carrier.",
+  "acceptance": [
+    "Record exact per-command Git starts and elapsed phases for one bounded Windows evidence apply and its retained-carrier preparation; separate fixture and product starts and offline replay.",
+    "Reduce unnecessary product Git starts and elapsed work while preserving custody, validation, and source rechecks at effects. Do not raise request deadlines or move coverage out of production tests."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "scale-with-work"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
