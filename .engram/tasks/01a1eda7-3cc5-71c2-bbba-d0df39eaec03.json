@@ -1,0 +1,27 @@
+{
+  "id": "01a1eda7-3cc5-71c2-bbba-d0df39eaec03",
+  "external_ref": null,
+  "title": "Use the preferred empty-output assertion in the backup CLI test",
+  "outcome": "Use the preferred empty-output assertion in the backup CLI test",
+  "acceptance": [
+    "The short-deadline backup list and restore refusal tests retain their empty stdout assertion using the repository's equality assertion style, and strict Clippy no longer reports assert-is-empty there."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-backup",
+    "lint"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

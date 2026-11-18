@@ -25,12 +25,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Delivered E′ round-five repairs on exact clean 9449ba31039b3fb16dcbba5c7f74e42e6228d27a/tree 116aec7816b9e11c6d66fca786e029ce2603ba0c: independent Linux group membership checks for unreadable stat, GCM cache refusal, distinct deadline/capacity/Unix launch diagnostics, and six portable real-Git test groups. Strict Clippy and focused behavior passed on Windows/macOS/Linux (14/30/31). Independent acceptance 99713998a5c042f890459a23a57fce58 passed all seven criteria against the same source. Manifest f6c6c37106f3401bbef397334d88f8ae retains exact original evidence. Local candidate and native records remain available to the open parent; Opus owns its whole-input review, FULL and landing.",
+    "completed_at": "2026-11-18T07:49:17.356446Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
