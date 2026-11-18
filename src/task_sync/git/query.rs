@@ -169,20 +169,28 @@ pub(super) fn evidence_blob_observed(
 
 /// Many blobs through one `cat-file --batch` process under one deadline: one
 /// object id per input line, each answered by its header, bytes and newline.
+/// With `sizes_only`, `--batch-check` answers each with its header alone.
 pub(super) fn batch_blobs_observed(
     root: &Path,
     input: &[u8],
     bound: Duration,
     output_limit: u64,
+    stderr_policy: StderrPolicy,
+    sizes_only: bool,
 ) -> Result<Vec<u8>> {
-    let command = super::command(root, &["cat-file", "--batch"]);
+    let mode = if sizes_only {
+        "--batch-check"
+    } else {
+        "--batch"
+    };
+    let command = super::command(root, &["cat-file", mode]);
     run_command_bounded(
         command,
         "cat-file",
         false,
         Some(input),
         bound,
-        StderrPolicy::ErrorOnly,
+        stderr_policy,
         output_limit,
     )
 }
