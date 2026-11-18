@@ -1,0 +1,29 @@
+{
+  "id": "01a1ed7f-7bbe-7560-835e-d21b80295bed",
+  "external_ref": null,
+  "title": "Name invalid or unavailable staged tree inputs in outgoing task-sync preparation",
+  "outcome": "A refused staged_tree selection identifies the field, the bad input or unavailable object and the exact corrective staging step.",
+  "acceptance": [
+    "Malformed, unavailable and non-tree staged_tree inputs identify the field and explain how to stage the selected files and pass the full tree ID from git write-tree in the data worktree",
+    "Refusal remains before retaining outgoing preparation or custody, and actual Git execution failures retain their own diagnostic"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

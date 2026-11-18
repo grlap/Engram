@@ -1,0 +1,29 @@
+{
+  "id": "01a1ed7f-7be1-71d3-abca-e971281eb77d",
+  "external_ref": null,
+  "title": "Classify outgoing task selection refusals by the actual failing check",
+  "outcome": "Machine consumers can distinguish outgoing staged-selection errors from a changed import basis or inventory root.",
+  "acceptance": [
+    "Unchanged bytes and staged documents that differ from native capture return a stable refusal family whose documented meaning matches outgoing selection failure",
+    "A staged_tree that names a non-tree object uses a matching refusal family and preserves an actionable remedy"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1ed7f-7bfa-7fb0-bc1c-63ddf24838f6",
+  "external_ref": null,
+  "title": "Assert the deciding refusal when a selected outgoing task commit changes no path",
+  "outcome": "The existing regression detects unrelated errors instead of accepting any failed Git comparison.",
+  "acceptance": [
+    "The base-commit check in the staged outgoing regression asserts the specific missing changed-key refusal from commit validation, and the reformatted commit still passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

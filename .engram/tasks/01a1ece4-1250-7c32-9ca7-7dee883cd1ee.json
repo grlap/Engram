@@ -22,12 +22,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Delivered confined macOS/Linux evidence exchange, portable real-Git/checkpoint suites, and the cleanup-thread failure NotLaunched publication fix on clean 18855858b9d6c80d5354223da17dc761c7ab30d4/tree 5b183ba481d6c1d5bb81f4bfed4d60499449a69a. Independent acceptance f888ddad015d400c85e998eff81c9d07 passed all three criteria on the same source. Strict Clippy and selected behavior passed on Windows, macOS and Linux. Manifest 49ac1465e6f3421cbcc1d0dd4988dc28 gives all exact runs and original evidence. Opus owns the parent's whole-input review and integration FULL; local candidate and originals are retained for that open parent.",
+    "completed_at": "2026-11-18T06:52:15.861188400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
