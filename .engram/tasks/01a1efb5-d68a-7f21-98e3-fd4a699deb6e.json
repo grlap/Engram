@@ -1,0 +1,30 @@
+{
+  "id": "01a1efb5-d68a-7f21-98e3-fd4a699deb6e",
+  "external_ref": null,
+  "title": "Assert deterministic transport work in the slim HTTPS evidence workflow",
+  "outcome": "The mismatch workflow regression test fails if the reduced fetch and confined-launch counts grow again, without using wall-clock pass/fail.",
+  "acceptance": [
+    "The HTTPS evidence-mismatch test asserts deterministic request or confined-launch counts against a same-run single-request baseline; elapsed-time values remain diagnostic only, and the Central timeout root cause stays explicitly unclaimed until a Windows phase log identifies it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "review-followup",
+    "sync",
+    "test-coverage",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1f046-7209-7a11-b033-e067959c82af",
+  "external_ref": null,
+  "title": "Launcher's unconfirmed test-run registration line names neither its cause nor the correction",
+  "outcome": "Launcher's unconfirmed test-run registration line names neither its cause nor the correction",
+  "acceptance": [
+    "When scripts/test-run-registration.mjs reports a registration as unconfirmed (e.g. 'registration: unconfirmed; native-wait=unavailable; use --notify; not host check credit'), the line names the cause (HTTP status, refusal code, transport error or missing host configuration) and the correction that would give credit (how to start a registered run)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "after-sync",
+    "launcher",
+    "refusals"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

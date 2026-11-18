@@ -1,0 +1,32 @@
+{
+  "id": "01a1f038-16a7-7a71-98a0-ce9b449e86dd",
+  "external_ref": null,
+  "title": "Launcher own-run detached worker test exits 1 after readiness under full-gate load, with its worker output lost",
+  "outcome": "Launcher own-run detached worker test exits 1 after readiness under full-gate load, with its worker output lost",
+  "acceptance": [
+    "When an own-run detached worker test fails, the failure report carries the inner worker's exit code, stdout and stderr (and its launcher.log/results.json content) before fixture cleanup removes them",
+    "The cause of the post-readiness exit 1 in own-run-wait.mjs ('own-run detached worker saves one wait before readiness and stage execution without a mailbox') is identified from that evidence and fixed, or shown to be a product defect and tracked as one; no retry, timeout raise or quarantine is used to make it pass",
+    "The test passes in the Windows full gate on the corrected input"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "after-sync",
+    "gate",
+    "greg-directed",
+    "launcher",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
