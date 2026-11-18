@@ -1,0 +1,28 @@
+{
+  "id": "01a1eeff-c983-7332-bd2d-b31c41fb7025",
+  "external_ref": null,
+  "title": "Keep CLI usage context on argument conversion errors",
+  "outcome": "CLI argument conversion errors retain the command usage context expected from Clap.",
+  "acceptance": [
+    "Find and exercise an argument-conversion error from Cli::from_arg_matches after successful initial argument matching.",
+    "Its output preserves the appropriate usage context and exit status without changing accepted arguments."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-cli",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

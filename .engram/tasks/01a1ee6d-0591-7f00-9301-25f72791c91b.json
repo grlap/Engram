@@ -1,0 +1,30 @@
+{
+  "id": "01a1ee6d-0591-7f00-9301-25f72791c91b",
+  "external_ref": null,
+  "title": "Report every failed controller from the task-exchange cleanup drain and suppress duplicates per controller",
+  "outcome": "Report every failed controller from the task-exchange cleanup drain and suppress duplicates per controller",
+  "acceptance": [
+    "drain_process_cleanup reports every controller whose cleanup failed (each with its group and surviving PIDs), not only the first in registry order",
+    "The CLI suppresses only drained failures whose controller the foreground error already reported, per controller, so a second failed controller's survivors are always printed",
+    "A test with two failed controllers, one already reported in the foreground, shows the other controller's diagnostic is printed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

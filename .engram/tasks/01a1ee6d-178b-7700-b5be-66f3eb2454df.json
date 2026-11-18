@@ -1,0 +1,29 @@
+{
+  "id": "01a1ee6d-178b-7700-b5be-66f3eb2454df",
+  "external_ref": null,
+  "title": "Select Git Credential Manager's store for the effective credential context (credential.useHttpPath) in task exchange",
+  "outcome": "Select Git Credential Manager's store for the effective credential context (credential.useHttpPath) in task exchange",
+  "acceptance": [
+    "Task-exchange target capture selects the GCM credential store for the credential context Git will actually send (host-only when credential.useHttpPath is false, host plus path when true), and pins that context when the selection depends on it",
+    "A repository-scoped non-cache store with useHttpPath=true is admitted, and a repository-only cache setting with useHttpPath=false does not refuse a host-level non-cache store; tests cover both"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -23,12 +23,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Delivered in exact 469fc786e1f6d18acd5722fef1b12a052347c4d5/tree e1bd6e009aa81312af96468e2178e1dba2c893e1. Bind admitted GCM store to the launched transport and refuse unbound/cache stores, correlate foreground and drained cleanup by controller identity, select the Unix controller only on macOS/Linux, and render plain optional OS error numbers. Strict locked Clippy and focused regressions passed on Windows (16), macOS (32, 2 ignored fixtures) and Linux (33, 2 ignored fixtures). All five criteria independently passed in 4acf525885f042ff9ecdcb8fa03e7756. Exact candidate and native artifacts held for parent E′ integration per parent note 61e14b4d465d474b91e1e54a78b93f8c.",
+    "completed_at": "2026-11-18T09:55:08.588580900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

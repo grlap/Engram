@@ -1,0 +1,30 @@
+{
+  "id": "01a1eefb-9345-75e1-aea6-4fcecda6c1a5",
+  "external_ref": null,
+  "title": "Restore the isolated Windows HTTPS tests in GitHub Actions",
+  "outcome": "The 11 real-HTTPS data-branch tests keep both local Windows gate and GitHub Actions coverage after moving out of the ordinary suite.",
+  "acceptance": [
+    "The Windows GitHub Actions test job runs the same 11 ignored HTTPS data-branch workflow tests as the local Windows gate, excluding the subprocess-only entrypoint. The existing ordinary matrix test command remains in place.",
+    "A one-commit fix over c1061577e9dca5d3defe7843962b998ab7ea30ba is passed to Merger with the exact selection and validation limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1ed18-b42d-7473-9e73-2be9029800f0",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

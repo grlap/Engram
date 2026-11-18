@@ -1,0 +1,29 @@
+{
+  "id": "01a1ef0c-93be-7de0-9fbd-e38f18e8ce7f",
+  "external_ref": null,
+  "title": "Keep isolated Windows HTTPS coverage selectors from silently shrinking",
+  "outcome": "Keep GitHub Actions and the local Windows gate exercising every real HTTPS data-branch workflow test after test names change.",
+  "acceptance": [
+    "A test name change cannot silently remove a real HTTPS data-branch workflow test from both isolated Windows test passes while other tests still pass.",
+    "The isolated Windows coverage continues to exclude the subprocess-only fixture entry point and fails when it selects no workflow tests."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-ci",
+    "review-followup",
+    "test-coverage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

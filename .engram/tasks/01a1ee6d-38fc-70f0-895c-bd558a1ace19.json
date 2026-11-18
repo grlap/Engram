@@ -1,0 +1,28 @@
+{
+  "id": "01a1ee6d-38fc-70f0-895c-bd558a1ace19",
+  "external_ref": null,
+  "title": "Don't override Git Credential Manager's enterprise default store when task exchange pins an unset store",
+  "outcome": "Don't override Git Credential Manager's enterprise default store when task exchange pins an unset store",
+  "acceptance": [
+    "When credential.credentialStore and GCM_CREDENTIAL_STORE are both unset, task exchange either refuses with a remedy asking the operator to set the store explicitly (as on Linux) or documents that it pins GCM's platform default and may override an administrator-configured enterprise default; the HTTPS-runner docs state the chosen behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

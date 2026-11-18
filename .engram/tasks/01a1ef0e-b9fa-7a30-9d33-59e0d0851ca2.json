@@ -1,0 +1,29 @@
+{
+  "id": "01a1ef0e-b9fa-7a30-9d33-59e0d0851ca2",
+  "external_ref": null,
+  "title": "Refuse a stale task-sync folder-head projection before it can fork the recorded chain",
+  "outcome": "A projected folder head that still points to an existing predecessor cannot authorize a second canonical successor.",
+  "acceptance": [
+    "Reproduce an existing predecessor selected in the folder-head projection and refuse with a repair remedy before any object, journal, or task mutation.",
+    "Use a keyed successor check in ordinary task-sync reads and effects. Verify compatibility, projection repair and rollback on existing stores without scanning the canonical object table on the hot path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "projection",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

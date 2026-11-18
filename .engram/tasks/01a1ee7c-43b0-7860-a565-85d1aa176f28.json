@@ -1,0 +1,31 @@
+{
+  "id": "01a1ee7c-43b0-7860-a565-85d1aa176f28",
+  "external_ref": null,
+  "title": "Add allocator notices and stabilize Windows diagnostics and refusal tests",
+  "outcome": "Resolve the Medium and two Lows on the frozen d16 integration candidate without changing runtime behavior.",
+  "acceptance": [
+    "THIRD-PARTY-NOTICES.txt includes the locked mimalloc 0.1.48 and libmimalloc-sys 0.1.44 packages and the bundled mimalloc v3 C source with their supplied MIT notices.",
+    "The Windows diagnostics test checks exact phase ages with a fixed timestamp and checks report phase names separately.",
+    "The refusal test accepts either verbatim or plain Windows path spelling in human stderr, while rejecting both spellings in JSON as before. One exact focused Windows launcher run passes both changed tests and the three-file commit and evidence reach Merger."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1ed18-b42d-7473-9e73-2be9029800f0",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

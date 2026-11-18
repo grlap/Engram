@@ -1,0 +1,28 @@
+{
+  "id": "01a1eeff-c9b1-7433-a5a3-69d27c9e3a0e",
+  "external_ref": null,
+  "title": "Keep slow warnings out of alternate JSON CLI output modes",
+  "outcome": "Any structured JSON CLI mode participates in the same slow-operation warning policy as --json.",
+  "acceptance": [
+    "Identify the current supported JSON output paths and how their suppression policy is selected.",
+    "Any alternate JSON mode added or already supported shares the no-slow-warning policy, with focused behavior coverage for the actual mode. Human opt-in behavior is preserved."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-cli",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
