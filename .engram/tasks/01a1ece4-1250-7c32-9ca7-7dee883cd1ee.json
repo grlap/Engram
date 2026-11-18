@@ -1,0 +1,33 @@
+{
+  "id": "01a1ece4-1250-7c32-9ca7-7dee883cd1ee",
+  "external_ref": null,
+  "title": "Run fresh evidence exchange and the real-Git exchange and retained-construction suites on macOS and Linux",
+  "outcome": "Run fresh evidence exchange and the real-Git exchange and retained-construction suites on macOS and Linux",
+  "acceptance": [
+    "Fresh task-sync evidence exchange runs on macOS and Linux through the same confined runner and policy checks as Windows; the cfg!(windows) refusal in src/task_sync/exchange/evidence.rs is gone and fresh and replayed requests take the same guard path",
+    "The real-Git data-branch exchange tests (HTTPS fetch, non-force push, tip observation; today src/task_sync/exchange/tests.rs `mod windows`) and the retained-construction, audit_deadlines, data_bootstrap, orphan and writer_probe suites (src/storage/work/task_sync/ledger/operations/checkpoint_tests.rs) compile and pass on macOS and Linux as well as Windows; any case kept Windows-only carries a cfg gate with a named reason",
+    "When the cleanup thread cannot be created, the controller publishes its NotLaunched outcome before it leaves the pending registry, so a concurrent drain never reports a spurious cleanup failure"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "ready-to-land",
+    "review",
+    "sync",
+    "unix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

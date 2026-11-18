@@ -1,0 +1,37 @@
+{
+  "id": "01a1eb88-44fc-7353-a872-c48ce6c80b78",
+  "external_ref": null,
+  "title": "Make the engram-use skill's export route and memory condition operational, and align the memory import example in git-task-sync.md",
+  "outcome": "Make the engram-use skill's export route and memory condition operational, and align the memory import example in git-task-sync.md",
+  "acceptance": [
+    "The skill's refresh step copies the basis whenever the export changed .engram/project.json (including a first memory opt-in whose task route is unchanged), and the exports request --json",
+    "The skill defines 'the data branch holds memories' as HEAD's .engram/project.json carrying memory_profile (or the project deciding to exchange memories), and says the first --include-memories export on an existing branch is a deliberate opt-in",
+    "docs/features/git-task-sync.md and the skill state that import is incremental once this host has imported a committed folder, and that a store's first import (including the first publisher's after only exporting) uses --basis"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The engram-use skill now explains the --json export receipt, project.json memory-profile condition and deliberate first memory opt-in; the skill and git-task-sync.md document incremental later imports and --basis for a store's first import. The combined docs candidate was fast-forwarded to origin/master and installed, all six live stores reported ready, and the independent post-landing acceptance evaluation passed all 3 criteria.",
+    "completed_at": "2026-11-17T23:59:12.898743600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

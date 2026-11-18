@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "dl560-engram-cleanup-lane",
+    "revision_id": "bbf7f23e350a42b1a855eb2e0c4ea6c9",
+    "previous": null,
+    "body_sha256": "0a99253be033af33e961c7e9c3006bf3fd1b951e3bff2ba8a06c095de60c81b8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T22:48:55.706972900Z"
+    }
+  },
+  "body": "DL560 ENGRAM CLEANUP LANE, a supplement to dl560-runner-checklist. Created 2026-11-17 22:47:44Z by s4 through DL560's host API, under Asistant 43498a6e #1518 (Greg's cleanup order, option b) and Fable2's one-time exception #285. Item w-455824fcfb84.\n- Session: DL560 native session-13 \"Engram::Codex-DL560-Cleanup\"; address host:e83d08f4-22ac-4655-a84d-941fc0eeb4f1::session-13.\n- Settings: Codex, gpt-6.2-sol, approval never, workdir /home/greg/github/Engram-runner, project \"DL560 · Engram runner\".\n- Role: removes ONLY Engram-runner paths that their owner and Opus2 have released and Engram::Fable names exactly, under AGENTS.md \"Cleanup deletions\" (non-forced forms, stop and report on refusal).\n- s4 (Claude) removes nothing, and TermAl's C6 and C7 refuse Engram paths. So every released s4 root goes to this lane.\n- Paths outside the checkout, such as /home/greg/.engram/backups, are not in its scope; deleting outside the repository needs Greg's explicit word."
+}

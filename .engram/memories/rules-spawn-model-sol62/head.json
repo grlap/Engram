@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-spawn-model-sol62",
+  "head": {
+    "state": "active",
+    "chain": [
+      "c5052a02fe7540248d4cdba7cc569915"
+    ]
+  }
+}

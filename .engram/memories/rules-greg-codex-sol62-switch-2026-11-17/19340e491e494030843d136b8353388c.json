@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-codex-sol62-switch-2026-11-17",
+    "revision_id": "19340e491e494030843d136b8353388c",
+    "previous": null,
+    "body_sha256": "0155f6ea53a32174da407596032b604001c3784ec820382d9f08e8084958076f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T21:49:02.144418400Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 21:46Z, relayed by Engram::Asistant (mailbox 43498a6e #1511, message b3b31f80), verbatim: „Nie o to chodzi. Jest upgrade codexa i Sol 6.2. Myśle, że warto się przesiąść.”\nAsistant's ruling, #1514 (message 95de71fa, 21:48Z): this is an ORDER to switch, and it covers the needed Codex CLI upgrade. Don't ask again for general consent. Prepare and carry it out after checking compatibility and agreeing the window with TermAl, keeping a way back. Distinguish which models are really available on each host. The coordinator gives a separate signal before any restart.\nScope (Engram::Fable): Codex CLI upgrade (npm global @openai/codex, Central 0.167.1 to 0.169.0, Mac and DL560 the same once their versions are known) and switching the Codex model to Sol 6.2 where available. Rollback: npm install of the previous pinned version. Fable2 leads TermAl compatibility and the window. A TermAl restart stays Greg's act, after the coordinator's 'restart now'."
+}

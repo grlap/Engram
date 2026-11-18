@@ -22,12 +22,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1eb20-304d-77e1-bf4f-32cef679c919",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Updated the engram-use skill for opt-in memory exchange, memory-safe refresh, and project-neutral sync guidance. Fast-forwarded the reviewed candidate to origin/master and installed its release build. Fresh independent acceptance evaluation passed all four criteria.",
+    "completed_at": "2026-11-17T22:48:49.166583400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

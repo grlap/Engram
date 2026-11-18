@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-codex-sol62-switch-2026-11-17",
+  "head": {
+    "state": "active",
+    "chain": [
+      "19340e491e494030843d136b8353388c",
+      "f5a87ab36170459e938f9875abb2a1be",
+      "3ee6cb8961cb472db5c84167e497b559"
+    ]
+  }
+}

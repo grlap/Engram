@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-codex-sol62-switch-2026-11-17",
+    "revision_id": "3ee6cb8961cb472db5c84167e497b559",
+    "previous": "f5a87ab36170459e938f9875abb2a1be",
+    "body_sha256": "40c23adc86054479135983e9fc3943c7c0559c3dc95a791ab2f8040b5d59170a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T22:04:58.480736100Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 21:46Z, relayed by Engram::Asistant (mailbox 43498a6e #1511, message b3b31f80), verbatim: „Nie o to chodzi. Jest upgrade codexa i Sol 6.2. Myśle, że warto się przesiąść.”\nAsistant #1514: this is an ORDER to switch, covering the Codex CLI upgrade; don't re-ask for consent. Check compatibility, agree the window with TermAl, keep a way back, and signal separately before any restart.\nGREG, about 22:04Z, Asistant #1515 (message bc8b65a8), verbatim: „tak, mozemy naprawic\nokazuje sie, ze modele sa dostepne, juz teraz\nnie trzeba robic restartu, gdzie jest Sol-6.1, mozemy zmienic na model Sol-6.2”.\nMeaning:\n(1) YES to repairing the 4 Engram stores on DL560 (projection repair, w-96a3f857f50e).\n(2) Sol 6.2 (\"gpt-6.2-sol\") is available NOW. Switch Sol 6.1 sessions to Sol 6.2 through the available session or model setting, WITHOUT a restart; a restart is not a condition of the model change.\n(3) Keep the Codex CLI upgrade separate from the model change, plan it, and don't interrupt work.\nRoute: TermAl leads (TermAl w-5f76d42aafd3). The CLI install itself happens only when TermAl next stops on that host: Greg stops TermAl, runs `npm i -g @openai/codex@0.169.0`, then git pull and cargo run. Rollback: @0.167.1. The Mac already runs 0.169.0; Central runs 0.167.1."
+}

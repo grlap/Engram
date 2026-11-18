@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-codex-sol62-switch-2026-11-17",
+    "revision_id": "f5a87ab36170459e938f9875abb2a1be",
+    "previous": "19340e491e494030843d136b8353388c",
+    "body_sha256": "0aeb772d858c80f9c47973132f2bc268ec79df3cf1f13f38d12de407cca171e6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T21:49:46.039519600Z"
+    }
+  },
+  "body": "GREG, 2026-11-17 about 21:46Z, relayed by Engram::Asistant (mailbox 43498a6e #1511, message b3b31f80), verbatim: „Nie o to chodzi. Jest upgrade codexa i Sol 6.2. Myśle, że warto się przesiąść.”\nAsistant's ruling, #1514 (message 95de71fa, 21:48Z): this is an ORDER to switch, and it covers the needed Codex CLI upgrade. Don't ask again for consent. Prepare and carry it out after checking compatibility and agreeing the window with TermAl, keeping a way back. Distinguish which models are really available on each host. The coordinator gives a separate signal before any restart.\nOwnership and route (Fable2 #8287): TermAl leads, under TermAl w-5f76d42aafd3. Sol-license probes codex 0.169 repo-locally for the exact Sol 6.2 id and the app-server contract diff. Opus2 collects DL560's versions; Fable asks the Mac. Kimi consolidates the sequence. Fable2 sends Greg the plan for information; no extra yes/no.\nWHO INSTALLS: TermAl runs the native codex.exe from the npm package through its always-on shared app-server (src/codex_bin.rs). On Windows that file is locked while TermAl runs, and no agent may stop TermAl. So the install happens AT GREG'S RESTART on each host: Greg stops TermAl, runs `npm i -g @openai/codex@0.169.0`, then git pull and cargo run. Rollback: the same npm command with @0.167.1. Central today: codex-cli 0.167.1, config model gpt-6-astra, Sol sessions on gpt-6.1-sol."
+}

@@ -15,7 +15,7 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [
@@ -23,6 +23,6 @@
   ],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Test object for Greg's cross-host close test. Its purpose is served: it went from blocked to ready with no evaluation once DL560's completion of w-659dd4cb7537 was imported (recorded in this item's notes and reported to Greg). There is no real work to do.",
   "completion": null
 }

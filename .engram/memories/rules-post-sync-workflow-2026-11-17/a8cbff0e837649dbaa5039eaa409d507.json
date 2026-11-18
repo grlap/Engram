@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-post-sync-workflow-2026-11-17",
+    "revision_id": "a8cbff0e837649dbaa5039eaa409d507",
+    "previous": null,
+    "body_sha256": "5f85e313a857da14a4db67f94cf81ac61df9df3eaf4f3436f2ef1db362a35825",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T21:39:19.339286200Z"
+    }
+  },
+  "body": "POST-SYNC WORKING RULE (joint, Engram::Fable plus Termal::Fable2 plus Kimi, 2026-11-17 about 21:38Z; reported to Greg via Asistant 43498a6e #1508, answering Greg #1507 „nice! + Kimi czy mamy zmienic teraz wewnetrznie nasza prace”; recorded on TermAl w-e6ce98d7c28b).\nNOW:\n- Work on the host best suited to the job: the Mac for Comovo, DL560 for heavy tests, Central for coordination.\n- Sync whenever useful and after every code push, without asking: the manual route of the engram-use skill (in-place export, commit, ff push; fetch, incremental import without --basis).\n- After a host switch, read the latest task state before claiming; claims are local.\n- An imported (restored) completion unblocks dependents without re-evaluation. Never repeat tests or evaluations only because the host changed.\nSTOP:\n- the delete-and-restore refresh;\n- --basis on ordinary imports;\n- pure planning relays (done/blocked) by mailbox between hosts that sync.\nUNCHANGED:\n- Central stays the store of record for Engram and TermAl execution and claims.\n- Evidence, gates, evaluations and landings stay where the evidence is; the mailbox stays for evidence, GOs and coordination.\n- Remote test runs remain evidence only until the integration owner records them; sync transfers no verification credit.\n- No SQLite copies, no global lock, no environment snapshots.\nAfter the DL560 upgrade (w-96a3f857f50e) and a TermAl store refresh there, runner GOs may stop carrying task text and criteria.\nWaits for the one command (w-6ea6f92ccffc): busy-host automation, sync after a code push, evidence packs."
+}

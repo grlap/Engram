@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-spawn-model-sol62",
+    "revision_id": "c5052a02fe7540248d4cdba7cc569915",
+    "previous": null,
+    "body_sha256": "ae05629be3e9f7cc0ecc06efb65acbb8dc89312acae0b77eb5fa13b8337dab50",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-17T22:05:56.193753700Z"
+    }
+  },
+  "body": "ENGRAM SPAWN PRACTICE from 2026-11-17 22:05Z (Greg via Asistant #1515: switch Sol 6.1 to Sol 6.2 now, with no restart). Every new Engram Codex spawn (reviewers, explorers, coders, workers) passes model \"gpt-6.2-sol\" in termal_spawn_session's `model` field. Existing root sessions can't be switched through agent tools; switch them through TermAl's own setting or a fresh session. Source: rules-greg-codex-sol62-switch-2026-11-17. Revise this entry if the id or TermAl's default changes."
+}

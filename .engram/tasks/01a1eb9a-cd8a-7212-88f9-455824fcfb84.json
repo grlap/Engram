@@ -1,0 +1,28 @@
+{
+  "id": "01a1eb9a-cd8a-7212-88f9-455824fcfb84",
+  "external_ref": null,
+  "title": "Give DL560 an Engram Codex lane so released Engram-runner roots there can be removed under the cleanup rule",
+  "outcome": "Give DL560 an Engram Codex lane so released Engram-runner roots there can be removed under the cleanup rule",
+  "acceptance": [
+    "A Codex session works in /home/greg/github/Engram-runner on DL560 under Engram's instructions, reachable by mailbox, and is recorded in dl560-runner-checklist",
+    "It removes the parked DL560 paths listed on w-13ca3af04026, with path checks, non-forced forms and git worktree remove, and records the removals and the space reclaimed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "cleanup",
+    "dl560"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-sync-simple-no-extra-protection-2026-11-18",
+  "head": {
+    "state": "active",
+    "chain": [
+      "f8385a1b7de94160a7d1797664018ba4"
+    ]
+  }
+}

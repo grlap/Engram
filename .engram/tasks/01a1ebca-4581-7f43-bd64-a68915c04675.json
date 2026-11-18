@@ -1,0 +1,30 @@
+{
+  "id": "01a1ebca-4581-7f43-bd64-a68915c04675",
+  "external_ref": null,
+  "title": "Tighten the engram-use first-import, memory-read and memory opt-in wording found in the sync-rule review",
+  "outcome": "Tighten the engram-use first-import, memory-read and memory opt-in wording found in the sync-rule review",
+  "acceptance": [
+    "The skill and git-task-sync.md say a store's first import after its own export (for example the first publisher's) uses --basis, and an empty joining store uses --empty-basis",
+    "The skill's import step describes what an incremental import reads (the task delta plus re-read held or locally published tasks) and that selected memory histories are read separately",
+    "The first-memory-opt-in guidance links to the ignore-policy allowlist procedure in git-task-sync.md (memory_ignore_policy_excludes_tree), and no longer compares the opt-in to a note-selection change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

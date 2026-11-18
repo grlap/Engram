@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-sync-simple-no-extra-protection-2026-11-18",
+    "revision_id": "f8385a1b7de94160a7d1797664018ba4",
+    "previous": null,
+    "body_sha256": "f83071dcb474e93cab63a7e46adaee7dbfbd6866977e1a2353f38f6fd80828b2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-18T04:29:43.973869200Z"
+    }
+  },
+  "body": "GREG, 2026-11-18 about 04:28Z, said DIRECTLY in Kimi::Consultant's session (session-15305), not through a mailbox. Kimi relayed it to Fable at c15db92c #344 (message fcc1a4e6). Verbatim: „czy probujemy to naprawic ?” and then „brzmi gorzej niz zle, ta chrona nie wiem czy przed czyms chroni, naprawde nie rozumiem co my probujemy zrobic”. Context: Kimi's explanation of hundreds of repeated Git processes and repeated admission checks in task-sync exchange.\nDESIGN RULE (Fable and Kimi, accepted): ordinary sync is local SQLite to task/memory JSON, ordinary Git exchange, then changed JSON back to SQLite. Git owns history, merge and fast-forward. Build or keep NO general repository-safety layer.\nKeep ONLY concrete data-loss checks:\n(1) the right project and data worktree;\n(2) no overwrite of uncommitted local data;\n(3) the expected basis or tip right before an effect;\n(4) the disclosure check before push;\n(5) an explicit stop on conflict.\nRemove redundant revalidation that guards no concrete failure; don't speed it up. Add no hardening to justify an old design, no new gates, no environment snapshots. Applies to w-6ea6f92ccffc (one command) and w-349d2fae607f (Git-starts fix)."
+}
