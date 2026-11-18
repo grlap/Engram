@@ -6,7 +6,7 @@ use crate::{
     task_sync::{
         data_worktree::{Budget, DataWorktree},
         evidence::{EvidenceError, EvidencePack},
-        ledger::{Binding, EvidenceIntent},
+        ledger::{Binding, EvidenceIntent, EvidencePackSelection},
     },
 };
 use anyhow::{Context, Result, ensure};
@@ -120,28 +120,12 @@ pub(crate) fn read_selected_evidence_remaining(
                     error
                 }
             })?;
-        mismatch(
-            bytes.len() == selection.encoded_bytes
-                && format!("{:x}", Sha256::digest(&bytes))
-                    == selection.content_fingerprint.as_str(),
-            "selected evidence encoding differs from frozen request",
-        )?;
-        // Malformed immutable bytes are a definite answer too; other pack
-        // errors keep their own evidence refusal meaning.
-        let pack = EvidencePack::read(bytes.as_slice()).map_err(|error| match error {
-            EvidenceError::InvalidPack(_) => {
-                anyhow::Error::new(SelectionMismatch("selected evidence pack is malformed"))
-            }
-            other => anyhow::Error::new(other),
-        })?;
-        mismatch(
-            pack.pack_id() == id
-                && pack.project_id() == &binding.project
-                && pack.publishing_origin() == &selection.publishing_origin
-                && pack.records().len() == selection.records,
-            "selected evidence pack differs from frozen request",
-        )?;
-        packs.push(pack);
+        packs.push(decode_selected_pack(
+            id,
+            &binding.project,
+            selection,
+            &bytes,
+        )?);
     }
     data.revalidate_within(budget)?;
     ensure!(
@@ -149,4 +133,33 @@ pub(crate) fn read_selected_evidence_remaining(
         "evidence read deadline is exhausted"
     );
     Ok(CommitEvidenceBatch { commit, packs })
+}
+
+pub(crate) fn decode_selected_pack(
+    id: &ObjectId,
+    project: &crate::ProjectId,
+    selection: &EvidencePackSelection,
+    bytes: &[u8],
+) -> Result<EvidencePack> {
+    mismatch(
+        bytes.len() == selection.encoded_bytes
+            && format!("{:x}", Sha256::digest(bytes)) == selection.content_fingerprint.as_str(),
+        "selected evidence encoding differs from frozen request",
+    )?;
+    // Malformed immutable bytes are a definite answer too; other pack
+    // errors keep their own evidence refusal meaning.
+    let pack = EvidencePack::read(bytes).map_err(|error| match error {
+        EvidenceError::InvalidPack(_) => {
+            anyhow::Error::new(SelectionMismatch("selected evidence pack is malformed"))
+        }
+        other => anyhow::Error::new(other),
+    })?;
+    mismatch(
+        pack.pack_id() == id
+            && pack.project_id() == project
+            && pack.publishing_origin() == &selection.publishing_origin
+            && pack.records().len() == selection.records,
+        "selected evidence pack differs from frozen request",
+    )?;
+    Ok(pack)
 }

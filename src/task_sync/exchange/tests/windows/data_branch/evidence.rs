@@ -273,49 +273,6 @@ fn conflicting_pack(project: &ProjectId, origin: &ObjectId) -> EvidencePack {
     .unwrap()
 }
 
-/// Selections whose frozen size, fingerprint or record count disagrees with a
-/// staged pack, and one for a staged pack of a format no reader supports. Each
-/// can only disagree again with the immutable carrier, so each request ends
-/// with a known stop instead of refusing on every retry while it holds custody.
-fn mismatched_selections(
-    declared: &PackFile,
-    malformed: &EvidencePack,
-    malformed_bytes: &[u8],
-) -> Vec<(ObjectId, EvidencePackSelection, EvidenceRefusal)> {
-    let wrong = |change: fn(&mut EvidencePackSelection)| {
-        let mut selected = selection(declared);
-        change(&mut selected);
-        (
-            declared.pack.clone(),
-            selected,
-            EvidenceRefusal::InvalidPayload,
-        )
-    };
-    vec![
-        wrong(|selected| selected.encoded_bytes += 1),
-        wrong(|selected| selected.encoded_bytes -= 1),
-        wrong(|selected| {
-            selected.content_fingerprint = format!("{:x}", Sha256::digest(b"another encoding"))
-                .parse()
-                .unwrap();
-        }),
-        wrong(|selected| selected.records += 1),
-        (
-            malformed.pack_id().clone(),
-            EvidencePackSelection {
-                publishing_origin: malformed.publishing_origin().clone(),
-                admission: ObjectId::mint(),
-                content_fingerprint: format!("{:x}", Sha256::digest(malformed_bytes))
-                    .parse()
-                    .unwrap(),
-                encoded_bytes: malformed_bytes.len(),
-                records: 1,
-            },
-            EvidenceRefusal::InvalidPayload,
-        ),
-    ]
-}
-
 /// Rename the receiver's whole code clone, including its Git administration and
 /// data worktree, so neither Git nor pack files are reachable.
 struct Hidden<'a> {
@@ -386,8 +343,6 @@ struct Published {
     conflicting: EvidencePack,
     invalid: EvidencePack,
     invalid_bytes: Vec<u8>,
-    malformed: EvidencePack,
-    malformed_bytes: Vec<u8>,
     carrier: RetainedCommit,
     right_target: crate::task_sync::exchange::ExchangeTarget,
 }
@@ -566,15 +521,6 @@ async fn publish(root: &Path) -> Published {
     let invalid_path = left.checkout.join(invalid.relative_path());
     fs::create_dir_all(invalid_path.parent().unwrap()).unwrap();
     fs::write(&invalid_path, &invalid_bytes).unwrap();
-    // Well-formed JSON in a pack's shape, but of a format no reader supports.
-    let malformed = unenrolled_pack(&project);
-    let mut wire: serde_json::Value =
-        serde_json::from_slice(&malformed.to_bytes().unwrap()).unwrap();
-    wire["format"] = "unsupported-evidence-pack".into();
-    let malformed_bytes = serde_json::to_vec(&wire).unwrap();
-    let malformed_path = left.checkout.join(malformed.relative_path());
-    fs::create_dir_all(malformed_path.parent().unwrap()).unwrap();
-    fs::write(&malformed_path, &malformed_bytes).unwrap();
     let carrier = Repositories::commit(
         &repos.left,
         uuid::Uuid::new_v4(),
@@ -606,8 +552,6 @@ async fn publish(root: &Path) -> Published {
         conflicting,
         invalid,
         invalid_bytes,
-        malformed,
-        malformed_bytes,
         carrier,
         right_target,
     }
@@ -767,32 +711,56 @@ pub(super) async fn run(root: &Path) {
     published.finish(root, native_before);
 }
 
-/// A request whose frozen selection disagrees with the published immutable
-/// carrier can only disagree again, so each ends with a known stop under its
-/// retained identities and replays offline, instead of refusing on every
-/// retry while its construction holds custody. A later valid request over the
-/// same carrier then applies.
+/// Exercise a retained refusal and a later valid request over the same HTTPS
+/// carrier. The bounded reader must stop when a blob exceeds its declared
+/// size. Other definite selection mismatches are exercised without transport
+/// in `selected_evidence_mismatches_stop_without_admission`.
 pub(super) async fn run_mismatches(root: &Path) {
-    let published = publish(root).await;
+    use std::{cell::Cell, rc::Rc};
+
+    let local_queries = Rc::new(Cell::new(0_usize));
+    let queries = Rc::clone(&local_queries);
+    crate::task_sync::git::BEFORE_QUERY.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |_| queries.set(queries.get() + 1)));
+    });
+    let confined_before = exchange::test_support::LAUNCHES.with(Cell::get);
+    let published = {
+        let _phase = super::timing::phase("evidence-carrier-publication");
+        publish(root).await
+    };
     let native_before =
         exchange_fixture::native_counts(&SqliteStore::open(&published.receiver.database).unwrap());
-    for (index, (pack, selected, expected)) in mismatched_selections(
-        &published.native_files[0],
-        &published.malformed,
-        &published.malformed_bytes,
-    )
-    .into_iter()
-    .enumerate()
+    let file = &published.native_files[0];
+    let mut selected = selection(file);
+    selected.encoded_bytes -= 1;
+    let refused = {
+        let _phase = super::timing::phase("evidence-refused-request");
+        published.request(vec![(file.pack.clone(), selected)]).await
+    };
     {
-        let refused = published.request(vec![(pack, selected)]).await;
-        if index == 0 {
-            // The receiver's data branch holds the carrier each request
-            // selects, so only the frozen selection can disagree.
-            published.advance_receiver(&refused.source);
-        }
-        published.assert_stopped(&refused, expected).await;
+        let _phase = super::timing::phase("evidence-refusal-and-replay");
+        // The receiver holds the same carrier, so only the selection differs.
+        published.advance_receiver(&refused.source);
+        published
+            .assert_stopped(&refused, EvidenceRefusal::InvalidPayload)
+            .await;
     }
-    let later = published.request(published.native_selections()).await;
-    published.assert_applied(&later, native_before).await;
-    published.finish(root, native_before);
+    let later = {
+        let _phase = super::timing::phase("evidence-valid-request");
+        published.request(published.native_selections()).await
+    };
+    {
+        let _phase = super::timing::phase("evidence-valid-application");
+        published.assert_applied(&later, native_before).await;
+    }
+    {
+        let _phase = super::timing::phase("evidence-final-checks");
+        published.finish(root, native_before);
+    }
+    crate::task_sync::git::BEFORE_QUERY.with(|hook| *hook.borrow_mut() = None);
+    println!(
+        "data-workflow process-counts local_git_queries={} confined_launches={}",
+        local_queries.get(),
+        exchange::test_support::LAUNCHES.with(Cell::get) - confined_before,
+    );
 }

@@ -123,12 +123,19 @@ async fn child(fixture: &Fixture, case: &str, handoff: Option<&str>) {
         started.elapsed().as_millis(),
         deadline.as_millis()
     );
+    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .contains("data-branch-workflow complete"),
+        stdout.contains("data-branch-workflow complete"),
         "isolated HTTPS data workflow {case} did not complete"
     );
+    if case == "evidence-mismatch" {
+        for line in stdout.lines().filter(|line| {
+            line.starts_with("data-workflow phase=")
+                || line.starts_with("data-workflow process-counts ")
+        }) {
+            println!("{line}");
+        }
+    }
 }
 
 #[test]

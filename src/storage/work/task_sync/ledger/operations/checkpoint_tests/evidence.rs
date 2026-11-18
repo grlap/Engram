@@ -114,6 +114,109 @@ fn fresh_intent(
     (intent, pack)
 }
 
+#[test]
+fn selected_evidence_mismatches_stop_without_admission() {
+    use crate::task_sync::{
+        exchange::evidence::known_stop,
+        git::{SelectionMismatch, decode_selected_pack},
+    };
+    use sha2::{Digest, Sha256};
+
+    let (_home, mut store, binding, _) = initial_fixture();
+    let id = store.activate_task_sync_binding(&binding).unwrap();
+    for (fault, expected) in [
+        (
+            "size",
+            "selected evidence encoding differs from frozen request",
+        ),
+        (
+            "fingerprint",
+            "selected evidence encoding differs from frozen request",
+        ),
+        (
+            "record count",
+            "selected evidence pack differs from frozen request",
+        ),
+        ("format", "selected evidence pack is malformed"),
+    ] {
+        let (mut intent, pack) = fresh_intent(&store, &binding, &id);
+        let mut bytes = pack.to_bytes().unwrap();
+        let selected = intent.packs.get_mut(pack.pack_id()).unwrap();
+        match fault {
+            "size" => selected.encoded_bytes += 1,
+            "fingerprint" => {
+                selected.content_fingerprint =
+                    ObjectId::from_stored(format!("{:x}", Sha256::digest(b"another encoding")))
+                        .unwrap();
+            }
+            "record count" => selected.records += 1,
+            "format" => {
+                let mut wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                wire["format"] = "unsupported-evidence-pack".into();
+                bytes = serde_json::to_vec(&wire).unwrap();
+                selected.encoded_bytes = bytes.len();
+                selected.content_fingerprint =
+                    ObjectId::from_stored(format!("{:x}", Sha256::digest(&bytes))).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let error = decode_selected_pack(pack.pack_id(), &binding.project, selected, &bytes)
+            .expect_err("the frozen selection must refuse the carrier bytes");
+        assert_eq!(
+            error
+                .downcast_ref::<SelectionMismatch>()
+                .map(|reason| reason.0),
+            Some(expected),
+            "{fault}"
+        );
+        let stop = known_stop(&error).expect("the immutable mismatch is a definite refusal");
+        assert_eq!(
+            stop,
+            EvidenceStop::Refused {
+                reason: EvidenceRefusal::InvalidPayload,
+            },
+            "{fault}"
+        );
+        let admission = selected.admission.clone();
+        retain_carrier(&binding, intent.operation, &intent.source);
+        let recipe = store
+            .retain_task_sync_evidence_recipe(&id, &binding, &intent, at(70))
+            .unwrap();
+        let input = InspectedEvidence {
+            binding_id: id.clone(),
+            binding: binding.clone(),
+            recipe,
+            packs: Vec::new(),
+        };
+        let stopped = store.stop_task_sync_evidence_import(&input, &stop).unwrap();
+        assert_eq!(
+            stopped.event.transition,
+            Transition::EvidenceStopped {
+                prepared: stopped.prepared.clone(),
+                outcome: stop.clone(),
+            },
+            "{fault}"
+        );
+        let admitted: bool = store
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id IN (?1, ?2))",
+                [admission.as_str(), pack.pack_id().as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!admitted, "{fault}");
+        let before_replay = state(&store);
+        assert_eq!(
+            store.stop_task_sync_evidence_import(&input, &stop).unwrap(),
+            stopped,
+            "{fault}"
+        );
+        assert_eq!(state(&store), before_replay, "{fault}");
+    }
+    audit_healthy(&mut store, &binding, &id);
+}
+
 /// Every exchange writer holds the origin reservation for its whole effect, so
 /// one in flight may have observed custody before this request's carrier was
 /// retained. A fresh construction then refuses with nothing retained instead

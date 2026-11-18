@@ -198,7 +198,7 @@ pub(crate) async fn apply_evidence_exchange_remaining(
 /// classified evidence refusal. An unavailable, interrupted, late or otherwise
 /// uncertain read has none, so its retained request stays pending for an exact
 /// retry and grants no coverage.
-fn known_stop(error: &anyhow::Error) -> Option<EvidenceStop> {
+pub(crate) fn known_stop(error: &anyhow::Error) -> Option<EvidenceStop> {
     error.chain().find_map(|cause| {
         if cause
             .downcast_ref::<crate::task_sync::git::SelectionMismatch>()
