@@ -300,7 +300,17 @@ test("public PowerShell rollback reads the empty main-file journal key and resto
     entry.stdout.setEncoding("utf8").on("data", value => { text += value; }); entry.stderr.setEncoding("utf8").on("data", value => { text += value; });
     entry.once("error", reject); entry.once("close", code => resolve({ code, text }));
   });
-  assert.equal(rollback.code, 0);
+  const diagnostics = [];
+  const safeToken = value => typeof value === "string" && /^[A-Za-z0-9_]{1,64}$/u.test(value);
+  for (const line of rollback.text.slice(-2048).split(/\r?\n/u)) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    if (safeToken(event?.code) && safeToken(event?.stage)) {
+      diagnostics.push(`${event.code} (${event.stage})`);
+      if (diagnostics.length === 3) break;
+    }
+  }
+  assert.equal(rollback.code, 0, diagnostics.join(", ") || "rollback emitted no structured failure code and stage");
   assert.deepEqual(JSON.parse(rollback.text.trim()), { stage: "rollback", state: "rolled_back" });
   await f.unchanged();
 });

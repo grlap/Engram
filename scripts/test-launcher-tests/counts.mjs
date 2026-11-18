@@ -295,7 +295,12 @@ test("Cargo phase execution preserves native exits, failure masking and count re
       [doctestFailure, 0, "failed", undefined], [doctestFailure, 101, "failed", undefined],
       [doctestOverlap, 0, "failed", "ambiguous-summary"],
       [doctestOverlap, 101, "failed", "ambiguous-summary"]]) {
-      writeFileSync(join(root, "scripts", "test-temp.mjs"), `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${code};`);
+      // The transcript belongs to the ordinary invocation. On Windows a
+      // successful one is followed by the isolated pass, here one passing test.
+      writeFileSync(join(root, "scripts", "test-temp.mjs"),
+        `process.stdout.write(process.argv.includes("--ignored") ? ${JSON.stringify(cargoFrame(libtest(1, 0, 0, 0)))} : ${JSON.stringify(text)});`
+        + ` if (!process.argv.includes("--ignored")) process.exitCode = ${code};`);
+      const isolated = process.platform === "win32" && code === 0 ? 1 : 0;
       const { result, record } = await recordPhase([{ ...ordinary, name: "owner-from-command" },
         printing("later", "test", libtest(1, 0, 0, 0))]);
       assert.deepEqual([result.stages[0].state, result.stages[0].code, result.stages[0].signal], [state, code, null]);
@@ -306,8 +311,8 @@ test("Cargo phase execution preserves native exits, failure masking and count re
         assert.equal(record.stages[0].executed, "unknown");
         assert.equal(record.stages[0].passed, undefined);
         assert.equal(countsAsPassedTests(record), false);
-      } else assert.equal(record.stages[0].executed, text === nested ? "3"
-        : text === doctests || text === doctestFailure ? "2" : "1");
+      } else assert.equal(record.stages[0].executed, String((text === nested ? 3
+        : text === doctests || text === doctestFailure ? 2 : 1) + isolated));
     }
     // The same full-stage name and framed text through another command stay generic.
     const generic = await recordPhase([printing("rust", "test", nested)], { full: true });

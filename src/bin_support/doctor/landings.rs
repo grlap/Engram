@@ -27,30 +27,6 @@ const MAX_GIT_OUTPUT: u64 = 1024;
 /// among them.
 const PATH_LIST_SEPARATOR: u8 = if cfg!(windows) { b';' } else { b':' };
 
-/// Options placed before every git subcommand. The repository's own
-/// configuration must not run a program or reach a network on the check's
-/// behalf: no pager, no file-system monitor, no hooks, no credential helper,
-/// no transport, and no optional locks taken in the repository. Nothing the
-/// repository stores beside its commits may rewrite ancestry: replace refs are
-/// ignored, the commit-graph file is not read, and (in [`git_command`]) the
-/// graft file is empty.
-#[cfg(test)]
-const GIT_HARDENING: &[&str] = &[
-    "--no-pager",
-    "--no-optional-locks",
-    "--no-replace-objects",
-    "-c",
-    "core.commitGraph=false",
-    "-c",
-    "core.fsmonitor=",
-    "-c",
-    "core.hooksPath=",
-    "-c",
-    "credential.helper=",
-    "-c",
-    "protocol.allow=never",
-];
-
 /// Environment that could point git at another repository, object store,
 /// shallow file or configuration; cleared so the named repository alone is
 /// read. It holds every repository-local variable git names (`git rev-parse
@@ -75,7 +51,7 @@ const CLEARED_GIT_ENVIRONMENT: &[&str] = &[
     "GIT_CONFIG_COUNT",
 ];
 
-/// One read-only git call in `repository`, hardened as above; it never
+/// One read-only git call in `repository`, using the shared hardened constructor; it never
 /// prompts, never fetches missing objects, and its output is discarded. An
 /// empty protocol allow-list overrides every `protocol.*` setting the
 /// repository's configuration could make, so no transport is permitted even
@@ -512,23 +488,31 @@ mod tests {
     fn every_git_call_carries_the_hardening() {
         let command = git_command(Path::new("."), &["cat-file", "-e", "HEAD"]);
         let args: Vec<&OsStr> = command.get_args().collect();
-        let hardening: Vec<&OsStr> = GIT_HARDENING.iter().map(OsStr::new).collect();
-        assert_eq!(args[..hardening.len()], hardening[..]);
-        assert_eq!(
-            args[hardening.len()..],
-            [OsStr::new("cat-file"), OsStr::new("-e"), OsStr::new("HEAD")]
-        );
-        for required in [
-            "--no-pager",
-            "--no-optional-locks",
-            "--no-replace-objects",
-            "core.commitGraph=false",
-            "core.fsmonitor=",
-            "core.hooksPath=",
-            "credential.helper=",
-            "protocol.allow=never",
+        let query = ["cat-file", "-e", "HEAD"].map(OsStr::new);
+        let options = args
+            .strip_suffix(&query)
+            .expect("hardening options precede the unchanged query");
+        for required in ["--no-pager", "--no-optional-locks", "--no-replace-objects"] {
+            assert!(options.contains(&OsStr::new(required)), "{required}");
+        }
+        // Assert effective configuration properties, not an exact ordered copy
+        // of the shared constructor's argument list. Git uses the last -c value.
+        for (key, expected) in [
+            ("core.commitGraph", "false"),
+            ("core.longpaths", "true"),
+            ("core.fsmonitor", ""),
+            ("core.hooksPath", ""),
+            ("credential.helper", ""),
+            ("protocol.allow", "never"),
         ] {
-            assert!(args.contains(&OsStr::new(required)), "{required}");
+            let effective = options.windows(2).rev().find_map(|pair| {
+                if pair[0] != OsStr::new("-c") {
+                    return None;
+                }
+                let (name, value) = pair[1].to_str()?.split_once('=')?;
+                (name == key).then_some(value)
+            });
+            assert_eq!(effective, Some(expected), "{key}");
         }
         let envs: Vec<(&OsStr, Option<&OsStr>)> = command.get_envs().collect();
         assert!(envs.contains(&(OsStr::new("GIT_TERMINAL_PROMPT"), Some(OsStr::new("0")))));

@@ -349,8 +349,134 @@ impl<'a> Reader<'a> {
     /// large delta stays within its deadline. Each blob keeps the per-file
     /// limit and all of them together the delta byte bound.
     pub(super) fn blobs(&self, wanted: &[(&str, &str)]) -> Result<Vec<Vec<u8>>> {
-        // A full SHA-256 object id and its newline: well under the input bound.
-        const BATCH: usize = 8 * 1024;
+        self.batch(
+            wanted,
+            directory::MAX_FILE_BYTES,
+            MAX_DELTA_BYTES,
+            super::QueryStderrPolicy::ErrorOnly,
+            &|refusal| match refusal {
+                BatchRefusal::Output => TaskSyncRefusal::DestinationTreeLimit
+                    .invalid(format!(
+                        "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes, or one of them exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
+                        directory::MAX_FILE_BYTES
+                    ))
+                    .into(),
+                BatchRefusal::Missing(path) => TaskSyncRefusal::GitQueryFailed
+                    .invalid(format!(
+                        "the object of folder file {path} is not in the local repository: fetch the data branch completely, or import the complete folder with `--rebuild`"
+                    ))
+                    .into(),
+                BatchRefusal::File(path) => TaskSyncRefusal::DestinationFileLimit
+                    .invalid(format!("folder file {path} exceeds the per-file limit"))
+                    .into(),
+                BatchRefusal::Total => TaskSyncRefusal::DestinationTreeLimit
+                    .invalid(
+                        "the changed folder files of this commit delta, old and new together, exceed its byte bound; import the complete folder with `--rebuild`",
+                    )
+                    .into(),
+            },
+        )
+    }
+
+    /// Memory files through one Git process per batch, never one per file,
+    /// each within `per_file` bytes and all of them within `total`. Every size
+    /// is checked before any body is read, so an oversized file is refused
+    /// without Git streaming it, as the single-file read it replaces bounded
+    /// each file. Like that read, any Git diagnostic on stderr refuses the
+    /// batch even when Git succeeds.
+    pub(super) fn memory_blobs(
+        &self,
+        wanted: &[(&str, &str)],
+        per_file: u64,
+        total: usize,
+    ) -> Result<Vec<Vec<u8>>> {
+        let policy = super::QueryStderrPolicy::RequireEmpty;
+        let refuse: &dyn Fn(BatchRefusal<'_>) -> anyhow::Error = &|refusal| match refusal {
+            BatchRefusal::Output | BatchRefusal::Total => {
+                anyhow::anyhow!("memory snapshot exceeds {} MiB", total / (1024 * 1024))
+            }
+            BatchRefusal::Missing(path) => anyhow::anyhow!(
+                "the object of memory file {path} is not in the local repository: fetch the data branch completely"
+            ),
+            BatchRefusal::File(path) => {
+                anyhow::anyhow!("memory file {path} exceeds the per-file limit of {per_file} bytes")
+            }
+        };
+        self.check_sizes(wanted, per_file, total, policy, refuse)?;
+        self.batch(wanted, per_file, total, policy, refuse)
+    }
+
+    /// The size of every blob through one `cat-file --batch-check` process
+    /// per chunk, refused as `refuse` names when a blob is missing, one
+    /// exceeds `per_file` bytes or all of them together exceed `total_limit`.
+    fn check_sizes(
+        &self,
+        wanted: &[(&str, &str)],
+        per_file: u64,
+        total_limit: usize,
+        stderr_policy: super::QueryStderrPolicy,
+        refuse: &dyn Fn(BatchRefusal<'_>) -> anyhow::Error,
+    ) -> Result<()> {
+        let mut total = 0_usize;
+        for chunk in wanted.chunks(BATCH) {
+            let mut input = Vec::with_capacity(chunk.len() * 65);
+            for &(oid, _) in chunk {
+                task_sync::ledger::oid(oid)
+                    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+                input.extend_from_slice(oid.as_bytes());
+                input.push(b'\n');
+            }
+            let remaining = self
+                .total_bound
+                .checked_sub(self.started.elapsed())
+                .filter(|left| !left.is_zero())
+                .ok_or(super::QueryFailure::Deadline)?;
+            let args = ["cat-file", "--batch-check"];
+            let output = super::query::batch_blobs_observed(
+                self.repository,
+                &input,
+                remaining.min(BOUND),
+                u64::try_from(chunk.len() * 128)?,
+                stderr_policy,
+                true,
+            )
+            .map_err(|error| query_error(&args, &error, None))?;
+            let mut rest = output.as_slice();
+            for &(oid, path) in chunk {
+                let end = rest
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .ok_or_else(|| malformed_batch(path))?;
+                let size = blob_size(&rest[..end], oid, path, refuse)?;
+                if size as u64 > per_file {
+                    return Err(refuse(BatchRefusal::File(path)));
+                }
+                total = total.saturating_add(size);
+                if total > total_limit {
+                    return Err(refuse(BatchRefusal::Total));
+                }
+                rest = &rest[end + 1..];
+            }
+            if !rest.is_empty() {
+                return Err(TaskSyncRefusal::GitQueryFailed
+                    .invalid("local Git cat-file returned more batch records than asked")
+                    .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Blobs through one `cat-file --batch` process per chunk, refused as
+    /// `refuse` names when a blob is missing, one exceeds `per_file` bytes or
+    /// all of them together exceed `total_limit`.
+    fn batch(
+        &self,
+        wanted: &[(&str, &str)],
+        per_file: u64,
+        total_limit: usize,
+        stderr_policy: super::QueryStderrPolicy,
+        refuse: &dyn Fn(BatchRefusal<'_>) -> anyhow::Error,
+    ) -> Result<Vec<Vec<u8>>> {
         let mut blobs = Vec::with_capacity(wanted.len());
         let mut total = 0_usize;
         for chunk in wanted.chunks(BATCH) {
@@ -371,13 +497,15 @@ impl<'a> Reader<'a> {
                 .filter(|left| !left.is_zero())
                 .ok_or(super::QueryFailure::Deadline)?;
             let args = ["cat-file", "--batch"];
-            // The remaining delta budget and a header per object.
-            let limit = u64::try_from(MAX_DELTA_BYTES.saturating_sub(total) + chunk.len() * 128)?;
+            // The remaining byte budget and a header per object.
+            let limit = u64::try_from(total_limit.saturating_sub(total) + chunk.len() * 128)?;
             let output = super::query::batch_blobs_observed(
                 self.repository,
                 &input,
                 remaining.min(BOUND),
                 limit,
+                stderr_policy,
+                false,
             )
             .map_err(|error| {
                 // The batch output outgrew what the remaining bound admits
@@ -386,52 +514,25 @@ impl<'a> Reader<'a> {
                     error.downcast_ref::<super::QueryFailure>(),
                     Some(super::QueryFailure::OutputLimit)
                 ) {
-                    TaskSyncRefusal::DestinationTreeLimit
-                        .invalid(format!(
-                            "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes, or one of them exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
-                            directory::MAX_FILE_BYTES
-                        ))
-                        .into()
+                    refuse(BatchRefusal::Output)
                 } else {
                     query_error(&args, &error, None)
                 }
             })?;
             let mut rest = output.as_slice();
             for &(oid, path) in chunk {
-                let malformed = || {
-                    TaskSyncRefusal::GitQueryFailed.invalid(format!(
-                        "local Git cat-file returned a malformed batch record for {path}"
-                    ))
-                };
+                let malformed = || malformed_batch(path);
                 let end = rest
                     .iter()
                     .position(|byte| *byte == b'\n')
                     .ok_or_else(malformed)?;
-                let header = std::str::from_utf8(&rest[..end]).map_err(|_| malformed())?;
-                if header.strip_prefix(oid) == Some(" missing") {
-                    return Err(TaskSyncRefusal::GitQueryFailed
-                        .invalid(format!(
-                            "the object of folder file {path} is not in the local repository: fetch the data branch completely, or import the complete folder with `--rebuild`"
-                        ))
-                        .into());
-                }
-                let size = header
-                    .strip_prefix(oid)
-                    .and_then(|tail| tail.strip_prefix(" blob "))
-                    .and_then(|size| size.parse::<usize>().ok())
-                    .ok_or_else(malformed)?;
-                if size as u64 > directory::MAX_FILE_BYTES {
-                    return Err(TaskSyncRefusal::DestinationFileLimit
-                        .invalid(format!("folder file {path} exceeds the per-file limit"))
-                        .into());
+                let size = blob_size(&rest[..end], oid, path, refuse)?;
+                if size as u64 > per_file {
+                    return Err(refuse(BatchRefusal::File(path)));
                 }
                 total = total.saturating_add(size);
-                if total > MAX_DELTA_BYTES {
-                    return Err(TaskSyncRefusal::DestinationTreeLimit
-                        .invalid(
-                            "the changed folder files of this commit delta, old and new together, exceed its byte bound; import the complete folder with `--rebuild`",
-                        )
-                        .into());
+                if total > total_limit {
+                    return Err(refuse(BatchRefusal::Total));
                 }
                 let body = rest.get(end + 1..end + 1 + size).ok_or_else(malformed)?;
                 if rest.get(end + 1 + size) != Some(&b'\n') {
@@ -447,6 +548,14 @@ impl<'a> Reader<'a> {
             }
         }
         Ok(blobs)
+    }
+
+    /// Every entry below `tree`, trees included, through one Git process:
+    /// each name is its path relative to `tree`.
+    pub(super) fn recursive_entries(&self, tree: &str) -> Result<Vec<Entry>> {
+        task_sync::ledger::oid(tree)
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+        parse_entries(&self.listing(&["ls-tree", "-r", "-t", "-z", tree])?)
     }
 
     pub(super) fn evidence_blob(&self, oid: &str, limit: usize) -> Result<Vec<u8>> {
@@ -485,6 +594,44 @@ fn missing_commit(selection: &str) -> StoreError {
     TaskSyncRefusal::IncrementalBasisUnavailable.invalid(format!(
         "{selection} source commit basis is missing or is not an exact commit; rebuild explicitly"
     ))
+}
+
+/// Object ids per `cat-file` batch process: a full SHA-256 id and its newline
+/// each, well under the input bound.
+const BATCH: usize = 8 * 1024;
+
+fn malformed_batch(path: &str) -> StoreError {
+    TaskSyncRefusal::GitQueryFailed.invalid(format!(
+        "local Git cat-file returned a malformed batch record for {path}"
+    ))
+}
+
+/// The size a `cat-file` batch header gives for blob `oid`, or `refuse`'s
+/// refusal when Git reports it missing.
+fn blob_size(
+    header: &[u8],
+    oid: &str,
+    path: &str,
+    refuse: &dyn Fn(BatchRefusal<'_>) -> anyhow::Error,
+) -> Result<usize> {
+    let header = std::str::from_utf8(header).map_err(|_| malformed_batch(path))?;
+    if header.strip_prefix(oid) == Some(" missing") {
+        return Err(refuse(BatchRefusal::Missing(path)));
+    }
+    header
+        .strip_prefix(oid)
+        .and_then(|tail| tail.strip_prefix(" blob "))
+        .and_then(|size| size.parse::<usize>().ok())
+        .ok_or_else(|| malformed_batch(path).into())
+}
+
+/// Why a blob batch is refused: its output outgrew the remaining bound, a
+/// named blob is missing or too large, or the blobs together are too large.
+enum BatchRefusal<'a> {
+    Output,
+    Missing(&'a str),
+    File(&'a str),
+    Total,
 }
 
 pub(super) struct Entry {

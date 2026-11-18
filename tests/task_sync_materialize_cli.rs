@@ -322,6 +322,49 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
 }
 
 #[test]
+fn task_materialize_cli_reports_attribute_value_and_recovery_before_publication() {
+    for (attribute, value, expected, rule) in [
+        ("text", "auto", "set", "text=auto"),
+        ("text", "unset", "set", "-text"),
+        ("text", "unspecified", "set", "!text"),
+        ("eol", "crlf", "lf", "eol=crlf"),
+        ("filter", "unsafe-driver", "unset", "filter=unsafe-driver"),
+        ("diff", "unsafe-driver", "set", "diff=unsafe-driver"),
+        ("merge", "unsafe-driver", "set", "merge=unsafe-driver"),
+        (
+            "working-tree-encoding",
+            "UTF-16",
+            "unset",
+            "working-tree-encoding=UTF-16",
+        ),
+        ("ident", "set", "unset", "ident"),
+    ] {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.code.join(".git/info/attributes"),
+            format!(".engram/project.json {rule}\n"),
+        )
+        .unwrap();
+        let index = fs::read(fixture.admin.join("index")).unwrap();
+        let candidate = snapshot(&fixture.candidate);
+        let output = fixture.materialize();
+        assert_eq!(output.status.code(), Some(1), "{rule}");
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(error.contains(".engram/project.json"), "{error}");
+        assert!(error.contains(&format!("{attribute}={value:?}")), "{error}");
+        assert!(error.contains(&format!("expected {expected:?}")), "{error}");
+        assert!(error.contains("task-sync setup-materialize"), "{error}");
+        assert!(!fixture.root.join(".engram").exists(), "{rule}");
+        assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
+        assert_eq!(snapshot(&fixture.candidate), candidate);
+        assert_eq!(
+            fs::read(&fixture.store).unwrap(),
+            b"source must not be opened as SQLite"
+        );
+    }
+}
+
+#[test]
 fn task_materialize_cli_keeps_lf_bytes_and_index_unchanged_before_operator_staging() {
     let fixture = Fixture::new();
     // Local autocrlf and the isolated global eol would normalize without the block.

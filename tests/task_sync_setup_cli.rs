@@ -230,10 +230,16 @@ impl Fixture {
     }
 
     fn refusal(&self, expected: &str) {
+        self.refusal_details(&[expected]);
+    }
+
+    fn refusal_details(&self, expected: &[&str]) {
         let output = self.prepare();
         assert!(!output.status.success());
         let error = String::from_utf8_lossy(&output.stderr);
-        assert!(error.contains(expected), "{error}");
+        for &detail in expected {
+            assert!(error.contains(detail), "{error}");
+        }
         assert!(!self.intent_path().exists());
         assert!(!self.admin.join("engram-task-sync-setup.lock").exists());
         task_sync_opt_in::assert_no_database(&self.home);
@@ -733,10 +739,19 @@ fn setup_refuses_applied_attributes_by_path_before_status_or_private_writes() {
         )
         .unwrap();
         let before = fs::read(fixture.common.join("info/attributes")).unwrap();
-        fixture.refusal(attribute.split('=').next().unwrap());
-        assert!(
-            String::from_utf8_lossy(&fixture.prepare().stderr).contains(".engram/project.json")
-        );
+        let (name, value) = attribute.split_once('=').unwrap_or((attribute, "set"));
+        let expected = match name {
+            "eol" => "lf",
+            "diff" | "merge" => "set",
+            _ => "unset",
+        };
+        fixture.refusal_details(&[
+            "Git attribute policy refused for .engram/project.json",
+            &format!("{name}={value:?}"),
+            &format!("expected {expected:?}"),
+            "\"unspecified\"",
+            "task-sync setup-prepare",
+        ]);
         assert_eq!(
             fs::read(fixture.common.join("info/attributes")).unwrap(),
             before
@@ -758,7 +773,13 @@ fn setup_refuses_applied_attributes_by_path_before_status_or_private_writes() {
         ],
     );
     git(&setup.root, &["config", "filter.lfs.required", "true"]);
-    setup.refusal("filter=lfs applies to .engram/.gitignore");
+    setup.refusal_details(&[
+        "Git attribute policy refused for .engram/.gitignore",
+        "filter=\"lfs\"",
+        "expected \"unset\"",
+        "\"unspecified\"",
+        "task-sync setup-prepare",
+    ]);
 }
 
 #[test]

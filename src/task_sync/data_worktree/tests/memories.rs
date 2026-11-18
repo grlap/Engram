@@ -281,6 +281,205 @@ fn memory_sync_export_refuses_committed_ignore_exclusion_until_explicit_update()
     );
 }
 
+/// How many Git processes reading the committed memory component of a data
+/// commit holding `keys` memory keys starts, after checking it reads back.
+fn committed_read_starts(keys: usize) -> usize {
+    use std::{cell::Cell, rc::Rc};
+    let (fixture, data) = fixture();
+    let selected = (0..keys)
+        .map(|n| {
+            let key = format!("rule-{n}");
+            let mut value = history(&format!("rule body {n}"), None);
+            value.key.clone_from(&key);
+            for revision in value.revisions.values_mut() {
+                revision.provenance.key.clone_from(&key);
+            }
+            (key, value)
+        })
+        .collect::<BTreeMap<_, _>>();
+    memories::directory::write(&data, &BTreeMap::new(), &selected).unwrap();
+    run(&fixture.data, &["add", ".engram"]);
+    run(&fixture.data, &["commit", "-m", "Record the memory keys"]);
+    let data = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
+    let starts = Rc::new(Cell::new(0_usize));
+    let seen = Rc::clone(&starts);
+    let previous = crate::task_sync::git::BEFORE_QUERY
+        .with(|hook| hook.replace(Some(Box::new(move |_| seen.set(seen.get() + 1)))));
+    let committed = memories::directory::committed(&data, &ProjectId("data/fixture".into()));
+    crate::task_sync::git::BEFORE_QUERY.with(|hook| hook.replace(previous));
+    assert_eq!(committed.unwrap(), selected);
+    starts.get()
+}
+
+#[test]
+fn committed_memory_read_starts_as_many_git_processes_for_forty_keys_as_for_two() {
+    let few = committed_read_starts(2);
+    let many = committed_read_starts(40);
+    assert_eq!(
+        many, few,
+        "reading 40 committed memory keys started {many} Git processes, 2 keys started {few}"
+    );
+}
+
+/// The entries of `treeish` as (mode, name, object id), read without Git's
+/// path decoding.
+fn tree_entries(root: &Path, treeish: &str) -> Vec<(String, String, String)> {
+    run(root, &["ls-tree", "-z", treeish])
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+        .map(|record| {
+            let record = std::str::from_utf8(record).unwrap();
+            let (header, name) = record.split_once('\t').unwrap();
+            let fields = header.split(' ').collect::<Vec<_>>();
+            (fields[0].to_owned(), name.to_owned(), fields[2].to_owned())
+        })
+        .collect()
+}
+
+/// A tree object written from raw entries, skipping the name checks Git
+/// applies to trees it builds itself.
+fn literal_tree(root: &Path, entries: &[(String, String, String)]) -> String {
+    let mut bytes = Vec::new();
+    for (mode, name, oid) in entries {
+        bytes.extend_from_slice(format!("{} {name}\0", mode.trim_start_matches('0')).as_bytes());
+        bytes.extend(
+            (0..oid.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(&oid[at..at + 2], 16).unwrap()),
+        );
+    }
+    let args = ["hash-object", "-t", "tree", "--literally", "-w", "--stdin"];
+    let written = git::run_query_command(
+        git::command(root, &args),
+        args[0],
+        false,
+        Some(bytes.as_slice()),
+        Duration::from_secs(30),
+        git::QueryStderrPolicy::ErrorOnly,
+    )
+    .unwrap();
+    String::from_utf8(written).unwrap().trim().to_owned()
+}
+
+/// `entries` with the object id of `name` replaced.
+fn replaced(
+    mut entries: Vec<(String, String, String)>,
+    name: &str,
+    oid: &str,
+) -> Vec<(String, String, String)> {
+    let entry = entries.iter_mut().find(|entry| entry.1 == name).unwrap();
+    oid.clone_into(&mut entry.2);
+    entries
+}
+
+#[test]
+fn committed_memory_read_refuses_a_root_blob_named_as_a_file_of_another_key() {
+    let (fixture, data) = fixture();
+    let rule = history("rule body", None);
+    let revision = rule.revisions.keys().next().unwrap().clone();
+    let selected = BTreeMap::from([("rule".to_owned(), rule)]);
+    memories::directory::write(&data, &BTreeMap::new(), &selected).unwrap();
+    run(&fixture.data, &["add", ".engram"]);
+    run(&fixture.data, &["commit", "-m", "Record the rule"]);
+    let root = &fixture.data;
+    let file = format!("{revision}.json");
+    let rule_entries = tree_entries(root, "HEAD:.engram/memories/rule");
+    let revision_oid = rule_entries
+        .iter()
+        .find(|entry| entry.1 == file)
+        .unwrap()
+        .2
+        .clone();
+    // The rule tree keeps only head.json; its selected revision becomes a
+    // blob at the memory root whose own name is `rule/<revision>.json`.
+    let head_only = rule_entries
+        .into_iter()
+        .filter(|entry| entry.1 == "head.json")
+        .collect::<Vec<_>>();
+    let rule_tree = literal_tree(root, &head_only);
+    let memories_tree = literal_tree(
+        root,
+        &[
+            (String::from("040000"), String::from("rule"), rule_tree),
+            (String::from("100644"), format!("rule/{file}"), revision_oid),
+        ],
+    );
+    let engram_tree = literal_tree(
+        root,
+        &replaced(
+            tree_entries(root, "HEAD:.engram"),
+            "memories",
+            &memories_tree,
+        ),
+    );
+    let commit_tree = literal_tree(
+        root,
+        &replaced(tree_entries(root, "HEAD^{tree}"), ".engram", &engram_tree),
+    );
+    let commit = run(
+        root,
+        &[
+            "commit-tree",
+            &commit_tree,
+            "-p",
+            "HEAD",
+            "-m",
+            "Split the rule",
+        ],
+    );
+    let commit = String::from_utf8(commit).unwrap().trim().to_owned();
+    let error = task_sync::git::read_memory_snapshot(
+        &data.checkout,
+        &ProjectId("data/fixture".into()),
+        &commit,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("memory key must be an ordinary tree"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn committed_memory_read_refuses_an_oversized_file_before_reading_any_body() {
+    let (fixture, data) = fixture();
+    let rule = history("rule body", None);
+    let revision = rule.revisions.keys().next().unwrap().clone();
+    let selected = BTreeMap::from([("rule".to_owned(), rule)]);
+    memories::directory::write(&data, &BTreeMap::new(), &selected).unwrap();
+    fs::write(
+        data.checkout
+            .join(".engram/memories/rule")
+            .join(format!("{revision}.json")),
+        vec![b' '; 1024 * 1024 + 1],
+    )
+    .unwrap();
+    run(&fixture.data, &["add", ".engram"]);
+    run(
+        &fixture.data,
+        &["commit", "-m", "Record an oversized revision"],
+    );
+    let commit = String::from_utf8(run(&fixture.data, &["rev-parse", "HEAD"])).unwrap();
+    task_sync::git::take_blob_reads();
+    let error = task_sync::git::read_memory_snapshot(
+        &data.checkout,
+        &ProjectId("data/fixture".into()),
+        commit.trim(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("exceeds the per-file limit"),
+        "{error:#}"
+    );
+    assert_eq!(
+        task_sync::git::take_blob_reads(),
+        Vec::<String>::new(),
+        "no memory file body is requested once a size exceeds its limit"
+    );
+}
+
 #[test]
 fn memory_sync_empty_head_basis_does_not_block_fresh_task_only_export() {
     let (fixture, data) = fixture();

@@ -1,5 +1,8 @@
 //! Engram CLI: host/operator administration plus the fourteen-word agent surface.
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::{
     fs,
     io::{self, Read},
@@ -9,7 +12,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use engram::domain::AssuranceLevel;
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
@@ -49,6 +52,10 @@ struct Cli {
     /// Host-local Engram data directory (or set `ENGRAM_HOME`).
     #[arg(long)]
     home: Option<PathBuf>,
+    /// Warn once on stderr when a human-facing operation exceeds ten seconds.
+    /// JSON output always stays free of slow-operation warning text.
+    #[arg(long, global = true)]
+    warn_slow: bool,
     /// Filesystem identity of the project root for host path-bearing commands
     /// (init, doctor, control, authority, control-policy, readiness). Omit to
     /// probe the root's real filesystem; supply it when probing is impossible
@@ -58,6 +65,25 @@ struct Cli {
     host_path_policy: Option<HostPathPolicyArg>,
     #[command(subcommand)]
     command: Command,
+}
+
+fn json_output(matches: &ArgMatches) -> bool {
+    matches
+        .try_get_one::<bool>("json")
+        .ok()
+        .flatten()
+        .is_some_and(|json| *json)
+        || matches
+            .subcommand()
+            .is_some_and(|(_, child)| json_output(child))
+}
+
+fn cli_warning_output(matches: &ArgMatches, warn_slow: bool) -> Option<bool> {
+    // These long-lived transports keep their library warning policy.
+    if matches!(matches.subcommand_name(), Some("mcp" | "control")) {
+        return None;
+    }
+    Some(warn_slow && !json_output(matches))
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -1039,14 +1065,21 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
     reason = "top-level CLI dispatch keeps every operator and agent surface exhaustive in one match"
 )]
 async fn run_cli() -> Result<ExitCode> {
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
+    let (cli, warning_output) = match Cli::command().try_get_matches().and_then(|matches| {
+        let cli = Cli::from_arg_matches(&matches)?;
+        let warning_output = cli_warning_output(&matches, cli.warn_slow);
+        Ok((cli, warning_output))
+    }) {
+        Ok(parsed) => parsed,
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayVersion => {
             println!("engram {}", engram::build_identity::version());
             return Ok(ExitCode::SUCCESS);
         }
         Err(error) => error.exit(),
     };
+    if let Some(enabled) = warning_output {
+        engram::operation_time::set_stderr_warnings(enabled);
+    }
     if let Command::Source {
         root,
         timeout_ms,
@@ -2432,6 +2465,10 @@ mod input_tests;
 #[cfg(test)]
 #[path = "bin_support/host_path_routing_tests.rs"]
 mod host_path_routing_tests;
+
+#[cfg(test)]
+#[path = "bin_support/slow_warning_tests.rs"]
+mod slow_warning_tests;
 
 #[cfg(test)]
 #[path = "bin_support/cli_tests.rs"]

@@ -99,6 +99,11 @@ and compares the full object, including unchanged dirty plain runs, through a bo
 automatic run input uses only that value, with no second file-list fingerprint or debris exception.
 See the [source command](development.md#read-only-committed-input-command).
 
+CLI JSON output omits slow-operation warning text. Human-facing commands can
+opt into ten-second stderr warnings with `--warn-slow`; deadlines and the
+MCP/control warning policy are unchanged. See the
+[operator CLI](features/cli-host-and-operator.md#host-and-operator-cli).
+
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).
 Its declared rebuildable schema barrier requires the documented coordinated

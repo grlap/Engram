@@ -303,12 +303,15 @@ fn observed(route: &str, written: usize, removed: usize) -> Phase {
 /// One data worktree shared by two hosts, both enrolled from the same
 /// complete folder of generated tasks.
 pub(super) struct Exchange {
-    _home: crate::test_support::TempHome,
     code: PathBuf,
     pub(super) checkout: PathBuf,
     pub(super) tree: TaskTree,
     pub(super) a: Host,
     pub(super) b: Host,
+    /// Last, because fields drop in declaration order: both hosts close their
+    /// stores before the home is removed, and Windows cannot remove a file
+    /// that is still open.
+    home: crate::test_support::TempHome,
 }
 
 impl Exchange {
@@ -357,7 +360,7 @@ impl Exchange {
             tree,
             a,
             b,
-            _home: home,
+            home,
         };
         directory::write_data_folder(&exchange.data(), &exchange.tree, &profile()).unwrap();
         exchange.commit("Publish the shared planning");
@@ -529,4 +532,26 @@ fn the_ordinary_folder_route_reads_decodes_and_writes_only_the_change_set() {
             large.decodes
         );
     }
+}
+
+#[test]
+fn a_dropped_exchange_removes_its_home_after_both_hosts_have_used_their_stores() {
+    let exchange = Exchange::new(2);
+    for host in [&exchange.a, &exchange.b] {
+        let receipt = host
+            .service
+            .export_task_sync_data_folder(
+                &exchange.data(),
+                &profile(),
+                false,
+                None,
+                chrono::Utc::now(),
+            )
+            .unwrap();
+        assert_eq!(receipt.route, "unchanged");
+    }
+    let home = exchange.home.path().to_path_buf();
+    assert!(home.exists());
+    drop(exchange);
+    assert!(!home.exists(), "{} was left behind", home.display());
 }

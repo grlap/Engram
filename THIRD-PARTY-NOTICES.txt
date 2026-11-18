@@ -4,7 +4,7 @@ Engram's own code, documentation, and website are licensed under Apache-2.0.
 Third-party components retain their own licenses; this file does not relicense
 them. The license choices below apply to this distribution of Engram.
 
-This inventory covers 123 external package versions resolved by the current
+This inventory covers 125 external package versions resolved by the current
 Cargo.lock with cargo metadata --locked --all-features --format-version 1,
 including platform-specific, build, and development dependencies. It is a
 superset of the dependencies incorporated in any one compiled executable.
@@ -59,6 +59,12 @@ Source: https://www.sqlite.org/copyright.html
 The inactive sqlcipher source directory is not compiled by Engram's bundled
 SQLite configuration. If redistributing the complete libsqlite3-sys source
 archive, also retain its sqlcipher/LICENSE and source notices.
+
+Bundled allocator: mimalloc 0.1.48 enables the v3 C source in
+libmimalloc-sys 0.1.44 (c_src/mimalloc/v3, MI_MALLOC_VERSION 315). The Rust
+crates share the MIT notice in document 36. The bundled C source has its
+own MIT notice in document 37.
+Project: https://github.com/microsoft/mimalloc
 
 unicode-casefold declares MIT/Apache-2.0 in its Cargo.toml but includes no
 separate license file. Apache-2.0 is selected here; the standard text and the
@@ -428,6 +434,13 @@ libc 0.2.189
   Selected terms: Apache-2.0
   License/attribution documents: 4
 
+libmimalloc-sys 0.1.44
+  Project: https://github.com/purpleprotocol/mimalloc_rust/tree/master/libmimalloc-sys
+  Authors listed by the package: Octavian Oncescu <octavonce@gmail.com>
+  Declared package license: MIT
+  Selected terms: MIT
+  License/attribution documents: 36, 37
+
 libsqlite3-sys 0.38.2
   Project: https://github.com/rusqlite/rusqlite
   Authors listed by the package: The rusqlite developers
@@ -455,6 +468,13 @@ memchr 2.8.3
   Declared package license: Unlicense OR MIT
   Selected terms: MIT
   License/attribution documents: 16
+
+mimalloc 0.1.48
+  Project: https://github.com/purpleprotocol/mimalloc_rust
+  Authors listed by the package: Octavian Oncescu <octavonce@gmail.com>; Vincent Rouillé <vincent@speedy37.fr>; Thom Chiovoloni <chiovolonit@gmail.com>
+  Declared package license: MIT
+  Selected terms: MIT
+  License/attribution documents: 36
 
 num-traits 0.2.19
   Project: https://github.com/rust-num/num-traits
@@ -4253,3 +4273,59 @@ the avoidance of doubt, this paragraph does not form part of the
 public licenses.
 
 Creative Commons may be contacted at creativecommons.org.
+
+==============================================================================
+DOCUMENT 36: mimalloc 0.1.48 and libmimalloc-sys 0.1.44: LICENSE.txt
+==============================================================================
+
+Copyright 2019 Octavian Oncescu
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+DOCUMENT 37: mimalloc v3 C source bundled with libmimalloc-sys 0.1.44: LICENSE
+==============================================================================
+
+MIT License
+
+Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -40,3 +40,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --all-features
+      - name: Windows HTTPS data-branch tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $passed = 0
+          node scripts/test-temp.mjs -- cargo test --all-features --lib data_branch::task_exchange_windows_ -- --ignored --nocapture | ForEach-Object {
+            if ($_ -match '^test result: \S+\. (\d+) passed') { $passed += [int]$Matches[1] }
+            $_
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($passed -eq 0) { throw 'No Windows HTTPS data-branch tests ran.' }

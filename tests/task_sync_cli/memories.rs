@@ -101,6 +101,66 @@ fn files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>
     result
 }
 
+/// How many Git processes one `--include-memories` export starts, read from
+/// Git's own trace, once `keys` memory keys are committed and one of them has
+/// a new revision since.
+fn export_git_starts(keys: usize) -> usize {
+    let (owned, marker, home) = setup();
+    for n in 0..keys {
+        let key = format!("rule-{n}");
+        work(
+            &home,
+            &marker,
+            &["remember", &format!("rule {n}"), "--key", &key],
+        );
+    }
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let export = ["--include-memories", "--json"];
+    success(sync_output(&home, &marker, "export", &folder, &export));
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Record the memory keys"]);
+    work(
+        &home,
+        &marker,
+        &["remember", "rule 0 revised", "--key", "rule-0", "--revise"],
+    );
+    let trace = owned.path().join("export-git-trace.json");
+    success(
+        command(&home, &marker)
+            .env("GIT_TRACE2_EVENT", &trace)
+            .args([
+                "task-sync",
+                "--actor-id",
+                "operator",
+                "--session-id",
+                "sync-operator",
+                "export",
+            ])
+            .arg(&folder)
+            .args(export)
+            .output()
+            .unwrap(),
+    );
+    let starts = fs::read_to_string(&trace)
+        .unwrap()
+        .lines()
+        .filter(|line| line.contains(r#""event":"start""#))
+        .count();
+    assert!(starts > 0, "Git's trace recorded no process start");
+    starts
+}
+
+#[test]
+fn memory_sync_cli_export_starts_as_many_git_processes_for_forty_keys_as_for_two() {
+    let few = export_git_starts(2);
+    let many = export_git_starts(40);
+    assert_eq!(
+        many, few,
+        "an export over 40 committed memory keys started {many} Git processes, over 2 keys {few}"
+    );
+}
+
 #[test]
 fn memory_sync_cli_explicit_retirement_reports_unseen_suffix_and_counterpart_retirement() {
     let (owned, marker, author_home) = setup();
@@ -291,7 +351,7 @@ fn memory_sync_cli_invalid_committed_envelope_refuses_before_export_writes() {
                 "{}",
                 String::from_utf8_lossy(&refused.stderr)
             );
-            let error: Value = serde_json::from_slice(&refused.stderr).unwrap();
+            let error = refusal_json(&refused);
             assert_eq!(error["error"]["code"], "memory_export_basis_invalid");
             assert!(
                 !folder.exists(),
@@ -536,7 +596,7 @@ fn memory_sync_cli_task_only_export_preserves_committed_memories() {
     let result = sync_output(&home, &marker, "export", &folder, &["--json"]);
     assert_eq!(result.status.code(), Some(1));
     assert_eq!(
-        serde_json::from_slice::<Value>(&result.stderr).unwrap()["error"]["code"],
+        refusal_json(&result)["error"]["code"],
         "memory_profile_requires_opt_in"
     );
     assert_eq!(files(&folder), before);
@@ -713,7 +773,7 @@ fn memory_sync_cli_uncommitted_memory_refusal_leaves_worktree_untouched() {
     );
     assert!(!refused.status.success());
     assert_eq!(
-        serde_json::from_slice::<Value>(&refused.stderr).unwrap()["error"]["code"],
+        refusal_json(&refused)["error"]["code"],
         "memory_export_component_changed"
     );
     assert_eq!(files(&folder), before);
@@ -861,7 +921,7 @@ fn memory_sync_cli_refusal_leaves_tasks_and_capability_untouched() {
     );
     assert!(!refused.status.success());
     assert_eq!(
-        serde_json::from_slice::<Value>(&refused.stderr).unwrap()["error"]["code"],
+        refusal_json(&refused)["error"]["code"],
         "memory_ignore_policy_excludes_tree"
     );
     assert_eq!(files(&folder), before);
@@ -909,7 +969,7 @@ fn memory_sync_cli_import_reports_refusals_and_requires_explicit_seed_override()
     );
     assert_eq!(refused.status.code(), Some(1));
     assert_eq!(
-        serde_json::from_slice::<Value>(&refused.stderr).unwrap()["error"]["code"],
+        refusal_json(&refused)["error"]["code"],
         "memory_profile_requires_opt_in"
     );
     let project = ProjectId("memory-cli-fixture".into());

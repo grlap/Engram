@@ -192,6 +192,22 @@ gate. The shell entry point also raises the Unix
 file-descriptor soft limit when the host permits it; that step is not
 applicable on Windows.
 
+On Windows the ordinary phase, run without Cargo arguments, ends with an
+isolated pass: the real-HTTPS data-branch workflow tests are ignored in the
+ordinary run and then selected by name with `--ignored`, so that their
+supervised children never share the host with the rest of the suite; the pass
+fails if its filter selects no test. Each
+child prints its `elapsed_ms` beside the supervisor's `deadline_ms`, the
+margin a gate log shows for every run. When a child misses its deadline, the
+report names every phase it had opened and not closed, innermost last, as
+`open phase=SCOPE/NAME elapsed_ms=N`, so a stall is attributable without a
+rerun. Because of that pass the Windows `rust` stage reports filtered-out
+tests, and those workflow tests count once as ignored and once as passed; on
+that stage `filtered=yes` is therefore the normal outcome, not a sign of an
+accidental selection. A run with Cargo arguments selects its own tests and
+skips the isolated pass, saying so; select the workflows explicitly with
+`cargo test --lib data_branch::task_exchange_windows_ -- --ignored`.
+
 The claim-mutation scale phase also reports executing-thread SQLite statement,
 fullscan-step, sort and VM-step totals, p95 and maxima beside the existing decode
 budgets. A calibration first checks a drained, unindexed 128-row sort (127 scan
@@ -1184,7 +1200,9 @@ tests.
   not which. The command line is known before a stage runs, so a skipped
   stage says it too. A selection made through the environment, such as
   `NODE_OPTIONS`, is not visible. The ordinary `rust` stage of a full run
-  selects no tests by name or target; each of the three `rust-scale-*` stages
+  selects no tests by name or target, though on Windows its isolated
+  data-branch pass reports filtered-out tests and so makes it
+  `filtered=yes`; each of the three `rust-scale-*` stages
   selects by name, and the four Node stages each name their test files. The
   stage list records those selections whether or not the stages ran; a
   runner's reported filtered-out count also makes `filtered=yes`. `scope=full` says the

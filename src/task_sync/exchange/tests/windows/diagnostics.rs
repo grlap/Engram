@@ -301,10 +301,76 @@ pub(super) fn report(output: &process::DiagnosticOutput) -> String {
             "active launch unknown: no unmatched BEGIN was captured; a later BEGIN may be unread\n",
         );
     }
+    text.push_str(&open_phases(&output.stdout, unix_micros()));
     text.push_str("captured stdout:\n");
     text.push_str(&String::from_utf8_lossy(&output.stdout));
     text.push_str("\ncaptured stderr:\n");
     text.push_str(&String::from_utf8_lossy(&output.stderr));
+    text
+}
+
+/// Microseconds since the Unix epoch, the clock an owned child stamps on each
+/// phase BEGIN so that its supervisor, on the same host, can age it.
+pub(super) fn unix_micros() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_micros())
+}
+
+/// Names each phase a child opened and had not closed when its output was
+/// captured, innermost last, with its age at `now_us`. A child marks phases as
+/// `<scope> phase=<name> begin unix_us=<n>` and `<scope> phase=<name> end ...`.
+/// A final line without its newline may be cut mid-write, so it is not read.
+pub(super) fn open_phases(stdout: &[u8], now_us: u128) -> String {
+    let mut seen = false;
+    let mut open: Vec<(String, u128)> = Vec::new();
+    let text = String::from_utf8_lossy(stdout);
+    let complete = text.rfind('\n').map_or("", |end| &text[..end]);
+    for line in complete.lines() {
+        let mut fields = line.split_ascii_whitespace();
+        let (Some(scope), Some(phase), Some(edge)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let Some(name) = phase.strip_prefix("phase=") else {
+            continue;
+        };
+        let key = format!("{scope}/{name}");
+        match edge {
+            "begin" => {
+                let Some(began) = fields
+                    .next()
+                    .and_then(|field| field.strip_prefix("unix_us="))
+                    .and_then(|micros| micros.parse().ok())
+                else {
+                    continue;
+                };
+                seen = true;
+                open.push((key, began));
+            }
+            "end" => {
+                if let Some(index) = open.iter().rposition(|(name, _)| *name == key) {
+                    open.remove(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    if !seen {
+        return String::new();
+    }
+    if open.is_empty() {
+        return "open phase unknown: every captured phase BEGIN has its END\n".into();
+    }
+    let mut text = String::new();
+    for (name, began) in &open {
+        writeln!(
+            text,
+            "open phase={name} elapsed_ms={}",
+            now_us.saturating_sub(*began) / 1000
+        )
+        .unwrap();
+    }
     text
 }
 

@@ -105,6 +105,16 @@ const rustPhaseArgs = [
   ["--", "cargo", "test", "root_delta_scale_", "--", "--ignored", "--nocapture"],
   ["--", "cargo", "test", "planning_scale_", "--", "--ignored", "--nocapture"],
 ];
+// On Windows a successful ordinary run without Cargo arguments is followed by
+// the isolated pass of the real-HTTPS data-branch workflows.
+const rustIsolatedArgs = ["--", "cargo", "test", "--lib", "data_branch::task_exchange_windows_", "--", "--ignored", "--nocapture"];
+function rustPhaseCalls(platform, phases = ["ordinary", "scale-claims", "scale-roots", "scale-planning"]) {
+  const names = ["ordinary", "scale-claims", "scale-roots", "scale-planning"];
+  return phases.flatMap((phase) => {
+    const call = rustPhaseArgs[names.indexOf(phase)];
+    return platform === "win32" && phase === "ordinary" ? [call, rustIsolatedArgs] : [call];
+  });
+}
 function rustWrapperFixture(root, platform) {
   mkdirSync(join(root, "scripts"));
   for (const file of ["test-rust.ps1", "test-rust.sh", "test-rust-host.sh"]) {
@@ -119,13 +129,29 @@ function rustWrapperFixture(root, platform) {
     calls.push({ args, cwd: process.cwd(), threads: process.env.RUST_TEST_THREADS });
     writeFileSync(process.env.PHASE_CALLS, JSON.stringify(calls));
     console.log('     Running unittests src/lib.rs (target/debug/deps/fixture)');
+    if (process.env.PHASE_ISOLATED_EMPTY && args.includes('data_branch::task_exchange_windows_')) {
+      console.log('running 0 tests');
+      console.log('test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s');
+      process.exit(0);
+    }
+    if (process.env.PHASE_ISOLATED_FAIL && args.includes('data_branch::task_exchange_windows_')) {
+      console.log('running 2 tests');
+      console.log('test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s');
+      process.exit(101);
+    }
+    if (process.env.PHASE_FAIL_ORDINARY && args.length === 3) {
+      console.log('running 1 test');
+      console.log('test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s');
+      process.exit(101);
+    }
     if (process.env.PHASE_RESULTS && args.includes('claim_validated_mutations_are_bounded_at_project_scale')) {
       const saved = JSON.parse(readFileSync(process.env.PHASE_RESULTS, 'utf8'));
       assert.deepEqual(saved.stages.map(({ state }) => state), ['passed', 'running', 'unrun', 'unrun']);
       const prior = saved.stages[0];
       assert.equal(prior.code, 0);
       assert.ok(prior.started && prior.ended);
-      assert.equal(prior.tests.passed, 1);
+      // On Windows the ordinary stage also ran the isolated pass, whose summary adds one.
+      assert.equal(prior.tests.passed, process.platform === 'win32' ? 2 : 1);
       writeFileSync(process.env.PHASE_SNAPSHOT, JSON.stringify(prior));
       console.log('running 1 test');
       console.log('test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s');
@@ -225,5 +251,5 @@ function parkingBroker(t, root) {
 }
 
 
-  return { env, entryUrl, launcher, launcherSupportFiles, launcherFixtureFiles, stage, json, logPath, withPrependedPath, git, fixtureFailureSnapshot, repository, rustPhaseArgs, rustWrapperFixture, copyLauncher, nodeFixtureExecutable, parseRecord, directoryBytes, rewriteResults, parkingBroker };
+  return { env, entryUrl, launcher, launcherSupportFiles, launcherFixtureFiles, stage, json, logPath, withPrependedPath, git, fixtureFailureSnapshot, repository, rustPhaseArgs, rustIsolatedArgs, rustPhaseCalls, rustWrapperFixture, copyLauncher, nodeFixtureExecutable, parseRecord, directoryBytes, rewriteResults, parkingBroker };
 }

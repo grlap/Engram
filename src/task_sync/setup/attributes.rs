@@ -64,9 +64,14 @@ pub(super) fn check(root: &Path, admin: &Path, _marker_name: &str) -> Result<()>
                 (attribute, value),
                 ("eol", "lf") | ("diff" | "merge", "set")
             );
+        let expected = match attribute {
+            "eol" => r#""lf", "unset" or "unspecified""#,
+            "diff" | "merge" => r#""set", "unset" or "unspecified""#,
+            _ => r#""unset" or "unspecified""#,
+        };
         ensure!(
             safe,
-            "Git attribute {attribute}={value} applies to {path}; inspect and resolve before setup preparation"
+            "Git attribute policy refused for {path}: {attribute}={value:?}; expected {expected}; resolve conflicting Git attribute overrides, then retry task-sync setup-prepare or task-sync setup-materialize with the original selection; no task publication approved"
         );
     }
     Ok(())
@@ -148,9 +153,17 @@ fn verify_paths(
         .keys()
         .map(|path| format!(".engram/{path}"))
         .collect();
+    let override_arg = staged_policy
+        .map(|path| {
+            let path = crate::task_sync::git::plain_path(path)
+                .context("retained task attribute policy has no supported Git path spelling")?;
+            let path = path
+                .to_str()
+                .context("retained task attribute policy path is not Unicode")?;
+            Ok::<_, anyhow::Error>(format!("core.attributesFile={path}"))
+        })
+        .transpose()?;
     for paths in paths.chunks(128) {
-        let override_arg =
-            staged_policy.map(|path| format!("core.attributesFile={}", path.display()));
         let mut args = Vec::new();
         if let Some(value) = &override_arg {
             args.extend(["-c", value]);
@@ -183,28 +196,22 @@ fn verify_paths(
             let path = std::str::from_utf8(record[0])?;
             let attribute = std::str::from_utf8(record[1])?;
             let value = std::str::from_utf8(record[2])?;
-            let expected = [
-                "text",
-                "eol",
-                "filter",
-                "diff",
-                "merge",
-                "working-tree-encoding",
-                "ident",
+            let (expected_attribute, expected_value) = [
+                ("text", "set"),
+                ("eol", "lf"),
+                ("filter", "unset"),
+                ("diff", "set"),
+                ("merge", "set"),
+                ("working-tree-encoding", "unset"),
+                ("ident", "unset"),
             ][index % 7];
             ensure!(
-                path == paths[index / 7] && attribute == expected,
+                path == paths[index / 7] && attribute == expected_attribute,
                 "misrouted materialized Git attribute result"
             );
-            let safe = matches!(
-                (attribute, value),
-                ("text" | "diff" | "merge", "set")
-                    | ("eol", "lf")
-                    | ("filter" | "working-tree-encoding" | "ident", "unset")
-            );
             ensure!(
-                safe,
-                "effective task attribute policy refused for {path}: {attribute}; no task publication approved"
+                value == expected_value,
+                "effective task attribute policy refused for {path}: {attribute}={value:?}; expected {expected_value:?}; resolve conflicting Git attribute overrides, then retry task-sync setup-materialize; no task publication approved"
             );
         }
         if staged_policy.is_none() {

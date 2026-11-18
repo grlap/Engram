@@ -12,65 +12,78 @@ mod timing;
 mod workflow;
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_data_branch_uses_confined_https_and_exact_retained_inputs() {
     supervise("transport").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_strict_delta_uses_real_https_rejection_and_offline_replay() {
     supervise_phases("strict-recover").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_delta_revalidation_refuses_captured_head_drift() {
     supervise("drift").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_publication_observation_reads_the_selected_remote_tip() {
     supervise("observation").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_retry_observation_reads_the_selected_remote_tip() {
     supervise_phases("retry-observation").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_incoming_delta_uses_public_retention_and_offline_replay() {
     supervise("incoming").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_incoming_evidence_applies_through_the_public_step_and_replays_offline()
  {
     supervise("evidence").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_mismatched_evidence_selections_stop_and_a_later_request_applies() {
     supervise("evidence-mismatch").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_rejected_fetched_carrier_has_audited_recovery() {
     supervise("orphan-rejected").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_superseded_fetched_binding_has_audited_recovery() {
     supervise("orphan-superseded").await;
 }
 
 #[tokio::test]
+#[ignore = "isolated HTTPS workflow; the Rust test gate runs it in its own pass"]
 async fn task_exchange_windows_unrequested_fetch_requires_explicit_abandonment() {
     supervise("orphan-unrequested").await;
 }
 
 /// Each child's supervisor bounds one real HTTPS workflow on a host whose Git,
-/// TLS and Node processes it does not share with another such workflow. The
-/// harness may run several of these tests at once, so they take turns here;
-/// a failed child releases its turn without poisoning the others.
+/// TLS and Node processes it does not share with another such workflow. These
+/// tests are ignored in the ordinary run so that the Rust test gate runs them
+/// in a pass of their own, after the rest of the suite, rather than beside
+/// thousands of other tests. Within that pass they take turns here; a failed
+/// child releases its turn without poisoning the others.
 static CHILDREN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn supervise(case: &str) {
@@ -98,9 +111,18 @@ async fn child(fixture: &Fixture, case: &str, handoff: Option<&str>) {
     if let Some(digest) = handoff {
         outgoing::require(&mut command, digest);
     }
-    let output = diagnostics::supervise(command, supervisor_limits(), &Cancellation::default())
+    let limits = supervisor_limits();
+    let deadline = limits.deadline;
+    let started = Instant::now();
+    let output = diagnostics::supervise(command, limits, &Cancellation::default())
         .await
         .unwrap_or_else(|report| panic!("isolated HTTPS data workflow {case} failed:\n{report}"));
+    // The margin against the supervisor deadline, kept in the gate's log.
+    println!(
+        "isolated HTTPS data workflow {case} elapsed_ms={} deadline_ms={}",
+        started.elapsed().as_millis(),
+        deadline.as_millis()
+    );
     assert!(
         String::from_utf8(output.stdout)
             .unwrap()

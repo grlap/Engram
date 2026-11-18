@@ -4,7 +4,7 @@
 //! observer serves blocking and async callers, including a blocked native call.
 
 use std::io::Write;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
@@ -12,6 +12,15 @@ use std::time::{Duration, Instant};
 pub const MINIMUM: Duration = Duration::from_secs(60);
 /// Warn once while the operation is still running; never cancel it here.
 pub const WARN_AFTER: Duration = Duration::from_secs(10);
+
+static STDERR_WARNINGS: AtomicBool = AtomicBool::new(true);
+
+/// Configure warning output before this process starts its operations.
+/// Libraries retain warnings by default; a CLI may reserve stderr for JSON.
+/// This affects new guards only and never changes an operation's deadline.
+pub fn set_stderr_warnings(enabled: bool) {
+    STDERR_WARNINGS.store(enabled, Ordering::Release);
+}
 
 /// Run the complete asynchronous operation, including its result processing.
 pub async fn observe<T>(name: &'static str, operation: impl std::future::Future<Output = T>) -> T {
@@ -144,12 +153,19 @@ impl Monitor {
 #[derive(Debug)]
 #[must_use]
 pub struct Warning {
-    pending: Arc<Pending>,
+    pending: Option<Arc<Pending>>,
 }
 
 impl Warning {
     pub fn start(operation: &'static str) -> Self {
+        Self::start_with_output(operation, STDERR_WARNINGS.load(Ordering::Acquire))
+    }
+
+    fn start_with_output(operation: &'static str, enabled: bool) -> Self {
         static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+        if !enabled {
+            return Self { pending: None };
+        }
         let started = now();
         let pending = Arc::new(Pending {
             operation,
@@ -160,7 +176,9 @@ impl Warning {
         });
         #[cfg(test)]
         if test_clock::register(&pending) {
-            return Self { pending };
+            return Self {
+                pending: Some(pending),
+            };
         }
         let monitor = Monitor::shared();
         monitor
@@ -170,15 +188,20 @@ impl Warning {
             .0
             .push(Arc::downgrade(&pending));
         monitor.changed.notify_one();
-        Self { pending }
+        Self {
+            pending: Some(pending),
+        }
     }
 }
 
 impl Drop for Warning {
     fn drop(&mut self) {
-        self.pending.state.store(FINISHED, Ordering::Release);
+        let Some(pending) = &self.pending else {
+            return;
+        };
+        pending.state.store(FINISHED, Ordering::Release);
         #[cfg(test)]
-        if test_clock::owns(&self.pending) {
+        if test_clock::owns(pending) {
             return;
         }
         Monitor::shared().changed.notify_one();
@@ -188,6 +211,18 @@ impl Drop for Warning {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_operations_do_not_register_or_deliver_stderr_warnings() {
+        let clock = test_clock::Probe::install();
+        let warning = Warning::start_with_output("quiet operation", false);
+        clock.advance(Duration::from_secs(11));
+        assert_eq!(clock.events(), [] as [(&str, u64, Duration); 0]);
+        assert!(!clock.active("quiet operation"));
+        drop(warning);
+        clock.advance(Duration::from_secs(60));
+        assert_eq!(clock.events(), [] as [(&str, u64, Duration); 0]);
+    }
 
     #[test]
     fn task_data_query_warns_once_and_keeps_its_sixty_second_deadline() {
@@ -263,7 +298,7 @@ mod tests {
             state: AtomicU8::new(ACTIVE),
         });
         let guard = Warning {
-            pending: Arc::clone(&pending),
+            pending: Some(Arc::clone(&pending)),
         };
         let mut queue = Queue(vec![Arc::downgrade(&pending)]);
         let _ = std::panic::catch_unwind(|| {

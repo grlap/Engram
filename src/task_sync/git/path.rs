@@ -1,5 +1,18 @@
 use std::path::{Path, PathBuf};
 
+pub(crate) fn set_repository_ceiling(command: &mut std::process::Command, repository: &Path) {
+    if let Some(parent) = repository.parent() {
+        // Canonical Windows paths need Git's ordinary spelling in its environment
+        // too. Keep the existing ceiling for unsupported paths rather than
+        // dropping the discovery boundary; path admission remains the caller's.
+        let plain = plain_path(parent);
+        command.env(
+            "GIT_CEILING_DIRECTORIES",
+            plain.as_deref().unwrap_or(parent),
+        );
+    }
+}
+
 /// Spell a path for Git without Windows' verbatim prefix. This changes only
 /// the argument spelling; filesystem identity must still be checked separately.
 /// Windows device paths, volumes without a drive letter and non-Unicode paths

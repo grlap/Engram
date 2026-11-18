@@ -240,7 +240,9 @@ export function requiredStages(platform = process.platform) {
     ["parity", "test", process.execPath, ["--test", "scripts/parity.test.mjs"]],
     ["docs", "other", process.execPath, ["scripts/check-doc-links.mjs"]],
     // Scale phases name their tests and Node stages name their files. The
-    // ordinary Rust phase selects nothing. Keep this true even if unrun.
+    // ordinary Rust phase selects nothing by itself (on Windows its wrapper
+    // adds the isolated pass, whose filtered-out count the runner reports).
+    // Keep this true even if unrun.
   ].map(([name, kind, command, args]) => ({ name, kind, command, args,
     ...(kind === "test" ? { selects: name !== "rust" } : {}) }));
 }

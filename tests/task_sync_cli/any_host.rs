@@ -463,7 +463,7 @@ fn task_sync_cli_any_host_execution_and_three_host_chain_preserve_outcomes_and_c
         &["--basis", &basis(&a1), "--json"],
     );
     assert!(!output.status.success());
-    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    let error = refusal_json(&output);
     assert_eq!(error["error"]["code"], "task_sync_divergent_planning");
     let detail = error["error"]["message"].as_str().unwrap();
     assert!(

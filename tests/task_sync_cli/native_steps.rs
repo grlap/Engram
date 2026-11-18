@@ -35,9 +35,7 @@ fn native_capture_pages_stage_original_bytes_only_in_data_checkout() {
         )
         .unwrap();
     drop(connection);
-    let source_before =
-        engram::source::inspect(owned.path(), std::time::Duration::from_secs(30)).source_id;
-    assert!(source_before.is_some());
+    let source_before = source_identity(owned.path());
     let index_before = fs::read(owned.path().join(".git/index")).unwrap();
     let capture_request = NativeEvidenceCaptureRequest {
         capture: ObjectId::mint(),

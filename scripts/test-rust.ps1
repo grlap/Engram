@@ -46,6 +46,24 @@ try {
         switch ($phase) {
             "ordinary" {
                 & node scripts/test-temp.mjs -- cargo test @cargoArgs
+                if ($LASTEXITCODE -eq 0 -and $cargoArgs.Count -eq 0) {
+                    # The real-HTTPS data-branch workflows are ignored in the run above so
+                    # that their supervised children never share the host with the rest of
+                    # the suite; this pass runs exactly those, one child at a time.
+                    Write-Output "Rust isolated gate: Windows HTTPS data-branch workflows"
+                    # A filter that matches nothing would pass with "0 passed"; count what ran.
+                    $isolatedPassed = 0
+                    & node scripts/test-temp.mjs -- cargo test --lib data_branch::task_exchange_windows_ -- --ignored --nocapture | ForEach-Object {
+                        if ($_ -match '^test result: \S+\. (\d+) passed') { $isolatedPassed += [int]$Matches[1] }
+                        $_
+                    }
+                    if ($LASTEXITCODE -eq 0 -and $isolatedPassed -eq 0) {
+                        [Console]::Error.WriteLine("Rust isolated gate selected no tests: the data_branch::task_exchange_windows_ filter matched nothing")
+                        exit 1
+                    }
+                } elseif ($LASTEXITCODE -eq 0 -and $cargoArgs.Count -gt 0) {
+                    Write-Output "Rust isolated gate skipped: Cargo arguments select the tests; the Windows HTTPS data-branch workflows are ignored unless selected with --ignored"
+                }
             }
             "scale-claims" {
                 Write-Output "Rust scale gate: claim-validated mutation decode budgets"

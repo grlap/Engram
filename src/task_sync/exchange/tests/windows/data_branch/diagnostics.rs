@@ -8,8 +8,13 @@ pub(super) struct Phase {
 }
 
 pub(super) fn phase(name: &'static str) -> Phase {
+    let unix_us = super::diagnostics::unix_micros();
     let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "\ndata-workflow phase={name} begin").unwrap();
+    writeln!(
+        stdout,
+        "\ndata-workflow phase={name} begin unix_us={unix_us}"
+    )
+    .unwrap();
     stdout.flush().unwrap();
     Phase {
         name,

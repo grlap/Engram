@@ -260,3 +260,85 @@ fn task_exchange_deadline_diagnostics_report_states_when_activity_is_unknown() {
         }
     }
 }
+
+#[test]
+fn task_exchange_deadline_diagnostics_report_names_the_running_phase_and_its_age() {
+    let now = 60_000_000;
+    let began = |ago_ms: u128| now - ago_ms * 1000;
+    let stdout = format!(
+        "\ndata-workflow phase=child-entry begin unix_us={}\n\
+         \ndata-workflow phase=fixture-git begin unix_us={}\n\
+         \ndata-workflow phase=fixture-git end elapsed_us=900000\n\
+         \ndata-workflow phase=outgoing-resume begin unix_us={}\n\
+         \nexchange-retry phase=record-retry-progress begin unix_us={}\n",
+        began(30_000),
+        began(29_000),
+        began(20_000),
+        began(15_000),
+    );
+    let output = process::DiagnosticOutput {
+        result: Err(RunError::Deadline),
+        stdout: stdout.into_bytes(),
+        stderr: Vec::new(),
+    };
+    assert_eq!(
+        diagnostics::open_phases(&output.stdout, now),
+        concat!(
+            "open phase=data-workflow/child-entry elapsed_ms=30000\n",
+            "open phase=data-workflow/outgoing-resume elapsed_ms=20000\n",
+            "open phase=exchange-retry/record-retry-progress elapsed_ms=15000\n",
+        )
+    );
+    let report = diagnostics::report(&output);
+    let summary = report.split_once("captured stdout:\n").unwrap().0;
+    let names: Vec<_> = summary
+        .lines()
+        .filter_map(|line| line.strip_prefix("open phase="))
+        .map(|line| line.split_once(" elapsed_ms=").unwrap().0)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "data-workflow/child-entry",
+            "data-workflow/outgoing-resume",
+            "exchange-retry/record-retry-progress"
+        ],
+        "{summary}"
+    );
+    // A last BEGIN cut mid-write is not read as a phase with a tiny timestamp.
+    let cut = format!(
+        "\ndata-workflow phase=outgoing-resume begin unix_us={}\n\
+         \nexchange-retry phase=record-retry-progress begin unix_us=17",
+        began(20_000)
+    );
+    let output = process::DiagnosticOutput {
+        result: Err(RunError::Deadline),
+        stdout: cut.into_bytes(),
+        stderr: Vec::new(),
+    };
+    let report = diagnostics::report(&output);
+    let summary = report.split_once("captured stdout:\n").unwrap().0;
+    let running: Vec<_> = summary
+        .lines()
+        .filter(|line| line.starts_with("open phase="))
+        .collect();
+    assert_eq!(running.len(), 1, "{summary}");
+    assert!(
+        running[0].starts_with("open phase=data-workflow/outgoing-resume elapsed_ms="),
+        "{summary}"
+    );
+
+    let closed = "\ndata-workflow phase=fixture-git begin unix_us=1\n\
+                  \ndata-workflow phase=fixture-git end elapsed_us=2\n";
+    let output = process::DiagnosticOutput {
+        result: Err(RunError::Deadline),
+        stdout: closed.as_bytes().to_vec(),
+        stderr: Vec::new(),
+    };
+    let report = diagnostics::report(&output);
+    assert!(
+        report.contains("open phase unknown: every captured phase BEGIN has its END"),
+        "{report}"
+    );
+    assert!(!report.contains("open phase="), "{report}");
+}

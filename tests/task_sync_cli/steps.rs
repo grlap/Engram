@@ -113,9 +113,7 @@ fn explicit_steps_activate_replay_advance_only_data_and_read_canonical_history()
     let project = binding.project.clone();
     let database = binding.store.database.clone();
     let observed = DataWorktree::observe_project(&marker, &project, "engram-data").unwrap();
-    let code_before =
-        engram::source::inspect(owned.path(), std::time::Duration::from_secs(30)).source_id;
-    assert!(code_before.is_some());
+    let code_before = source_identity(owned.path());
     let index_before = fs::read(owned.path().join(".git/index")).unwrap();
     let activation = json!({"action":"activate", "project_file":marker, "binding":binding});
     let first = success(&run(&home, &marker, "step", &activation));

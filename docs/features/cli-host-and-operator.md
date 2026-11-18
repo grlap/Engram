@@ -160,6 +160,13 @@ the [SQLite contract](sqlite-store.md#canonical-bytes-contract).
 
 ### Host and operator CLI
 
+CLI slow-operation warnings are opt-in: `engram --warn-slow COMMAND` emits
+one bounded stderr warning per operation that is still running after ten
+seconds. A selected `--json` output mode suppresses these warning lines even
+with `--warn-slow`, so an error receipt remains one JSON document. The caller
+can report its own progress. This does not change operation deadlines. The
+long-lived MCP and control transports retain their existing warning policy.
+
 ```bash
 export ENGRAM_HOME=/absolute/host-local/path
 engram init

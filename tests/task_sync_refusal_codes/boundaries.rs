@@ -132,10 +132,12 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
         "engram-data",
     )
     .unwrap();
-    let reading_path = data.checkout.join(".engram/project.json");
-    let reading_path = engram::task_sync::git::plain_path(&reading_path).unwrap_or(reading_path);
+    let reading_path = data.checkout.join(".engram").join("project.json");
+    let git_path = engram::task_sync::git::plain_path(&reading_path);
     assert!(
-        plain_stderr.contains(&format!("reading {}", reading_path.display())),
+        std::iter::once(&reading_path)
+            .chain(git_path.as_ref())
+            .any(|spelling| plain_stderr.contains(&format!("reading {}", spelling.display()))),
         "{plain_stderr}"
     );
     let refused = refusal(&fixture.exchange_snapshot(&target, "import", &candidate, true));
@@ -150,13 +152,15 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
         refused["error"]["message"],
         "local work input is invalid: task candidate file must be an ordinary bounded file"
     );
-    let encoded_path = serde_json::to_string(&reading_path.to_string_lossy()).unwrap();
     // Compare JSON with JSON so Windows backslash escaping cannot hide a path.
-    assert!(
-        !refused
-            .to_string()
-            .contains(&encoded_path[1..encoded_path.len() - 1])
-    );
+    let refusal_json = refused.to_string();
+    for spelling in std::iter::once(&reading_path).chain(git_path.as_ref()) {
+        let encoded_path = serde_json::to_string(&spelling.to_string_lossy()).unwrap();
+        assert!(
+            !refusal_json.contains(&encoded_path[1..encoded_path.len() - 1]),
+            "{refused}"
+        );
+    }
     assert!(refused["error"].get("path").is_none());
     assert_plain_text_kept(&plain, &refused);
     fs::write(&path, original).unwrap();

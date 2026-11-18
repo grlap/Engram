@@ -31,6 +31,40 @@ use engram::{
 };
 use serde_json::Value;
 
+fn refusal_json(output: &Output) -> Value {
+    serde_json::from_slice(&output.stderr).unwrap_or_else(|error| {
+        let head = &output.stderr[..output.stderr.len().min(2048)];
+        let tail = &output.stderr[output.stderr.len().saturating_sub(2048)..];
+        panic!(
+            "expected one JSON refusal: {error}; exit={}; stdout_bytes={}; stderr_bytes={}; stderr_head={:?}; stderr_tail={:?}",
+            output.status,
+            output.stdout.len(),
+            output.stderr.len(),
+            String::from_utf8_lossy(head),
+            String::from_utf8_lossy(tail),
+        )
+    })
+}
+
+fn source_identity(root: &Path) -> Option<engram::source::SourceId> {
+    let started = std::time::Instant::now();
+    let observation = engram::source::inspect(root, std::time::Duration::from_secs(30));
+    if started.elapsed() >= engram::operation_time::WARN_AFTER {
+        eprintln!(
+            "test source observation: elapsed_ms={}; status={:?}",
+            started.elapsed().as_millis(),
+            observation.status,
+        );
+    }
+    assert!(
+        observation.source_id.is_some(),
+        "source observation failed: status={:?}; refusal={:?}",
+        observation.status,
+        observation.refusal,
+    );
+    observation.source_id
+}
+
 fn command(home: &Path, marker: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
     command
@@ -59,7 +93,18 @@ fn sync_output(home: &Path, marker: &Path, operation: &str, path: &Path, extra: 
         ])
         .arg(path)
         .args(extra);
-    command.output().unwrap()
+    let started = std::time::Instant::now();
+    let output = command.output().unwrap();
+    if started.elapsed() >= engram::operation_time::WARN_AFTER {
+        eprintln!(
+            "test task-sync {operation}: elapsed_ms={}; exit={}; stdout_bytes={}; stderr_bytes={}",
+            started.elapsed().as_millis(),
+            output.status,
+            output.stdout.len(),
+            output.stderr.len(),
+        );
+    }
+    output
 }
 
 /// One exchange through a retained whole-folder snapshot. Snapshots are
@@ -745,9 +790,7 @@ fn task_sync_cli_uses_only_data_worktree_and_keeps_code_source_unchanged() {
         home
     });
     work(&source, &marker, &["add", "Shared planning"]);
-    let before =
-        engram::source::inspect(fixture.path(), std::time::Duration::from_secs(30)).source_id;
-    assert!(before.is_some());
+    let before = source_identity(fixture.path());
     let code_index = fs::read(fixture.path().join(".git/index")).unwrap();
     let data = folder.parent().unwrap();
     let data_branch = data_worktree::git(data, &["symbolic-ref", "HEAD"]);
@@ -816,9 +859,7 @@ fn task_sync_cli_refuses_other_directories_before_opening_store_or_reading_basis
     let folder = data_worktree::initialize(&marker);
     let home = fixture.path().join("home");
     task_sync_opt_in::enable(&home, "confined-folder-cli");
-    let before =
-        engram::source::inspect(fixture.path(), std::time::Duration::from_secs(30)).source_id;
-    assert!(before.is_some());
+    let before = source_identity(fixture.path());
     for path in [
         fixture.path().join(".engram"),
         fixture.path().join("candidate"),

@@ -15,6 +15,7 @@ pub use delta::{
 pub(crate) use evidence::read_selected_evidence_remaining;
 pub use evidence::{CommitEvidenceBatch, SelectionMismatch, read_selected_evidence};
 pub use path::plain_path;
+pub(crate) use path::set_repository_ceiling;
 #[cfg(test)]
 pub(crate) use query::BEFORE_QUERY;
 pub(crate) use query::Failure as QueryFailure;
@@ -43,6 +44,8 @@ const GIT_HARDENING: &[&str] = &[
     "--no-replace-objects",
     "-c",
     "core.commitGraph=false",
+    "-c",
+    "core.longpaths=true",
     "-c",
     "core.fsmonitor=",
     "-c",
@@ -96,8 +99,6 @@ pub fn command(repository: &Path, args: &[&str]) -> Command {
     for name in CLEARED_GIT_ENVIRONMENT {
         command.env_remove(name);
     }
-    if let Some(parent) = repository.parent() {
-        command.env("GIT_CEILING_DIRECTORIES", parent);
-    }
+    set_repository_ceiling(&mut command, repository);
     command
 }

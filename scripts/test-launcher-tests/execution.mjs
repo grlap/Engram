@@ -11,7 +11,7 @@ import { completionMetadata, createRun, diagnostics, executable, executeRun, fil
 import { fixtureHome, fixtureRoot, removeFixturePath, assertTempClean } from "../test-temp.mjs";
 
 export function registerExecutionFixtures(support) {
-  const { env, entryUrl, launcher, stage, json, logPath, git, repository, rustPhaseArgs, rustWrapperFixture, parseRecord } = support;
+  const { env, entryUrl, launcher, stage, json, logPath, git, repository, rustPhaseArgs, rustPhaseCalls, rustWrapperFixture, parseRecord } = support;
 for (const code of [0, 23]) {
   test(`fixture failures report child diagnostics before cleanup (exit ${code})`, async () => {
     const original = new assert.AssertionError({ message: "original fixture assertion", actual: "actual", expected: "expected", operator: "strictEqual" });
@@ -173,12 +173,39 @@ for (const platform of ["win32", "linux"]) {
           assert.equal(result.status, 0, result.stderr);
           assert.deepEqual(calls, expected.map((args) => ({ args, cwd: root, threads: "2" })));
         };
-        assertCalls([], rustPhaseArgs);
-        for (const [index, phase] of ["ordinary", "scale-claims", "scale-roots", "scale-planning"].entries()) {
-          assertCalls(["--phase", phase], [rustPhaseArgs[index]]);
+        assertCalls([], rustPhaseCalls(platform));
+        for (const phase of ["ordinary", "scale-claims", "scale-roots", "scale-planning"]) {
+          assertCalls(["--phase", phase], rustPhaseCalls(platform, [phase]));
         }
+        // Cargo arguments select their own tests, so no isolated pass follows.
         assertCalls(["--lib", "contract", "--", "--exact"], [["--", "cargo", "test", "--lib", "contract", "--", "--exact"]]);
         assertCalls(["--PHASE", "ordinary"], [["--", "cargo", "test", "--PHASE", "ordinary"]]);
+        // A failed ordinary run ends the phase before any isolated pass.
+        {
+          if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
+          const result = spawnSync(fixture.command, [...fixture.args, "--phase", "ordinary"],
+            { cwd: root, env: { ...fixture.env, PHASE_FAIL_ORDINARY: "1" }, encoding: "utf8", windowsHide: true });
+          assert.equal(result.status, 101, result.stderr);
+          assert.deepEqual(json(fixture.callsPath).map(({ args }) => args), [rustPhaseArgs[0]]);
+        }
+        // On Windows an isolated pass that selects no tests fails the phase.
+        if (platform === "win32") {
+          if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
+          const result = spawnSync(fixture.command, [...fixture.args, "--phase", "ordinary"],
+            { cwd: root, env: { ...fixture.env, PHASE_ISOLATED_EMPTY: "1" }, encoding: "utf8", windowsHide: true });
+          assert.notEqual(result.status, 0, result.stdout);
+          assert.match(result.stderr, /selected no tests/u);
+          assert.deepEqual(json(fixture.callsPath).map(({ args }) => args), rustPhaseCalls(platform, ["ordinary"]));
+        }
+        // On Windows a failing isolated pass fails the phase with its own exit code.
+        if (platform === "win32") {
+          if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
+          const result = spawnSync(fixture.command, [...fixture.args, "--phase", "ordinary"],
+            { cwd: root, env: { ...fixture.env, PHASE_ISOLATED_FAIL: "1" }, encoding: "utf8", windowsHide: true });
+          assert.equal(result.status, 101, result.stderr);
+          assert.doesNotMatch(result.stderr, /selected no tests/u);
+          assert.deepEqual(json(fixture.callsPath).map(({ args }) => args), rustPhaseCalls(platform, ["ordinary"]));
+        }
         for (const args of [["--phase"], ["--phase", "unknown"], ["--phase", "Ordinary"], ["--phase", "ordinary", "extra"]]) {
           const { result, calls } = invoke(args);
           assert.equal(result.status, 2, result.stderr);
@@ -205,7 +232,10 @@ for (const platform of ["win32", "linux"]) {
         assert.deepEqual(saved.stages[0], json(snapshot), "the already durable ordinary result remains unchanged");
         assert.equal(saved.stages[1].code, 101);
         assert.equal(saved.stages[1].tests.failed, 1);
-        assert.deepEqual(json(fixture.callsPath).map(({ args }) => args), rustPhaseArgs.slice(0, 2));
+        assert.deepEqual(json(fixture.callsPath).map(({ args }) => args),
+          rustPhaseCalls(platform, ["ordinary", "scale-claims"]));
+        // Both invocations of the ordinary stage are counted in its one record.
+        assert.equal(saved.stages[0].tests.passed, platform === "win32" ? 2 : 1);
         const record = parseRecord(machineRecord(result.plan, result));
         assert.deepEqual(record.stages.map(({ name, state, exit, why }) => [name, state, exit, why]), [
           ["rust", "passed", "0", undefined], ["rust-scale-claims", "failed", "101", undefined],

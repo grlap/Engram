@@ -6,6 +6,79 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(all(test, windows))]
+#[test]
+fn canonical_repository_queries_keep_their_discovery_boundary() {
+    use crate::task_sync::git;
+    use std::{fs, time::Duration};
+
+    let home = crate::test_support::temp_home().unwrap();
+    let repository = home.path().join("repository");
+    let child = repository.join("child");
+    fs::create_dir_all(&child).unwrap();
+    let run = |command, name| {
+        git::run_query_command(
+            command,
+            name,
+            false,
+            None,
+            Duration::from_secs(60),
+            git::QueryStderrPolicy::ErrorOnly,
+        )
+    };
+    let repository = fs::canonicalize(&repository).unwrap();
+    let child = fs::canonicalize(&child).unwrap();
+    run(local(&repository, &["init", "--quiet"]), "init").unwrap();
+    // Git must read long retained file paths, without making its process cwd
+    // exceed Windows CreateProcess's separate working-directory limit.
+    let retained = repository
+        .join(".git")
+        .join("a".repeat(100))
+        .join("b".repeat(100))
+        .join("c".repeat(100));
+    fs::create_dir_all(&retained).unwrap();
+    let attributes = retained.join("retained.attributes");
+    fs::write(&attributes, b"* text eol=lf\n").unwrap();
+    let attributes = git::plain_path(&attributes).unwrap();
+    let setting = format!("core.attributesFile={}", attributes.to_str().unwrap());
+    for construct in [git::command, local] {
+        assert_eq!(
+            run(
+                construct(&repository, &["rev-parse", "--git-dir"]),
+                "rev-parse"
+            )
+            .unwrap(),
+            b".git\n"
+        );
+        assert_eq!(
+            run(
+                construct(
+                    &repository,
+                    &[
+                        "-c",
+                        &setting,
+                        "check-attr",
+                        "-z",
+                        "text",
+                        "--",
+                        "probe.json"
+                    ]
+                ),
+                "check-attr"
+            )
+            .unwrap(),
+            b"probe.json\0text\0set\0"
+        );
+        // The named child is not a repository. Neither constructor may fall
+        // back to its parent repository when given canonical Windows paths.
+        let error = run(construct(&child, &["rev-parse", "--git-dir"]), "rev-parse").unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<git::QueryFailure>(),
+            Some(git::QueryFailure::Nonzero { .. })
+        ));
+    }
+}
+
 pub(super) fn local(repository: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
@@ -24,6 +97,8 @@ pub(super) fn local(repository: &Path, args: &[&str]) -> Command {
             "gc.auto=0",
             "-c",
             "core.commitGraph=false",
+            "-c",
+            "core.longpaths=true",
             "-c",
             "fetch.writeCommitGraph=false",
             "-c",
@@ -97,9 +172,7 @@ pub(super) fn local(repository: &Path, args: &[&str]) -> Command {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(parent) = repository.parent() {
-        command.env("GIT_CEILING_DIRECTORIES", parent);
-    }
+    crate::task_sync::git::set_repository_ceiling(&mut command, repository);
     command
 }
 
