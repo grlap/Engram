@@ -1,0 +1,29 @@
+{
+  "id": "01a1ed1c-af6a-7a43-9207-c5d490a3acfb",
+  "external_ref": null,
+  "title": "Give a non-empty store that never exchanged a supported way to join an existing data branch",
+  "outcome": "Give a non-empty store that never exchanged a supported way to join an existing data branch",
+  "acceptance": [
+    "A host whose store already holds tasks for the project but has no own export basis and no recorded imported commit (for example DL560's TermAl store at data HEAD ba316e29) can join the published data branch by one documented route, without --empty-basis and without hand-supplied basis files, and without silently reverting or cancelling tasks the branch holds",
+    "Tasks the local store holds that the branch also holds (same ids) are reconciled, and tasks only the local store holds are either kept and exported or named in a refusal with the remedy; nothing is dropped silently",
+    "The route is covered by a behaviour test with a non-empty, never-exchanged store and a published branch, and the engram-use skill names it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

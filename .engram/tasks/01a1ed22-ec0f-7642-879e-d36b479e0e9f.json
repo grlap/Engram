@@ -1,0 +1,30 @@
+{
+  "id": "01a1ed22-ec0f-7642-879e-d36b479e0e9f",
+  "external_ref": null,
+  "title": "Read and write only the changed memory keys in ordinary incremental task-sync export and import",
+  "outcome": "Read and write only the changed memory keys in ordinary incremental task-sync export and import",
+  "acceptance": [
+    "An ordinary incremental export or import with --include-memories reads, decodes and writes only the memory keys that changed against the admitted committed basis; unchanged memory files are not read from Git or rewritten",
+    "A full memory read happens only at bootstrap or in an explicit, named rebuild; a missing or inconsistent basis refuses with a named reason instead of silently reading everything",
+    "A proportionality measurement on a fixture with at least 500 memory keys shows Git-side bytes read and decodes scaling with the changed keys, recorded on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "project-memory",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

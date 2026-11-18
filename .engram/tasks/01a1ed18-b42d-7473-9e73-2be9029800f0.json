@@ -1,0 +1,31 @@
+{
+  "id": "01a1ed18-b42d-7473-9e73-2be9029800f0",
+  "external_ref": null,
+  "title": "Incremental task-sync export of TermAl's Central data worktree runs out its 60 s budget on a Git ls-tree query",
+  "outcome": "Incremental task-sync export of TermAl's Central data worktree runs out its 60 s budget on a Git ls-tree query",
+  "acceptance": [
+    "The cause is identified from measured evidence on TermAl's Central data worktree: the number of Git processes and the time of each during one in-place `engram task-sync export .engram-data/.engram --include-memories`, and which query or phase consumes the 60 s budget",
+    "An in-place export of TermAl's Central data worktree (about 900 memories and its task set) completes within the operation limit, including while another full gate runs on Central, with no deadline raised and no retry",
+    "A behaviour test shows that the number of Git processes an export with --include-memories starts stays the same as the number of memory keys and files grows (measured at two sizes), with every existing path, mode, size, project and no-overwrite check still refusing as before"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
