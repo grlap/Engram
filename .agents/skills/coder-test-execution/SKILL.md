@@ -12,4 +12,8 @@ description: Implement code and run meaningful tests without babysitting long-ru
 5. Keep full logs as runner artifacts; bring only bounded failure diagnostics into context. Classify product, test/fixture or environment failure. Fix what the package owns in the owning worktree, rerun the affected checks, and route the rest as the project's instructions say. Never retry until green or weaken coverage.
 6. READY includes exact commit/tree, one line on why the selection covers the change, commands, results, artifact locators, remaining gaps, and any review results and finding dispositions the project requires before READY. Integration owns the final full validation of the combined change; no duplicate whole-suite run beforehand, unless the project's instructions require one.
 
+## Wait for a result
+
+Every wait names one session to wake, the exact result, and what delivers it directly to the waiter: the host's own completion (a test-run wait or a delegation wait) or a named session; no polling. Never wait for a conditional resource state: LAUNCH NOW (start at once), or its current holder sends END (its message that the resource is free) directly to the named next waiter. A foreground run the turn itself waits on is not a wait on another session. No watcher; a coordinator assigns any unnamed wait immediately.
+
 No project names or commands are hardcoded here: each repository's own instructions and launcher documentation define them.
