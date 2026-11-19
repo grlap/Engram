@@ -1,0 +1,30 @@
+{
+  "id": "01a1f0f9-918b-7c32-bee4-3247e91deb99",
+  "external_ref": null,
+  "title": "Launcher registration aborts at 8 s before the host's held-claims answer, losing the initial confirmation and native wait on the first run of a fresh named root",
+  "outcome": "Launcher registration aborts at 8 s before the host's held-claims answer, losing host credit on the first run of a fresh named root",
+  "acceptance": [
+    "scripts/test-run-registration.mjs gives the registration POST/ACK/GET a budget derived from the host's Engram operation budget (as TermAl's launcher does: 2 * engramOperationBudgetMs + 3000), so a host's typed answer after an off-lock held-claims read is received instead of a client abort",
+    "A launcher fixture shows a late host answer surfaces the host's definitive response (e.g. 409) rather than a client-side abort, using an injected or configurable budget/delay, with no real multi-second wait in the test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "host-integration",
+    "launcher",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

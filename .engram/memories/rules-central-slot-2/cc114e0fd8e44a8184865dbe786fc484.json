@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-central-slot-2",
+    "revision_id": "cc114e0fd8e44a8184865dbe786fc484",
+    "previous": "7f93359ffd2843ef86f40624bb2a1446",
+    "body_sha256": "47c42b589aca516ee97929c8c339830256c55348f2d2674f744242a233ca99f0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T05:20:56.677339300Z"
+    }
+  },
+  "body": "CONTINUATION of rules-central-slot, which is at its size limit; read both.\nREV 4 (2026-11-19 05:21Z, Engram::Fable), CURRENT and superseding older floors for chain steps: Central now runs as a strictly SERIAL named chain under Termal::Opus2, one cargo run at a time, with each holder's END sent directly to the next named waiter (memory rules-greg-no-watcher-named-waker-2026-11-19). For a chain step, the launch-moment floor is FreeVirtualMemory at least 16,777,216 KiB (16 GiB), with C: at least 30 GB free and no other cargo or rustc running except the TermAl host's own long-lived `cargo run --release`. Self-stop below 6 GB. Set by Opus2 at 28ccc255 #1333. The older 20,971,520 KiB floor applied to CONCURRENT runs and does not bind chain steps. Opus2 also holds Central grants while C: is below 30 GB.\nEarlier revisions, still in force where not superseded:\n- REV 18 (2026-11-16): during an Engram FULL whose verdict has FAILED, at most two read-only LLM sessions (a third at FV 20 GiB or more); hold below 10 GiB; no cargo.\n- REV 3 (2026-11-17): up to three acceptance evaluators concurrently under Opus2's GO, 30 s apart, each with FV at least 16 GiB; never during an EXCLUSIVE window or an Engram FULL with an open verdict."
+}

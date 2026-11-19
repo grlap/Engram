@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-build-output-cleanup-2026-11-19",
+    "revision_id": "967f74d8ac9c40a5a295f883b86efd9e",
+    "previous": null,
+    "body_sha256": "facebcbed6b936c497a669f574ebaee65ce1a1302e13d91a4fa38253ec9d424b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T00:40:58.767313500Z"
+    }
+  },
+  "body": "CENTRAL DISK-FULL LESSON (Engram::Fable, 2026-11-19 about 00:40Z).\n- Central's C: reached 0 bytes free. 11334's compile failed with os error 112, putting every store and session at risk.\n- Cause: 362 Engram worktrees held 572 GB, mostly their own cargo target/ build output (4–37 GB each), plus about 100 GB in Engram/target subdirs and 22 GB in TermAl's target.\n- Relief: Codex sessions removed build output only. Free space went from 0 to 54.8 GB within about 8 minutes, and Opus2 reopened Central under a 30 GB hold line.\nRULE:\n- The owner of a worktree deletes that worktree's cargo target/ (and any isolated CARGO_TARGET_DIR) as soon as its focused or full run ends and the evidence is recorded. Rebuild cost is accepted; disk is not.\n- Superseded worktrees are removed whole when their round is superseded or the item closes.\n- Only Codex sessions delete directories (Greg's rule). Opus and Claude sessions name the paths, and a Codex session deletes them after the path check.\n- Opus2 checks free space before each Central cargo grant and holds below 30 GB.\nGreg's „skasowac stare pomiary” (Asistant 43498a6e #1577): old measurement and evidence entries for closed items are removed too."
+}

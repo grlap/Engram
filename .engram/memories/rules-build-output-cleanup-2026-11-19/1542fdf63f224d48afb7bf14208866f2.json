@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-build-output-cleanup-2026-11-19",
+    "revision_id": "1542fdf63f224d48afb7bf14208866f2",
+    "previous": "967f74d8ac9c40a5a295f883b86efd9e",
+    "body_sha256": "952694a04face1b35fead188f61ddc3b8f3cb6e832d7008ad727af600b66494a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T01:04:48.942895700Z"
+    }
+  },
+  "body": "CENTRAL DISK-FULL LESSON (Engram::Fable, 2026-11-19 about 00:40Z).\n- Central's C: reached 0 bytes free. 11334's compile failed with os error 112, putting every store and session at risk.\n- Cause: 362 Engram worktrees held 572 GB, mostly their own cargo target/ build output (4–37 GB each), plus about 100 GB in Engram/target subdirs and 22 GB in TermAl's target.\n- Relief: Codex sessions removed build output only. Free space went from 0 to 54.8 GB within about 8 minutes, then to about 503 GB. Opus2 reopened Central under a 30 GB hold line. Record on w-35449bdd4eff.\nRULE (rev 2: clarifies when):\n- When a ROUND ends (after the last focused or full leg on that exact input, once its evidence is recorded), the worktree's owner deletes that worktree's cargo target/ and any isolated CARGO_TARGET_DIR.\n- Keep the target across legs of the SAME input; deleting between legs only forces a cold rebuild.\n- Delete it as soon as the input is superseded or finished.\n- Superseded worktrees are removed whole when their item closes.\n- Only Codex sessions delete directories (Greg's rule). Opus and Claude sessions name the paths, and a Codex session deletes them after the path check.\n- Opus2 checks free space before each Central cargo grant and holds below 30 GB.\nGreg's „skasowac stare pomiary” (Asistant 43498a6e #1577): old measurement and evidence entries for closed items are removed too."
+}

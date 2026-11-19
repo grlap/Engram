@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-build-output-cleanup-2026-11-19",
+  "head": {
+    "state": "active",
+    "chain": [
+      "967f74d8ac9c40a5a295f883b86efd9e",
+      "1542fdf63f224d48afb7bf14208866f2"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-git-launches-constant-2026-11-18",
+    "revision_id": "01a43ba19c944a79947aee58d0c417f1",
+    "previous": null,
+    "body_sha256": "86f7d88203eac8faab78253a2763fdac862d07c47e8f1e737636ec768ac9d1e8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-18T22:03:38.821123200Z"
+    }
+  },
+  "body": "GREG, 2026-11-18, on task-sync Git cost. Verbatim:\n- Asistant 43498a6e #1570: „ale nadal ilosc procesow git nie powina zalezyc wogole od ilosci taskow”.\n- Asistant #1572: „+ Kimi, nie chce pieprzonego grupowania, cudowania. nadal nie rozumiem po co odapalmy git przy exporcie w ten spob. grupowanie NIC NAM NIE DAJE WTF”.\n- Said directly to Kimi::Consultant, relayed at c15db92c #357: „KORWA, czemu nie pilnujesz tego co oni wyrabiaja”.\nRULE:\n- The number of git launches in task-sync export and import is constant, independent of total AND changed task counts. Data volume may grow with changes.\n- Batching or chunking is NOT a fix. Remove the reason git is called: export takes changes from the DB feed, and the store records its own export commit and last applied commit. Import uses one diff, with changed files read from disk.\nSUPERVISION:\n- READY for such work is valid only with a deterministic count test (equal launches at K = 1/100/2,000 changed of N = 2,000, plus N = 200 vs 2,000) present and passing on the exact candidate, plus a list of every git call on the ordinary path.\n- Kimi inspects the diff before the review pair.\n- Coordinators check that a fix removes the growth before accepting a plan; don't accept rounds that only shave it.\nItems: w-808add714773 (export) and w-45fe538db32a (import)."
+}

@@ -1,14 +1,13 @@
 {
   "id": "01a1db21-e24f-7712-b62e-45fe538db32a",
   "external_ref": null,
-  "title": "Route ordinary task-sync export and import through the proportional delta path, with Git-side reads by diff",
-  "outcome": "Route ordinary task-sync export and import through the proportional delta path, with Git-side reads by diff",
+  "title": "Import changed task-sync files with constant Git starts",
+  "outcome": "Apply only changed task-sync planning from the recorded committed basis, with a constant Git process count independent of total and changed tasks",
   "acceptance": [
-    "An ordinary export after a recorded exchange finds the changed tasks from the indexed project-feed interval since that exchange, using a rebuildable affected-ids projection that includes tombstones for changes the feed doesn't attribute to a work item. It reads, decodes, writes or removes only those tasks' documents; unchanged task files are not read, rewritten or touched. project.json records the feed cut.",
-    "An ordinary incremental import goes through the Git commit path. The changed paths come from the diff of .engram/ between the last-applied source commit and the incoming commit, and only those blobs are read and decoded, plus project.json and any document a change references. Unchanged task documents are not opened or parsed, and deletions are applied. A plain directory import without that commit context is either bootstrap (empty basis) or an explicit, named rebuild.",
-    "A full scan happens only at bootstrap or in an explicit, named rebuild. A missing, gapped, stale or inconsistent cursor or basis is refused with a named reason, never answered with a silent full scan.",
-    "Incoming delta retention, outgoing export-commit recording and delta conflict resolution no longer read the whole task snapshot at a commit. Each starts from the recorded basis inventory root, takes the Git diff to the selected commit, and computes the new root additively from the old and new blobs of the changed paths. It requires the set of changed paths to equal the payload keys exactly, and is sound by induction from the one full check at bootstrap.",
-    "The proportionality harness on a fixture of at least 2,000 tasks counts Git-side blob reads and decodes, as well as store decodes, for export, import, repeat and the reverse direction. Each count scales with the change set, not the project size, and the numbers are recorded on the parent item."
+    "An ordinary import starts from the recorded last-applied commit or the confirmed own export commit for this project and profile. One raw Git diff to the incoming tip selects changed paths, modes and new object IDs. Read only required changed A/M JSON and graph support from the clean worktree or one shared streaming Git reader with no chunks. If the import needs Git bodies for selected memory or evidence inputs, it uses the same stream. Apply task removals from the diff.",
+    "Use the keyed SQLite comparison baseline and indexed feed cut to admit changed planning and report conflicts. Check exact Git paths, ordinary file modes, new values and the selected tip before applying. Preserve held-task admission, local changes owed to the next export, and complete-publication subtree identity through the export owner's recorded basis contract.",
+    "An ordinary import performs no per-file publication history search or speculative adoption. An unconfirmed, discarded or altered own export, or a missing, stale, gapped or inconsistent basis, gives a typed refusal with the explicit recovery. A complete read is limited to empty bootstrap or a named rebuild with its own saved basis.",
+    "Deterministic Git-start hook tests assert identical ordinary-import process counts on the same route for K=1, 100 and 2,000 changed tasks at N=2,000, and for the same change set at N=200 and N=2,000. Include zero-blob and positive selected-blob controls, assert that unrelated task documents stay unopened, and record the counts on the parent item."
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,

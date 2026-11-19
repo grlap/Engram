@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-watcher-named-waker-2026-11-19",
+  "head": {
+    "state": "active",
+    "chain": [
+      "c48be056326c47ea9bb8c826458a1c89",
+      "2981932a2d314276ac7e42ec4f4584e4"
+    ]
+  }
+}

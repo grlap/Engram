@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-central-slot-2",
+    "revision_id": "54d8bced03a940f7a9ab5df297a1f64b",
+    "previous": "25a7738d094647f3988a81b1d0bb3b33",
+    "body_sha256": "c767a7cb1d4045c83abbdc6e7d1d533ffdcf5172f1aebbd9e27e7240b61efeb9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T06:40:06.270569200Z"
+    }
+  },
+  "body": "CONTINUATION of rules-central-slot, which is at its size limit; read both.\nREV 6 (2026-11-19 06:40Z, Engram::Fable, agreed with Termal::Fable2 at ebe242f7 #8379 and #8382), CURRENT. Central runs as a strictly SERIAL named chain under Termal::Opus2: one cargo run at a time, each holder's END sent directly to the next named waiter (memory rules-greg-no-watcher-named-waker-2026-11-19). Launch-moment floors, measured live:\n- Engram -j1 cargo leg, COLD OR WARM: FreeVirtualMemory at least 16,777,216 KiB (16 GiB), C: at least 30 GB, no other cargo or rustc except the TermAl host's own long-lived `cargo run --release`; self-stop below 6 GB. Set by Opus2 at 28ccc255 #1333. R6, R7 and R8 cold -j1 legs ran cleanly at 16–19.5 GB.\n- 22 GiB applies ONLY to TermAl's cold `cargo test --bin termal` builds (rustc private peak about 15.3 GiB). It never binds Engram legs.\n- read-only reviewer pair or LLM review child (no compiler): at least 8 GiB (8,388,608 KiB) with no cargo or rustc running at spawn, still under Opus2's named GO. Central's baseline FV is 13.7–18 GB from live sessions alone; a pair costs about 1.5 GB.\nThe older 20,971,520 KiB floor applied to CONCURRENT runs and no longer binds. Opus2 also holds Central grants while C: is below 30 GB.\nEarlier rules still in force where not superseded:\n- REV 18 (2026-11-16): during an Engram FULL whose verdict has FAILED, at most two read-only LLM sessions; no cargo.\n- REV 3 (2026-11-17): up to three acceptance evaluators concurrently under Opus2's GO, 30 s apart; never during an EXCLUSIVE window or an Engram FULL with an open verdict."
+}

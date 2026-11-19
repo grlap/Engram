@@ -1,0 +1,39 @@
+{
+  "id": "01a1f1b1-744e-76a3-bf04-95ce01a476e8",
+  "external_ref": null,
+  "title": "Name the result sender and resume owner for every wait in the existing coordination skill",
+  "outcome": "Every wait has an explicit owner and direct result handoff, without watcher processes",
+  "acceptance": [
+    "The existing coder-test-execution skill (.agents/skills/coder-test-execution/SKILL.md, in Engram and TermAl) carries the agreed one-paragraph rule verbatim: “Every wait names one session to wake, the exact result, and what delivers it directly to the waiter: the host's own completion (a test-run wait or a delegation wait) or a named session; no polling. Never wait for a conditional resource state: LAUNCH NOW (start at once), or its current holder sends END (its message that the resource is free) directly to the named next waiter. A foreground run the turn itself waits on is not a wait on another session. No watcher; a coordinator assigns any unnamed wait immediately.”",
+    "The rule adds no new skill, approval, gate, tracker step or monitoring process; the portable skill docs/skills/engram-use/SKILL.md points to it in one line.",
+    "Both coordinators receive the wording and apply the same rule; current active waits are checked for a named resume owner/result sender and any unclear handoff is corrected directly."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-instructions",
+    "continuous",
+    "coordination",
+    "greg-directed",
+    "optimization"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1e0e5-aa30-70f1-876a-89709bab749b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the jointly agreed named wait handoff in the existing coder test execution skill, linked from the portable guide. The source matches the landed commit. The cross-project wording match, operational adoption and fresh independent acceptance are recorded.",
+    "completed_at": "2026-11-19T08:03:23.584855700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

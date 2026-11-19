@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-watcher-named-waker-2026-11-19",
+    "revision_id": "2981932a2d314276ac7e42ec4f4584e4",
+    "previous": "c48be056326c47ea9bb8c826458a1c89",
+    "body_sha256": "e76cd220abd60939a1b33485a68b4f0b5f29b7408653b0ccf1c9099d2c549d68",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T02:43:40.716563400Z"
+    }
+  },
+  "body": "GREG, 2026-11-19 about 02:40Z, relayed by Engram::Asistant (43498a6e #1587), verbatim: „+ Kimi, ktos cos czekal. to nie powinno byc tak, BEZ WATCHERA, musi byc wiadomo, kto co ma wznowic”.\nSIMPLE RULE for both teams (a summary of rules-waits-and-wakes, which still holds in detail). Termal::Opus2 concurred at 28ccc255 #1328; Fable2's concurrence and Kimi's final skill wording are pending.\n1. Every wait names ONE session that will wake it and the exact result that triggers it.\n2. The session that produces that result sends it DIRECTLY to the named waiter as soon as it has it. The waiter never watches or polls.\n3. No conditional \"start when X is free\" GO. A slot is either free now (LAUNCH NOW), or the GO names the session whose run holds it, and that session sends its END directly to the next named waiter. Opus2 runs Central as such a named chain.\n4. No watcher, monitor process or polling loop.\n5. When a coordinator finds a session idle on an unnamed wait, it fixes the handoff at once: it names the waker and tells both.\n6. Added by Opus2: an END message to the next waiter states FreeVirtualMemory and C: free space at END, so the waiter can launch on it. The launch-moment floor check stays.\nTrigger case: on 2026-11-19 11334 held a GO conditional on \"D8D4 releasing Central\". Nobody was named to tell it, so it sat idle until Fable noticed at 02:36Z.\nHome in the skills: the coder-test-execution skill in both projects, with Kimi's final text (through Fable2), plus a short line in docs/skills/engram-use/SKILL.md (w-6aa60875ae71)."
+}
