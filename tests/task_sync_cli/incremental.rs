@@ -72,6 +72,12 @@ impl Host {
         work(&self.home, &self.marker, args);
     }
 
+    fn add_ref(&self, title: &str) -> String {
+        let output = work(&self.home, &self.marker, &["add", title, "--json"]);
+        let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+        receipt["work"]["short_ref"].as_str().unwrap().to_owned()
+    }
+
     fn title(&self, id: engram::WorkId) -> String {
         SqliteStore::open(project_database_path(
             &self.home,
@@ -90,6 +96,15 @@ impl Host {
     fn commit(&self, subject: &str) {
         self.git(&["add", "-A", "--", ".engram"]);
         self.git(&["commit", "-m", subject]);
+    }
+
+    #[track_caller]
+    fn commit_and_confirm_export(&self, args: &[&str], subject: &str) {
+        assert_export_commit_first(&self.sync("export", args));
+        self.commit(subject);
+        let confirmed = self.receipt("export", args);
+        assert_eq!(confirmed["route"], "unchanged");
+        assert_eq!(confirmed["written"], 0);
     }
 
     /// The data branch's current commit.
@@ -312,13 +327,11 @@ fn task_sync_cli_a_discarded_note_on_a_new_child_admits_another_hosts_edit_of_it
     };
     // A publishes a new parent and its new child in one commit, without
     // importing it.
-    a.work(&["add", "Parent on A"]);
-    assert_eq!(a.receipt("export", &NOTES_A)["written"], 1);
-    let parent = id_of(&a, "Parent on A");
-    let parent_ref = parent.0.to_string();
+    let parent_ref = a.add_ref("Parent on A");
     a.work(&["add", "Child on A", "--under", &parent_ref]);
-    assert!(a.receipt("export", &NOTES_A)["written"].as_u64().unwrap() >= 1);
-    a.commit("Add a parent and a child on A");
+    assert_eq!(a.receipt("export", &NOTES_A)["written"], 2);
+    a.commit_and_confirm_export(&NOTES_A, "Add a parent and a child on A");
+    let parent = id_of(&a, "Parent on A");
     let child = id_of(&a, "Child on A");
     let child_ref = child.0.to_string();
     // A notes the child and exports again; that export is discarded.
@@ -390,13 +403,11 @@ fn task_sync_cli_another_hosts_child_of_a_new_child_with_a_discarded_note_is_adm
     };
     // A publishes a new parent and its new child in one commit, without
     // importing it, then notes the child in an export that is discarded.
-    a.work(&["add", "Parent on A"]);
-    assert_eq!(a.receipt("export", &NOTES_A)["written"], 1);
-    let parent = id_of(&a, "Parent on A");
-    let parent_ref = parent.0.to_string();
+    let parent_ref = a.add_ref("Parent on A");
     a.work(&["add", "Child on A", "--under", &parent_ref]);
-    assert!(a.receipt("export", &NOTES_A)["written"].as_u64().unwrap() >= 1);
-    a.commit("Add a parent and a child on A");
+    assert_eq!(a.receipt("export", &NOTES_A)["written"], 2);
+    a.commit_and_confirm_export(&NOTES_A, "Add a parent and a child on A");
+    let parent = id_of(&a, "Parent on A");
     let child = id_of(&a, "Child on A");
     let child_ref = child.0.to_string();
     a.work(&["claim", &child_ref]);
@@ -469,17 +480,13 @@ fn task_sync_cli_a_discarded_note_beside_a_reversed_prerequisite_admits_another_
             .id
     };
     // Both hosts hold First waiting for Second.
-    a.work(&["add", "First"]);
-    a.work(&["add", "Second"]);
-    assert!(a.receipt("export", &NOTES_A)["written"].as_u64().unwrap() >= 2);
-    let first = id_of(&a, "First");
-    let first_ref = first.0.to_string();
-    let second = id_of(&a, "Second");
-    let second_ref = second.0.to_string();
+    let first_ref = a.add_ref("First");
+    let second_ref = a.add_ref("Second");
     a.work(&["update", &first_ref, "--after", &second_ref]);
-    assert!(a.receipt("export", &NOTES_A)["written"].as_u64().unwrap() >= 1);
-    a.commit("First waits for Second on A");
-    assert_eq!(a.receipt("import", &[])["route"], "incremental");
+    assert_eq!(a.receipt("export", &NOTES_A)["written"], 2);
+    a.commit_and_confirm_export(&NOTES_A, "First waits for Second on A");
+    let first = id_of(&a, "First");
+    let second = id_of(&a, "Second");
     b.merge_from(&a);
     assert_eq!(b.receipt("import", &[])["route"], "incremental");
     // A starts on Second while it waits for nothing, reverses the order and
@@ -944,7 +951,12 @@ fn task_sync_cli_ordinary_exchange_retries_held_tasks_keeps_local_edits_and_refu
     ]);
     let (code, message) = a.refusal("export", &[]);
     assert_eq!(code, "task_sync_incremental_basis_unavailable");
-    assert!(message.contains("import them first"), "{message}");
+    assert!(
+        message.contains("does not match the admitted export basis")
+            && message.contains("run `engram task-sync import` first")
+            && message.contains("`engram task-sync export --rebuild`"),
+        "{message}"
+    );
     assert_eq!(a.receipt("import", &[])["route"], "incremental");
     assert_eq!(a.title(id("Third")), "Third, edited again on B");
     assert_eq!(a.title(id("First")), "First, edited on A");
@@ -1010,7 +1022,9 @@ fn task_sync_cli_ordinary_exchange_names_an_exit_for_every_conflict() {
         .unwrap()
         .id;
     a.commit("Add Child on A");
-    assert_eq!(a.receipt("import", &[])["route"], "incremental");
+    let confirmed = a.receipt("import", &[]);
+    assert_eq!(confirmed["route"], "unchanged");
+    assert_eq!(confirmed["changed"], false);
     let reference = |id: engram::WorkId| id.0.to_string();
 
     // A first export over another host's planning is refused by name: the
@@ -1048,6 +1062,10 @@ fn task_sync_cli_ordinary_exchange_names_an_exit_for_every_conflict() {
     assert_eq!(code, "task_sync_divergent_planning");
     let set_aside = format!("--source={before_merge}");
     assert!(message.contains(&set_aside), "{message}");
+    assert!(
+        message.contains("and commit that; import, then export and commit;"),
+        "{message}"
+    );
     assert!(message.contains("git revert"), "{message}");
     let merged = a.head();
     a.git(&[
@@ -1060,6 +1078,9 @@ fn task_sync_cli_ordinary_exchange_names_an_exit_for_every_conflict() {
     ]);
     a.git(&["commit", "-m", "Set B's planning aside"]);
     let aside = a.head();
+    assert_eq!(a.receipt("import", &[])["route"], "incremental");
+    assert_eq!(a.title(child), "Child");
+    assert_eq!(a.title(parent), "Parent, edited on A");
     // A starts on Other before this export, which takes its feed position
     // without rewriting its unchanged file.
     a.work(&["claim", &reference(other)]);
@@ -1512,10 +1533,10 @@ fn task_sync_cli_an_exact_revert_of_a_rebuilt_folder_is_imported_after_a_later_i
     b.commit("Rename Shared back on B");
     assert_eq!(fs::read(b.folder().join(&file)).unwrap(), original);
 
-    // The incremental export since the rebuild does not hide it: A still
-    // imports the folder completely and takes B's revert.
+    // The incremental export adopts A's exact rebuild commit. Import compares
+    // B's revert against that planning and takes the revert incrementally.
     a.merge_from(&b);
-    assert_eq!(a.receipt("import", &[])["route"], "complete");
+    assert_eq!(a.receipt("import", &[])["route"], "incremental");
     assert_eq!(a.title(shared), "Shared");
     assert_eq!(a.title(other), "Other, renamed on A");
 }

@@ -1050,9 +1050,13 @@ Export captures task and memory text from the same SQLite snapshot and withholds
 a whole key when one of its historical task targets is outside the selected task
 profile. After the ordinary fetch and agent merge of the data branch, use
 `task-sync import MAIN/.engram-data/.engram --include-memories`, the
-incremental route once this host has imported a committed folder. A store's
-first import, including the first publisher's after it only exported, is the
-complete route and adds `--basis BASIS/project.json`. Tasks apply before
+incremental route once this host has imported a committed folder or confirmed
+its own exact export commit. The first publisher can commit the exact
+task and memory output of its retained export and run ordinary import to
+confirm that commit. If the commit also carries evidence packs, import it
+through the ordinary comparison route when a basis exists. A store without
+a committed comparison basis or an exact export commit uses the complete
+route and adds `--basis BASIS/project.json`. Tasks apply before
 their dependent memories. This route
 does not fetch, merge, commit or push. Git authority remains separate.
 Once the committed data HEAD advertises this capability, task-only export
@@ -1258,6 +1262,16 @@ replacement; heads are replaced atomically only after revision files exist.
 If export is interrupted, normal import/export refuses incomplete or pending
 files. Retain the complete pre-export `.engram` folder, then explicitly run the
 same export with `--include-memories --memory-recovery-basis RETAINED/.engram`.
+For an unfinished or uncommitted combined export, add `--rebuild` to the
+recovery command to replace that output from the local store. This includes an
+interruption between the task and memory writers or loose per-memory staging
+that prevents confirmation. A task-only export can be committed before retrying
+the task-only command.
+If the task phase was committed before both writers finished, preserve the
+commit and its exported task and envelope files before restoring the original
+parent and rebuilding. Keep the exported files loose so recovery can check the
+staged prefixes. Stop if those files cannot be preserved. Preserve unrelated
+staging in repository scratch before retrying.
 Recovery derives the intended output again from canonical local history and
 that selected basis. It checks the whole directory before cleaning only matching
 pending files or a torn newly created revision. Every current head must match
@@ -1272,8 +1286,8 @@ file: the intended envelope comes from the current task envelope plus the memory
 profile, and the current task documents must match that envelope's inventory.
 The retained folder binds the memory basis and project; its older task envelope
 need not equal a newly exported task component. Staging bytes must prefix the
-current intended envelope. Capability recovery runs only when such staging exists.
-Other root files still refuse.
+current intended envelope. Export checks its comparison basis before removing
+capability staging. Other root files still refuse.
 There is no private mapping/checkpoint, body banner or rewrite of stored history.
 An unchanged recovery retry is idempotent. The combined task/memory text remains
 bounded by 128 MiB, with the existing per-file limits.

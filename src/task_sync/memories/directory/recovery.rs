@@ -149,12 +149,10 @@ pub(super) fn validate(
     Ok(cleanup)
 }
 
-pub(super) fn prepare(
+pub(super) fn remove_staging(
     root: &PrivateDirectory,
-    basis: &BTreeMap<String, KeyHistory>,
-    selected: &BTreeMap<String, KeyHistory>,
+    cleanup: Vec<(String, String)>,
 ) -> Result<()> {
-    let cleanup = validate(root, basis, selected)?;
     if cleanup.is_empty() {
         return Ok(());
     }

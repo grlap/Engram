@@ -152,7 +152,7 @@ mod task_sync_folder_counts;
 mod task_sync_folder_export;
 #[cfg(test)]
 mod task_sync_folder_recovery;
-pub use task_sync_folder_export::{FolderExportReceipt, FolderMemoryExport};
+pub use task_sync_folder_export::{FolderExportReceipt, FolderMemoryAdmission, FolderMemoryExport};
 mod task_sync_folder_import;
 pub use task_sync_folder_import::{FolderImportReceipt, MemoryImport};
 mod task_sync_origin;

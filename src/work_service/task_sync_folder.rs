@@ -184,8 +184,17 @@ impl LocalWorkService {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<crate::task_sync::memories::FolderImportOutcome, StoreError> {
-        self.import_task_sync_folder_with_head(folder, basis, memories, options, dry_run, now, None)
-            .map(|(outcome, _)| outcome)
+        self.import_task_sync_folder_with_head(
+            folder,
+            basis,
+            memories,
+            options,
+            dry_run,
+            now,
+            None,
+            || Ok(()),
+        )
+        .map(|(outcome, _)| outcome)
     }
 
     /// [`Self::import_task_sync_folder_with_memories`], recording `head`'s
@@ -195,7 +204,7 @@ impl LocalWorkService {
         clippy::too_many_arguments,
         reason = "the complete import's own inputs beside the folder head it records"
     )]
-    pub(super) fn import_task_sync_folder_with_head(
+    pub(super) fn import_task_sync_folder_with_head<E: From<StoreError>>(
         &self,
         folder: &FolderExchange,
         basis: &DestinationBasis,
@@ -204,12 +213,13 @@ impl LocalWorkService {
         dry_run: bool,
         now: DateTime<Utc>,
         head: Option<CompleteHead<'_>>,
+        check_tip: impl FnOnce() -> Result<(), E>,
     ) -> Result<
         (
             crate::task_sync::memories::FolderImportOutcome,
             Option<crate::storage::FolderHead>,
         ),
-        StoreError,
+        E,
     > {
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
@@ -217,11 +227,13 @@ impl LocalWorkService {
             DestinationBasis::Recorded(recorded) => {
                 if recorded.project_id != self.project_id {
                     return Err(TaskSyncRefusal::OriginMismatch
-                        .invalid("task folder basis belongs to another project"));
+                        .invalid("task folder basis belongs to another project")
+                        .into());
                 }
                 if recorded.profile.include_notes != folder.profile.include_notes {
                     return Err(TaskSyncRefusal::DivergentPlanning
-                        .invalid("task folder basis note selection differs from the folder's"));
+                        .invalid("task folder basis note selection differs from the folder's")
+                        .into());
                 }
                 // The basis is this host's recorded folder head with nothing
                 // changed since it. Its root and fingerprint include held
@@ -278,13 +290,14 @@ impl LocalWorkService {
                         {
                             return Err(TaskSyncRefusal::DivergentPlanning.invalid(
                                 "local planning changed since this host's own export named by --basis",
-                            ));
+                            ).into());
                         }
                         current.export_basis
                     }
                     (None, None, None) => {
                         return Err(TaskSyncRefusal::InvalidGraph
-                            .invalid("task folder basis carries no basis"));
+                            .invalid("task folder basis carries no basis")
+                            .into());
                     }
                 };
                 (export_basis, recorded.profile.clone())
@@ -315,8 +328,8 @@ impl LocalWorkService {
         match head {
             // A dry run rolls everything back, so it records no head either.
             Some(head) if !dry_run => {
-                let applied =
-                    store.apply_task_sync_folder_complete(crate::storage::FolderCompleteApply {
+                let applied = store.apply_task_sync_folder_complete_checked(
+                    crate::storage::FolderCompleteApply {
                         apply: request,
                         idempotency_key: &key,
                         previous: head.previous,
@@ -327,7 +340,9 @@ impl LocalWorkService {
                         rebuild: head.rebuild,
                         memories,
                         memory_options: options,
-                    })?;
+                    },
+                    check_tip,
+                )?;
                 Ok((
                     crate::task_sync::memories::FolderImportOutcome {
                         tasks: applied.result,
@@ -338,8 +353,8 @@ impl LocalWorkService {
                 ))
             }
             _ => Ok((
-                store.apply_task_sync_folder_with_memories(
-                    request, &key, memories, options, dry_run,
+                store.apply_task_sync_folder_with_memories_checked(
+                    request, &key, memories, options, dry_run, check_tip,
                 )?,
                 None,
             )),

@@ -15,11 +15,16 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{
-    LocalWorkService, task_sync_folder::CompleteHead, task_sync_folder_export::lock_folder,
+    LocalWorkService,
+    task_sync_folder::CompleteHead,
+    task_sync_folder_export::{lock_folder, unbound_rebuild_basis_required},
 };
 use crate::{
     WorkId,
-    storage::{FolderDeltaApply, FolderDisk, FolderHead, FolderSource, TaskSyncImportResult},
+    storage::{
+        FolderDeltaApply, FolderDisk, FolderExportConfirmation, FolderHead, FolderSource,
+        TaskSyncImportResult,
+    },
     task_sync::{
         TaskSyncRefusal,
         data_worktree::DataWorktree,
@@ -29,6 +34,23 @@ use crate::{
         progress::ExportProfile,
     },
 };
+
+fn rebuilt_commit_required() -> anyhow::Error {
+    TaskSyncRefusal::CommitContextRequired
+        .invalid("commit the rebuilt folder in the data worktree before importing it")
+        .into()
+}
+
+fn committed_recovery_required(include_memories: bool) -> anyhow::Error {
+    let memories = if include_memories {
+        " --include-memories"
+    } else {
+        ""
+    };
+    TaskSyncRefusal::CommitContextRequired
+        .invalid(format!("recovery requires the clean committed task and memory folder; commit or set aside loose files, then retry `engram task-sync import --basis OWN_EXPORT/project.json{memories}` with your saved envelope"))
+        .into()
+}
 
 /// What one folder import did, and by which route.
 #[derive(Debug, Serialize)]
@@ -92,19 +114,16 @@ impl LocalWorkService {
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let _lock = lock_folder(data)?;
-        if dry_run {
-            // A dry run writes nothing, so it cannot finish an interrupted
-            // export first, and without that it would preview the wrong folder.
-            if directory::FolderWrite::pending(data)?.is_some() {
-                return Err(TaskSyncRefusal::IncrementalBasisUnavailable
-                    .invalid(
-                        "an interrupted export is still pending in the data worktree; run `engram task-sync export` or an import without --dry-run to finish it first",
-                    )
-                    .into());
-            }
+        directory::FolderWrite::require_no_unowned_journal(data)?;
+        if memories.is_none() {
+            let saved_basis = matches!(basis, Some(DestinationBasis::Recorded(_)));
+            self.require_task_only_folder(data, "import", saved_basis, now)?;
         } else {
-            self.finish_interrupted_export(data, now)?;
+            crate::task_sync::memories::directory::require_no_pending_publication(data)?;
         }
+        directory::require_no_capability_staging(data)?;
+        let automatic = basis.is_none();
+        let recovery = self.prepare_folder_import(data, basis, rebuild, dry_run, now)?;
         let envelope = data.checkout.join(".engram").join("project.json");
         let incoming_basis = directory::read_folder_basis(&envelope)
             .with_context(|| format!("reading {}", envelope.display()))?;
@@ -113,6 +132,9 @@ impl LocalWorkService {
                 .invalid("memory-capable profile requires explicit --include-memories")
                 .into());
         }
+        let confirmation = recovery.confirmation.as_ref().filter(|proof| {
+            proof.head.profile.include_notes == incoming_basis.profile.include_notes
+        });
         let no_memories: (
             BTreeMap<String, KeyHistory>,
             BTreeMap<String, ImportOptions>,
@@ -124,7 +146,15 @@ impl LocalWorkService {
             include_notes: incoming_basis.profile.include_notes,
             origin_machine: None,
         };
-        let recorded = self.task_sync_folder_head(&lookup, now)?;
+        let recorded = match confirmation {
+            Some(proof) => Some((proof.expected.clone(), proof.comparison_head())),
+            None => self.task_sync_folder_head(&lookup, now)?,
+        };
+        let import_basis = recorded
+            .as_ref()
+            .map(|(_, head)| self.read_store_at(now)?.task_sync_folder_import_basis(head))
+            .transpose()?
+            .flatten();
         // The alias local planning is rendered under for admission: this
         // host's own, or the folder's while this host has exported none.
         let rendering = |head: &FolderHead| ExportProfile {
@@ -135,35 +165,37 @@ impl LocalWorkService {
                 .or_else(|| incoming_basis.profile.origin_machine.clone()),
             ..head.profile.clone()
         };
-        // A complete export since the last import wrote a folder no commit
-        // tells published from discarded, so the commits since cannot show
-        // another host returning one of its tasks to the source's bytes.
-        // Such a head is imported completely, against itself as the basis.
-        let rewritten = recorded
-            .as_ref()
-            .is_some_and(|(_, head)| head.source.is_some() && head.rewritten);
+        if automatic
+            && recorded
+                .as_ref()
+                .is_some_and(|(_, head)| head.rebuild_needs_complete_import())
+        {
+            return Err(unbound_rebuild_basis_required(memories.is_some()));
+        }
+        let rewritten = recorded.as_ref().is_some_and(|(_, head)| {
+            head.rebuild_needs_complete_import() || (head.rewritten && import_basis.is_some())
+        });
         // An explicit basis selects the complete route, which records a
         // fresh head; without one, a head that names an imported commit
         // continues incrementally.
-        let incremental = !rebuild
-            && basis.is_none()
-            && !rewritten
-            && recorded
-                .as_ref()
-                .is_some_and(|(_, head)| head.source.is_some());
+        let incremental = !rebuild && basis.is_none() && !rewritten && import_basis.is_some();
         if incremental {
             let (id, head) = recorded.context("incremental import without a head")?;
-            return self.import_incremental(
+            let receipt = self.import_incremental(
                 data,
                 &id,
                 &head,
+                &import_basis.context("incremental import without a source")?,
                 &rendering(&head),
                 dry_run,
                 selected,
                 options,
                 memories.map_or(0, |memories| memories.bytes),
+                confirmation,
                 now,
-            );
+            )?;
+            recovery.finish(data)?;
+            return Ok(receipt);
         }
         let own_head;
         let basis = match (basis, &recorded) {
@@ -190,29 +222,54 @@ impl LocalWorkService {
                 .into());
             }
         };
-        let committed = data.committed_folder()?;
+        let recovery_required = || committed_recovery_required(memories.is_some());
+        let committed = if recovery.requires_committed_basis {
+            if !data.folder_changes_admitted(memories.is_some())?.is_empty() {
+                return Err(recovery_required());
+            }
+            Some(data.head_commit().ok_or_else(recovery_required)?.to_owned())
+        } else {
+            data.committed_folder()?
+        };
+        if automatic && rewritten && committed.is_none() {
+            return Err(rebuilt_commit_required());
+        }
         let folder = match memories {
             Some(memories) => {
                 directory::read_resolved_data_folder_with_memories_locked(data, memories.fence)?
             }
             None => directory::read_resolved_data_folder(data)?,
         };
-        // The commit recorded as this import's source must be the one whose
-        // content was just read: neither HEAD nor the folder moved meanwhile.
-        if data.committed_folder()? != committed {
-            return Err(TaskSyncRefusal::IncrementalBasisUnavailable
-                .invalid("the data folder changed while it was read; run the import again")
-                .into());
+        if recovery.requires_committed_basis {
+            let commit = committed.as_deref().ok_or_else(recovery_required)?;
+            let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
+                &data.checkout,
+                &self.project_id,
+                commit,
+                GIT_DEADLINE,
+            )?;
+            if snapshot.tree != folder.tree
+                || snapshot.envelope != incoming_basis
+                || (memories.is_some()
+                    && crate::task_sync::git::read_memory_snapshot(
+                        &data.checkout,
+                        &self.project_id,
+                        commit,
+                    )? != *selected)
+            {
+                return Err(recovery_required());
+            }
         }
         let root = folder
             .tree
             .tasks
             .iter()
             .try_fold(InventoryRoot::ZERO, InventoryRoot::including)?;
+        let task_count = u64::try_from(folder.tree.tasks.len())?;
         // The bytes the folder's task files hold, as read, not as re-encoded.
         let task_bytes =
             super::task_sync_folder_export::stored_task_bytes(&data.checkout.join(".engram"))?;
-        let (outcome, _) = self.import_task_sync_folder_with_head(
+        let (outcome, head) = self.import_task_sync_folder_with_head(
             &folder,
             basis,
             selected,
@@ -221,22 +278,40 @@ impl LocalWorkService {
             now,
             Some(CompleteHead {
                 previous: recorded.as_ref().map(|(id, _)| id),
-                commit: committed,
+                commit: committed.clone(),
                 inventory_root: root,
-                task_count: u64::try_from(folder.tree.tasks.len())?,
+                task_count,
                 task_bytes,
                 rebuild,
             }),
+            || {
+                if recovery.requires_committed_basis {
+                    if !data.folder_changes_admitted(memories.is_some())?.is_empty() {
+                        return Err(recovery_required());
+                    }
+                } else if data.head_commit().is_some()
+                    && data.folder_changes_admitted(false)?.is_empty() != committed.is_some()
+                {
+                    return Err(TaskSyncRefusal::IncrementalBasisUnavailable
+                        .invalid("the data folder changed while it was read; run the import again")
+                        .into());
+                }
+                data.check_head()
+            },
         )?;
+        if !recovery.requires_committed_basis
+            || head
+                .and_then(|head| head.import_basis())
+                .is_some_and(|basis| committed.as_deref() == Some(basis.commit.as_str()))
+        {
+            recovery.finish(data)?;
+        }
         Ok(FolderImportReceipt {
             // `complete` is an explicit basis chosen over a head the
             // incremental route could have continued from.
             route: if rebuild {
                 "rebuild"
-            } else if recorded
-                .as_ref()
-                .is_some_and(|(_, head)| head.source.is_some())
-            {
+            } else if rewritten || import_basis.is_some() {
                 "complete"
             } else {
                 "enrol"
@@ -256,17 +331,15 @@ impl LocalWorkService {
         data: &DataWorktree,
         id: &crate::ObjectId,
         head: &FolderHead,
+        source: &FolderSource,
         rendering: &ExportProfile,
         dry_run: bool,
         memories: &BTreeMap<String, KeyHistory>,
         memory_options: &BTreeMap<String, ImportOptions>,
         memory_bytes: u64,
+        confirmation: Option<&FolderExportConfirmation>,
         now: DateTime<Utc>,
     ) -> Result<FolderImportReceipt> {
-        let source = head
-            .source
-            .as_ref()
-            .context("incremental import without a source")?;
         let incoming = data.committed_folder()?.ok_or_else(|| {
             TaskSyncRefusal::CommitContextRequired.invalid(
                 "commit the merged folder in the data worktree before importing; an incremental import reads the commit, not loose files. Or run `engram task-sync import --rebuild --basis OWN_EXPORT/project.json` to import the complete folder",
@@ -279,7 +352,16 @@ impl LocalWorkService {
             && head.pending.is_empty()
             && !matches!(head.disk, FolderDisk::Written { .. })
             && memories.is_empty()
+            && memory_options.is_empty()
         {
+            if let Some(proof) = confirmation {
+                self.lock_store_at(now)?.confirm_task_sync_folder_export(
+                    proof,
+                    dry_run,
+                    now,
+                    || data.check_head(),
+                )?;
+            }
             return Ok(FolderImportReceipt {
                 route: "unchanged",
                 result: TaskSyncImportResult {
@@ -488,30 +570,33 @@ impl LocalWorkService {
         // Every read above names the incoming commit by id. After the last
         // of them, that commit must still be the worktree's HEAD before its
         // outcome is recorded as the folder on disk.
-        data.revalidate()?;
         let actor = self.actor("task-sync:import", "import reported task planning state");
         let outcome = self
             .lock_store_at(now)?
-            .apply_task_sync_folder_delta(&FolderDeltaApply {
-                project: &self.project_id,
-                actor: &actor,
-                profile: rendering,
-                head: id,
-                incoming: FolderSource {
-                    commit: incoming,
-                    inventory_root: delta.root,
-                    task_count: count,
-                    task_bytes,
+            .apply_task_sync_folder_delta_with_confirmation(
+                &FolderDeltaApply {
+                    project: &self.project_id,
+                    actor: &actor,
+                    profile: rendering,
+                    head: id,
+                    incoming: FolderSource {
+                        commit: incoming,
+                        inventory_root: delta.root,
+                        task_count: count,
+                        task_bytes,
+                    },
+                    changes: &changes,
+                    shared: &shared,
+                    discarded: &discarded,
+                    written: &written,
+                    memories,
+                    memory_options,
+                    dry_run,
+                    now,
                 },
-                changes: &changes,
-                shared: &shared,
-                discarded: &discarded,
-                written: &written,
-                memories,
-                memory_options,
-                dry_run,
-                now,
-            })?;
+                confirmation,
+                || data.check_head(),
+            )?;
         Ok(FolderImportReceipt {
             route: "incremental",
             result: outcome.result,

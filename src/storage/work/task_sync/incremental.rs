@@ -122,10 +122,20 @@ impl SqliteStore {
         profile: &ExportProfile,
         rebuild: bool,
     ) -> Result<super::folder_head::FolderExportPlan, StoreError> {
+        self.plan_task_sync_folder_export_with_confirmation(project, profile, rebuild, None)
+    }
+
+    pub(crate) fn plan_task_sync_folder_export_with_confirmation(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        rebuild: bool,
+        confirmation: Option<&super::folder_head::FolderExportConfirmation>,
+    ) -> Result<super::folder_head::FolderExportPlan, StoreError> {
         profile.options().validate()?;
         self.work_read_snapshot(|store| {
             with_origin_scope(&store.connection, || {
-                plan_folder_export(store, project, profile, rebuild)
+                plan_folder_export(store, project, profile, rebuild, confirmation)
             })
         })
     }
@@ -150,10 +160,40 @@ impl SqliteStore {
         ),
         StoreError,
     > {
+        self.plan_task_sync_folder_export_with_memory_confirmation(
+            project,
+            profile,
+            rebuild,
+            selected,
+            resolutions,
+            None,
+        )
+    }
+
+    pub(crate) fn plan_task_sync_folder_export_with_memory_confirmation(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        rebuild: bool,
+        selected: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        resolutions: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+        confirmation: Option<&super::folder_head::FolderExportConfirmation>,
+    ) -> Result<
+        (
+            super::folder_head::FolderExportPlan,
+            crate::task_sync::memories::ExportOutcome,
+        ),
+        StoreError,
+    > {
         // Both reads join this one read transaction.
         self.work_read_snapshot(|store| {
             Ok((
-                store.plan_task_sync_folder_export(project, profile, rebuild)?,
+                store.plan_task_sync_folder_export_with_confirmation(
+                    project,
+                    profile,
+                    rebuild,
+                    confirmation,
+                )?,
                 store.export_task_sync_memories(project, profile, selected, resolutions)?,
             ))
         })
@@ -172,6 +212,56 @@ impl SqliteStore {
         let id = super::folder_head::append_on(&transaction, head)?;
         transaction.commit()?;
         Ok(id)
+    }
+
+    /// Admit the new head and any preceding exact confirmation together. The
+    /// service retains the corresponding write only after the database admits
+    /// both records.
+    pub(crate) fn record_task_sync_folder_publication(
+        &mut self,
+        mut head: Option<super::folder_head::FolderHead>,
+        confirmation: Option<&super::folder_head::FolderExportConfirmation>,
+        now: chrono::DateTime<chrono::Utc>,
+        publish: impl FnOnce(
+            Option<(&crate::ObjectId, &super::folder_head::FolderHead)>,
+        ) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let transaction = self.begin_work_mutation()?;
+        if let Some(proof) = confirmation {
+            let previous = confirm_folder_export_on(&transaction, proof, now)?;
+            if let Some(head) = head.as_mut() {
+                head.previous = Some(previous);
+            }
+        }
+        let id = head
+            .as_ref()
+            .map(|head| super::folder_head::append_on(&transaction, head))
+            .transpose()?;
+        publish(id.as_ref().zip(head.as_ref()))?;
+        transaction.commit().map_err(StoreError::from)?;
+        Ok(())
+    }
+
+    /// Record a verified own export commit and the documents it published as
+    /// one comparison basis. Documents of held tasks stay at their last
+    /// admitted value until an import applies them.
+    ///
+    /// # Errors
+    /// Refuses a moved or discontinuous folder head and invalid records.
+    pub(crate) fn confirm_task_sync_folder_export(
+        &mut self,
+        proof: &super::folder_head::FolderExportConfirmation,
+        dry_run: bool,
+        now: chrono::DateTime<chrono::Utc>,
+        check_tip: impl FnOnce() -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let transaction = self.begin_work_mutation()?;
+        confirm_folder_export_on(&transaction, proof, now)?;
+        check_tip()?;
+        if !dry_run {
+            transaction.commit().map_err(StoreError::from)?;
+        }
+        Ok(())
     }
 
     /// The project feed's current cut.
@@ -195,6 +285,121 @@ impl SqliteStore {
             super::folder_head::head_on(&store.connection, project, profile)
         })
     }
+
+    /// A journal may name an earlier record after an explicit import. Do
+    /// not grant recovery authority from the key alone: it only lets an
+    /// ordinary operation skip an already displaced payload.
+    pub(crate) fn task_sync_folder_head_is_displaced(
+        &self,
+        project: &ProjectId,
+        id: &crate::ObjectId,
+        fingerprint: &str,
+    ) -> Result<bool, StoreError> {
+        use super::folder_head::{FOLDER_HEAD_KIND, FolderHead};
+        self.work_read_snapshot(|store| {
+            let active: bool = store.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM work_task_sync_folder_heads
+                 WHERE project_id = ?1 AND record_id = ?2)",
+                rusqlite::params![project.0, id.as_str()],
+                |row| row.get(0),
+            )?;
+            if active {
+                return Ok(false);
+            }
+            let Some(record) =
+                SqliteStore::get_canonical_object_on(&store.connection, id, FOLDER_HEAD_KIND)?
+            else {
+                return Ok(false);
+            };
+            Ok(
+                crate::ObjectId::from_canonical_bytes(record.bytes()).as_str() == fingerprint
+                    && record.decode::<FolderHead>()?.project_id == *project,
+            )
+        })
+    }
+
+    pub(crate) fn task_sync_folder_head_was_recorded(
+        &self,
+        id: &crate::ObjectId,
+        planned: &super::folder_head::FolderHead,
+    ) -> Result<bool, StoreError> {
+        use super::folder_head::{FOLDER_HEAD_KIND, FolderHead};
+        self.work_read_snapshot(|store| {
+            Ok(SqliteStore::get_typed_object_on::<FolderHead>(
+                &store.connection,
+                id,
+                FOLDER_HEAD_KIND,
+            )?
+            .as_ref()
+                == Some(planned))
+        })
+    }
+
+    pub(crate) fn task_sync_folder_import_basis(
+        &self,
+        head: &super::folder_head::FolderHead,
+    ) -> Result<Option<super::folder_head::FolderSource>, StoreError> {
+        self.work_read_snapshot(|store| {
+            super::folder_head::import_basis_on(&store.connection, head)
+        })
+    }
+}
+
+pub(super) fn confirm_folder_export_on(
+    transaction: &rusqlite::Transaction<'_>,
+    proof: &super::folder_head::FolderExportConfirmation,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<crate::ObjectId, StoreError> {
+    use super::{baseline, folder_head, producing_origin, reconciliation};
+    crate::task_sync::ledger::oid(&proof.commit)?;
+    let mut head = proof.comparison_head();
+    let project = &head.project_id;
+    let current = folder_head::head_on(transaction, project, &head.profile)?;
+    if !current.is_some_and(|(id, current)| id == proof.expected && current == proof.head) {
+        return Err(TaskSyncRefusal::BaselineHeadMoved
+            .invalid("another export or import recorded the shared folder first; export again"));
+    }
+
+    let cut = producing_origin::cut_on(transaction, project)?;
+    require_continuous(transaction, project, &head.cut, cut.position)?;
+    head.unexported
+        .extend(super::super::feed_tasks::changed_between(
+            transaction,
+            project,
+            head.cut.position,
+            cut.position,
+        )?);
+
+    let eligible = proof
+        .changes
+        .iter()
+        .filter(|(id, _)| !head.pending.contains_key(*id));
+    let prior = baseline::entries(transaction, project, eligible.clone().map(|(id, _)| *id))?;
+    let changes = eligible
+        .filter(|(id, document)| {
+            prior.get(*id).and_then(|entry| entry.document.as_ref()) != document.as_ref()
+        })
+        .map(|(id, document)| (*id, document.clone()))
+        .collect::<BTreeMap<_, _>>();
+    if !changes.is_empty() {
+        let previous = baseline::head(transaction, project)?.map(|head| head.record);
+        let advanced = changes.keys().copied().collect::<Vec<_>>();
+        baseline::append(
+            transaction,
+            project,
+            previous,
+            changes,
+            None,
+            &head.profile,
+            now,
+        )?;
+        reconciliation::advance_on(transaction, project, advanced, &prior)?;
+    }
+
+    head.cut = producing_origin::cut_on(transaction, project)?;
+    head.previous = Some(proof.expected.clone());
+    head.reason = folder_head::FolderHeadReason::Export;
+    folder_head::append_on(transaction, &head)
 }
 
 fn plan_folder_export(
@@ -202,11 +407,23 @@ fn plan_folder_export(
     project: &ProjectId,
     profile: &ExportProfile,
     rebuild: bool,
+    confirmation: Option<&super::folder_head::FolderExportConfirmation>,
 ) -> Result<super::folder_head::FolderExportPlan, StoreError> {
     let connection = &store.connection;
     let feed = FeedId::Project(project.clone());
     let cut = current_cut(store, &feed)?;
-    let recorded = super::folder_head::head_on(connection, project, profile)?;
+    let mut recorded = super::folder_head::head_on(connection, project, profile)?;
+    if let Some(proof) = confirmation {
+        if !recorded
+            .as_ref()
+            .is_some_and(|(id, head)| id == &proof.expected && head == &proof.head)
+        {
+            return Err(TaskSyncRefusal::BaselineHeadMoved.invalid(
+                "another export or import recorded the shared folder first; export again",
+            ));
+        }
+        recorded = Some((proof.expected.clone(), proof.comparison_head()));
+    }
     // The bootstrap and an explicit, named rebuild export every task; the
     // rebuild keeps the recorded head as the predecessor it replaces.
     if recorded.is_none() || rebuild {

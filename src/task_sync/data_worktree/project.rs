@@ -29,6 +29,17 @@ impl DataWorktree {
     /// # Errors
     /// Refuses another destination, parent traversal or linked directories.
     pub fn select_folder(&self, path: &Path) -> Result<PathBuf> {
+        let selected = self.select_admitted_folder(path)?;
+        self.revalidate()?;
+        Ok(selected)
+    }
+
+    /// Select the folder from the command's existing worktree admission.
+    /// The caller checks HEAD again before writing.
+    ///
+    /// # Errors
+    /// Refuses another destination, parent traversal or linked directories.
+    pub fn select_admitted_folder(&self, path: &Path) -> Result<PathBuf> {
         ensure!(
             !path
                 .components()
@@ -52,7 +63,6 @@ impl DataWorktree {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        self.revalidate()?;
         Ok(selected)
     }
 

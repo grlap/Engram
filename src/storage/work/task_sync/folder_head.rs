@@ -56,9 +56,8 @@ pub struct FolderHead {
     /// incremental export checks the folder's size limit without reading
     /// every task.
     pub task_bytes: u64,
-    /// The data commit the last import read, the next import's diff base. An
-    /// export keeps it, since its own commit is made by the caller. Held tasks
-    /// are read again at each import, so a partial import advances it too.
+    /// The data commit the last import read. Own-export confirmation leaves
+    /// this provenance intact and records the new comparison commit in `disk`.
     pub source: Option<FolderSource>,
     /// How the folder on disk relates to the data branch, so the next export
     /// can prove the disk is this head's before it writes over it.
@@ -72,14 +71,10 @@ pub struct FolderHead {
     /// Local changes an import passed over: the next export writes them,
     /// although the cut has moved past them.
     pub unexported: BTreeSet<WorkId>,
-    /// The tasks this host's incremental exports wrote or removed since the
-    /// last import, each with the content fingerprint of the file it wrote,
-    /// `None` for a removal. Exports leave the import baseline where it was,
-    /// so another host can return such a task to exactly its bytes at
-    /// `source`, or remove a task this host added, without the next import's
-    /// diff from `source` showing it. That import reads each published one
-    /// again at its incoming commit and takes it when it differs from what
-    /// this host wrote; an import clears them.
+    /// The tasks incremental exports wrote or removed after the comparison
+    /// basis, each with the fingerprint of the written file or `None` for a
+    /// removal. They stay owed to import until that import adjudicates them
+    /// or an exact own commit becomes the comparison basis.
     pub exported: BTreeMap<WorkId, Option<String>>,
     /// Whether a complete export rewrote the folder since the last import.
     /// It publishes every task without tracking them in `exported`, so no
@@ -89,11 +84,57 @@ pub struct FolderHead {
     pub rewritten: bool,
 }
 
+impl FolderHead {
+    /// A rebuild without a matched parent must replace the full membership.
+    pub(crate) fn rebuild_needs_complete_import(&self) -> bool {
+        self.rewritten
+            && self.reason == FolderHeadReason::Rebuild
+            && matches!(self.disk, FolderDisk::Unbound)
+    }
+
+    /// The committed folder represented by the keyed planning baseline.
+    /// A pending write has no admitted commit to import from.
+    #[must_use]
+    pub fn import_basis(&self) -> Option<FolderSource> {
+        let FolderDisk::Committed { commit } = &self.disk else {
+            return None;
+        };
+        Some(FolderSource {
+            commit: commit.clone(),
+            inventory_root: self.inventory_root,
+            task_count: self.task_count,
+            task_bytes: self.task_bytes,
+        })
+    }
+}
+
+/// The retained write and the exact commit that was proved to hold it.
+pub(crate) struct FolderExportConfirmation {
+    pub(crate) expected: ObjectId,
+    pub(crate) head: FolderHead,
+    pub(crate) commit: String,
+    pub(crate) changes: BTreeMap<WorkId, Option<crate::task_sync::TaskDocument>>,
+}
+
+impl FolderExportConfirmation {
+    /// The fields an import needs to plan Git reads. The storage transaction
+    /// will apply the confirmation before it uses the keyed baseline.
+    pub(crate) fn comparison_head(&self) -> FolderHead {
+        let mut head = self.head.clone();
+        head.disk = FolderDisk::Committed {
+            commit: self.commit.clone(),
+        };
+        head.exported.clear();
+        head.rewritten = false;
+        head
+    }
+}
+
 /// The folder on disk, as the last export or import left it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "state", deny_unknown_fields)]
 pub enum FolderDisk {
-    /// Exactly this data commit, as an import read it.
+    /// Exactly this data commit, as an import read it or an export published it.
     Committed { commit: String },
     /// An incremental export wrote `files` onto the clean commit `from`: each
     /// task's content fingerprint, `None` for a removed file.
@@ -194,6 +235,41 @@ pub(in crate::storage::work) fn head_on(
         ));
     }
     Ok(Some((id, head)))
+}
+
+/// The import comparison base when a newer write is awaiting its commit.
+/// Same-parent writes can carry `Written.from` from the keyed baseline; older
+/// written heads without that proof continue from their applied import.
+pub(super) fn import_basis_on(
+    connection: &Connection,
+    head: &FolderHead,
+) -> Result<Option<FolderSource>, StoreError> {
+    if let Some(basis) = head.import_basis() {
+        return Ok(Some(basis));
+    }
+    if let FolderDisk::Written { from, .. } = &head.disk {
+        let mut previous_id = head.previous.clone();
+        while let Some(id) = previous_id {
+            let previous: FolderHead =
+                SqliteStore::get_typed_object_on(connection, &id, FOLDER_HEAD_KIND)?
+                    .ok_or_else(|| invalid("folder head predecessor is missing"))?;
+            if previous.project_id != head.project_id
+                || previous.profile.include_notes != head.profile.include_notes
+            {
+                return Err(invalid(
+                    "folder head predecessor belongs to another project or note selection",
+                ));
+            }
+            if previous.import_basis().as_ref() == Some(from) {
+                return Ok(Some(from.clone()));
+            }
+            if !matches!(&previous.disk, FolderDisk::Written { from: prior, .. } if prior == from) {
+                break;
+            }
+            previous_id = previous.previous;
+        }
+    }
+    Ok(head.source.clone())
 }
 
 /// Append `head` if its predecessor is still the current head, in the

@@ -112,12 +112,35 @@ impl SqliteStore {
         &mut self,
         request: &FolderDeltaApply<'_>,
     ) -> Result<FolderDeltaOutcome, StoreError> {
+        self.apply_task_sync_folder_delta_with_confirmation(request, None, || Ok(()))
+    }
+
+    pub(crate) fn apply_task_sync_folder_delta_with_confirmation<E: From<StoreError>>(
+        &mut self,
+        request: &FolderDeltaApply<'_>,
+        proof: Option<&super::folder_head::FolderExportConfirmation>,
+        check_tip: impl FnOnce() -> Result<(), E>,
+    ) -> Result<FolderDeltaOutcome, E> {
         super::folder::validate_memory_selection(
             request.project,
             request.memories,
             request.memory_options,
         )?;
         let transaction = self.begin_work_mutation()?;
+        let confirmed;
+        let confirmed_request;
+        let request = if let Some(proof) = proof {
+            confirmed =
+                super::incremental::confirm_folder_export_on(&transaction, proof, request.now)?;
+            confirmed_request = FolderDeltaApply {
+                head: &confirmed,
+                incoming: request.incoming.clone(),
+                ..*request
+            };
+            &confirmed_request
+        } else {
+            request
+        };
         let mut outcome =
             origin::with_origin_scope(&transaction, || apply_on(&transaction, request))?;
         // Memories follow the tasks they may depend on, in the same
@@ -131,11 +154,12 @@ impl SqliteStore {
             request.memory_options,
             request.dry_run,
         )?;
+        check_tip()?;
         if request.dry_run {
             // Dropping the transaction rolls every effect back.
             return Ok(outcome);
         }
-        transaction.commit()?;
+        transaction.commit().map_err(StoreError::from)?;
         Ok(outcome)
     }
 
@@ -149,6 +173,14 @@ impl SqliteStore {
         &mut self,
         request: FolderCompleteApply<'_>,
     ) -> Result<FolderImportApplied, StoreError> {
+        self.apply_task_sync_folder_complete_checked(request, || Ok(()))
+    }
+
+    pub(crate) fn apply_task_sync_folder_complete_checked<E: From<StoreError>>(
+        &mut self,
+        request: FolderCompleteApply<'_>,
+        check_tip: impl FnOnce() -> Result<(), E>,
+    ) -> Result<FolderImportApplied, E> {
         super::folder::validate_memory_selection(
             request.apply.project,
             request.memories,
@@ -172,7 +204,7 @@ impl SqliteStore {
                 if current != *id {
                     return Err(TaskSyncRefusal::BaselineHeadMoved.invalid(
                         "another export or import recorded the shared folder first; import again",
-                    ));
+                    ).into());
                 }
                 (head.unexported, head.profile.origin_machine)
             }
@@ -199,7 +231,8 @@ impl SqliteStore {
         // baseline, and an incremental import admits against one. It records
         // no head either: the next import is the same complete one.
         if super::baseline::head(&transaction, &project)?.is_none() {
-            transaction.commit()?;
+            check_tip()?;
+            transaction.commit().map_err(StoreError::from)?;
             return Ok(FolderImportApplied {
                 result,
                 head: None,
@@ -274,7 +307,8 @@ impl SqliteStore {
             rewritten: false,
         };
         folder_head::append_on(&transaction, &next)?;
-        transaction.commit()?;
+        check_tip()?;
+        transaction.commit().map_err(StoreError::from)?;
         Ok(FolderImportApplied {
             result,
             head: Some(next),
@@ -298,7 +332,7 @@ fn apply_on(
         return Err(TaskSyncRefusal::BaselineHeadMoved
             .invalid("another export or import recorded the shared folder first; import again"));
     }
-    if head.source.is_none() {
+    if folder_head::import_basis_on(transaction, &head)?.is_none() {
         return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
             "the folder head records no imported commit yet: commit the folder, then import it completely once with `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`",
         ));

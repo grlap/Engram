@@ -23,9 +23,9 @@ fn task_sync_export_requires_the_fixed_data_folder_even_when_other_parent_exists
             assert!(!fixture.root.join(relative).exists());
         }
     }
-    // A relative spelling of the fixed directory is accepted and replays.
-    for _ in 0..2 {
-        let output = fixture
+    // The relative spelling is accepted, with the same commit-first rule.
+    let export = || {
+        fixture
             .raw_command_with(
                 &source,
                 "export",
@@ -35,9 +35,43 @@ fn task_sync_export_requires_the_fixed_data_folder_even_when_other_parent_exists
             )
             .current_dir(&fixture.root)
             .output()
-            .unwrap();
-        assert!(output.status.success(), "{}", stderr(&output));
-    }
+            .unwrap()
+    };
+    let initial = export();
+    assert!(initial.status.success(), "{}", stderr(&initial));
+    let receipt: Value = serde_json::from_slice(&initial.stdout).unwrap();
+    assert_eq!(receipt["route"], "bootstrap");
+    let blocked = refusal(&export());
+    assert_eq!(
+        blocked["error"]["code"],
+        "task_sync_incremental_basis_unavailable"
+    );
+    assert_eq!(
+        blocked["error"]["details"]["reason"],
+        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export"
+    );
+    let data = fixture.root.join(".engram-data");
+    data_worktree::git(
+        &data,
+        &["add", "--", ".engram/project.json", ".engram/tasks"],
+    );
+    data_worktree::git(
+        &data,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "Publish shared planning",
+        ],
+    );
+    let repeated = export();
+    assert!(repeated.status.success(), "{}", stderr(&repeated));
+    let receipt: Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert_eq!(receipt["route"], "unchanged");
+    assert_eq!(receipt["written"], 0);
 }
 
 #[test]

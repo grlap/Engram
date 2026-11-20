@@ -4,8 +4,11 @@
 //! same documents and do the same store work at 2,000 tasks as at 200.
 
 use std::{
+    cell::RefCell,
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    rc::Rc,
     time::Duration,
 };
 
@@ -51,7 +54,7 @@ fn actor() -> ActorContext {
     }
 }
 
-fn run(root: &Path, args: &[&str]) {
+pub(super) fn run(root: &Path, args: &[&str]) -> Vec<u8> {
     let mut command = git::command(root, args);
     command
         .env("GIT_AUTHOR_NAME", "Counts fixture")
@@ -68,7 +71,7 @@ fn run(root: &Path, args: &[&str]) {
         Duration::from_secs(60),
         git::QueryStderrPolicy::ErrorOnly,
     )
-    .unwrap();
+    .unwrap()
 }
 
 pub(super) fn document(index: usize) -> TaskDocument {
@@ -239,7 +242,7 @@ impl Host {
     }
 
     /// Claims `id` for this host's planner session, engaging its run.
-    pub(super) fn claim(&self, id: WorkId) {
+    pub(super) fn claim(&self, id: WorkId) -> crate::domain::WorkClaim {
         let mut store = SqliteStore::open(&self.database).unwrap();
         let item = store.get_work_item(id).unwrap();
         store
@@ -254,6 +257,29 @@ impl Host {
                     actor: actor(),
                     idempotency_key: format!("claim-{}", id.0),
                     claimed_at: chrono::Utc::now(),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap()
+    }
+
+    pub(super) fn release(&self, claim: &crate::domain::WorkClaim) {
+        let mut store = SqliteStore::open(&self.database).unwrap();
+        let item = store.get_work_item(claim.work_id).unwrap();
+        store
+            .release_work(
+                &crate::domain::ReleaseWorkRequest {
+                    work_id: claim.work_id,
+                    run_id: claim.run_id,
+                    expected_work_revision: item.revision,
+                    holder: claim.holder.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                    reason: "finish the claim before retrying the import".into(),
+                    waiver_reason: Some("the fixture records no task contribution".into()),
+                    actor: actor(),
+                    idempotency_key: format!("release-{}", claim.claim_id.0),
+                    released_at: chrono::Utc::now(),
                 },
                 &DevelopmentNoopRedactor,
             )
@@ -316,6 +342,27 @@ pub(super) struct Exchange {
 
 impl Exchange {
     pub(super) fn new(size: usize) -> Self {
+        let exchange = Self::unborn(size);
+        directory::write_data_folder(&exchange.data(), &exchange.tree, &profile()).unwrap();
+        exchange.commit("Publish the shared planning");
+        for host in [&exchange.a, &exchange.b] {
+            let enrolled = host
+                .service
+                .import_task_sync_data_folder(
+                    &exchange.data(),
+                    Some(&DestinationBasis::Empty),
+                    false,
+                    false,
+                    None,
+                    chrono::Utc::now(),
+                )
+                .unwrap();
+            assert_eq!(enrolled.route, "enrol");
+        }
+        exchange
+    }
+
+    pub(super) fn unborn(size: usize) -> Self {
         let home = crate::test_support::temp_home().unwrap();
         let root = home.path();
         let code = root.join("code");
@@ -354,31 +401,14 @@ impl Exchange {
         };
         let a = Host::new(root, "home-a");
         let b = Host::new(root, "home-b");
-        let exchange = Self {
+        Self {
             code,
             checkout,
             tree,
             a,
             b,
             home,
-        };
-        directory::write_data_folder(&exchange.data(), &exchange.tree, &profile()).unwrap();
-        exchange.commit("Publish the shared planning");
-        for host in [&exchange.a, &exchange.b] {
-            let enrolled = host
-                .service
-                .import_task_sync_data_folder(
-                    &exchange.data(),
-                    Some(&DestinationBasis::Empty),
-                    false,
-                    false,
-                    None,
-                    chrono::Utc::now(),
-                )
-                .unwrap();
-            assert_eq!(enrolled.route, "enrol");
         }
-        exchange
     }
 
     pub(super) fn data(&self) -> DataWorktree {
@@ -397,6 +427,247 @@ impl Exchange {
     pub(super) fn ids(&self) -> Vec<WorkId> {
         self.tree.tasks.iter().map(|task| task.id).collect()
     }
+}
+
+pub(super) fn counted_queries<T>(run: impl FnOnce() -> T) -> (T, BTreeMap<String, usize>) {
+    reset();
+    let queries = Rc::new(RefCell::new(BTreeMap::new()));
+    let observed_queries = Rc::clone(&queries);
+    let previous = git::BEFORE_QUERY.with(|hook| {
+        hook.replace(Some(Box::new(move |verb| {
+            *observed_queries
+                .borrow_mut()
+                .entry(verb.to_owned())
+                .or_insert(0) += 1;
+        })))
+    });
+    let result = run();
+    git::BEFORE_QUERY.with(|hook| {
+        hook.replace(previous);
+    });
+    (result, Rc::try_unwrap(queries).unwrap().into_inner())
+}
+
+fn counted_export(exchange: &Exchange) -> (Phase, BTreeMap<String, usize>) {
+    let (receipt, queries) = counted_queries(|| {
+        exchange.a.service.export_task_sync_data_folder(
+            &exchange.data(),
+            &profile(),
+            false,
+            None,
+            chrono::Utc::now(),
+        )
+    });
+    let receipt = receipt.unwrap();
+    let phase = observed(receipt.route, receipt.written, receipt.removed);
+    (phase, queries)
+}
+
+#[test]
+fn task_sync_status_queries_keep_their_verb_with_filter_overrides() {
+    let exchange = Exchange::new(1);
+    let (baseline, baseline_queries) = counted_export(&exchange);
+    assert_eq!(baseline.route, "unchanged");
+
+    exchange.git(&[
+        "config",
+        "--local",
+        "filter.engram-count-fixture.clean",
+        "false",
+    ]);
+    let (configured, configured_queries) = counted_export(&exchange);
+    assert_eq!(configured.route, "unchanged");
+    assert_eq!(configured_queries.get("status"), Some(&1));
+    assert!(!configured_queries.contains_key("-c"));
+    assert_eq!(configured_queries, baseline_queries);
+
+    let error = git::query_listing(
+        &exchange.checkout,
+        &[
+            "-c",
+            "filter.engram-count-fixture.clean=",
+            "status",
+            "--engram-fixture-invalid",
+        ],
+        Duration::from_secs(60),
+        git::MAX_LISTING_BYTES,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            error.downcast_ref::<git::QueryFailure>(),
+            Some(git::QueryFailure::Nonzero { command, .. }) if command == "status"
+        ),
+        "{error:#}"
+    );
+}
+
+fn unenrolled_exchange(size: usize) -> Exchange {
+    let exchange = Exchange::unborn(size);
+    let host = &exchange.a;
+    let now = chrono::Utc::now;
+    let seed = directory::write_folder(
+        &exchange.home.path().join("bootstrap-seed"),
+        &exchange.tree,
+        &profile(),
+    )
+    .unwrap();
+    host.service
+        .import_task_sync_folder(&seed, &DestinationBasis::Empty, false, now())
+        .unwrap();
+    assert!(
+        host.service
+            .task_sync_folder_head(&profile(), now())
+            .unwrap()
+            .is_none()
+    );
+    exchange
+}
+
+fn count_bootstrap_confirmation(size: usize) -> BTreeMap<String, usize> {
+    let exchange = unenrolled_exchange(size);
+    let service = &exchange.a.service;
+    let data = exchange.data();
+    assert!(data.head_commit().is_none());
+    let publication = service
+        .export_task_sync_data_folder(&data, &profile(), true, None, chrono::Utc::now())
+        .unwrap();
+    assert_eq!(
+        (publication.route, publication.written),
+        ("bootstrap", size)
+    );
+    exchange.commit("Publish the first rebuilt folder");
+    let data = exchange.data();
+    let commit = data.head_commit().unwrap();
+    let commit_and_parents = run(
+        &exchange.checkout,
+        &["rev-list", "--parents", "-n", "1", "HEAD"],
+    );
+    assert_eq!(
+        std::str::from_utf8(&commit_and_parents).unwrap().trim(),
+        commit
+    );
+
+    let (phase, queries) = counted_export(&exchange);
+    eprintln!(
+        "first export after committed rebuild bootstrap: tasks={size} Git starts={queries:?}"
+    );
+    assert_eq!(
+        (phase.route.as_str(), phase.written, phase.removed),
+        ("unchanged", 0, 0)
+    );
+    assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
+    assert_eq!(queries.values().sum::<usize>(), 33);
+    assert_eq!(queries.get("status"), Some(&1));
+    assert_eq!(queries.get("diff-tree"), Some(&1));
+    let (_, head) = service
+        .task_sync_folder_head(&profile(), chrono::Utc::now())
+        .unwrap()
+        .unwrap();
+    assert_eq!(head.import_basis().unwrap().commit, commit);
+    queries
+}
+
+fn count_inexact_rebuild_import(size: usize) -> BTreeMap<String, usize> {
+    let exchange = unenrolled_exchange(size);
+    let host = &exchange.a;
+    let now = chrono::Utc::now;
+    host.service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), false, None, now())
+        .unwrap();
+    exchange.commit("Publish the store's bootstrap");
+    assert_eq!(counted_export(&exchange).0.route, "unchanged");
+    let (_, head) = host
+        .service
+        .task_sync_folder_head(&profile(), now())
+        .unwrap()
+        .unwrap();
+    assert!(head.source.is_none());
+    assert!(head.import_basis().is_some());
+
+    host.rename(&exchange.ids()[..1], "edited before rebuilding");
+    host.service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), true, None, now())
+        .unwrap();
+    let evidence =
+        task_sync::evidence::path::pack(&crate::ObjectId::mint(), &crate::ObjectId::mint());
+    let path = exchange.checkout.join(&evidence);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, b"opaque evidence alongside the rebuild").unwrap();
+    exchange.git(&["add", "--", &evidence]);
+    exchange.commit("Publish the rebuild and evidence together");
+    let (receipt, queries) = counted_queries(|| {
+        host.service
+            .import_task_sync_data_folder(&exchange.data(), None, false, false, None, now())
+    });
+    let phase = observed(receipt.unwrap().route, 0, 0);
+    assert_eq!(phase.route, "complete");
+    assert_eq!(phase.blob_reads, 0);
+    eprintln!("import after inexact rebuild: tasks={size} Git starts={queries:?}");
+    queries
+}
+
+#[test]
+fn ordinary_export_git_starts_are_constant_across_folder_and_change_counts() {
+    let mut first_after_rebuild = Vec::new();
+    let mut write_queries = Vec::new();
+    let mut confirm_queries = Vec::new();
+    for size in [200, 2_000] {
+        let exchange = Exchange::new(size);
+        let ids = exchange.ids();
+        let host = &exchange.a;
+        let now = chrono::Utc::now;
+        host.service
+            .export_task_sync_data_folder(&exchange.data(), &profile(), true, None, now())
+            .unwrap();
+        exchange.commit("Rebuild the shared folder");
+        let (phase, queries) = counted_export(&exchange);
+        eprintln!("first export after committed rebuild: tasks={size} Git starts={queries:?}");
+        assert_eq!(
+            (phase.route.as_str(), phase.written, phase.removed),
+            ("unchanged", 0, 0)
+        );
+        assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
+        assert_eq!(queries.get("diff-tree"), Some(&1));
+        assert_eq!(queries.get("status"), Some(&1));
+        first_after_rebuild.push(queries);
+
+        let change_counts: &[usize] = if size == 200 { &[1] } else { &[1, 100, 2_000] };
+        for &changed in change_counts {
+            host.rename(&ids[..changed], &format!("local edit of {changed}"));
+            let (phase, queries) = counted_export(&exchange);
+            eprintln!("ordinary export: tasks={size} changed={changed} Git starts={queries:?}");
+            assert_eq!(
+                (phase.route.as_str(), phase.written, phase.removed),
+                ("incremental", changed, 0)
+            );
+            assert_eq!((phase.blob_reads, phase.file_reads), (0, changed));
+            assert!(!queries.contains_key("diff-tree"));
+            assert_eq!(queries.get("status"), Some(&1));
+            assert_eq!(queries.get("for-each-ref"), Some(&1));
+            write_queries.push(queries);
+            exchange.commit("Publish this host's edits");
+
+            let (phase, queries) = counted_export(&exchange);
+            eprintln!("confirm own export: tasks={size} changed={changed} Git starts={queries:?}");
+            assert_eq!((phase.route.as_str(), phase.written), ("unchanged", 0));
+            assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
+            assert_eq!(queries.get("diff-tree"), Some(&1));
+            assert_eq!(queries.get("status"), Some(&1));
+            confirm_queries.push(queries);
+        }
+    }
+    assert_eq!(first_after_rebuild[0], first_after_rebuild[1]);
+    assert!(write_queries.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(confirm_queries.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(
+        count_bootstrap_confirmation(200),
+        count_bootstrap_confirmation(2_000)
+    );
+    assert_eq!(
+        count_inexact_rebuild_import(2),
+        count_inexact_rebuild_import(11)
+    );
 }
 
 /// The phases of one exchange cycle over a shared folder of `size` tasks.

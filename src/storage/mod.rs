@@ -25,6 +25,7 @@ pub(crate) use work::task_sync::folder::folder_apply_projection;
 #[cfg(test)]
 pub(crate) use work::task_sync::folder::folder_apply_summary;
 pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
+pub(crate) use work::task_sync::folder_head::FolderExportConfirmation;
 pub use work::task_sync::folder_head::{
     FolderDisk, FolderExportPlan, FolderHead, FolderHeadReason, FolderSource,
 };

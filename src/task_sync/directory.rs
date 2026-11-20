@@ -22,7 +22,9 @@ mod envelope;
 mod evidence;
 mod incremental;
 pub(crate) use envelope::{complete_envelope, prepare_folder_documents};
-pub use incremental::FolderWrite;
+#[cfg(test)]
+pub(crate) use incremental::{BEFORE_EXPORT_COMPLETION, take_folder_write_payload_reads};
+pub use incremental::{ExportParent, FolderWrite};
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -650,10 +652,25 @@ fn is_memory_profile_pending(name: &str) -> bool {
 /// Refuses unsafe directory access or changed worktree selection.
 pub fn memory_profile_recovery_pending(data: &super::data_worktree::DataWorktree) -> Result<bool> {
     let path = data.select_folder(&data.checkout.join(".engram"))?;
-    if !path.exists() {
+    capability_staging_at(&path)
+}
+
+pub(crate) fn require_no_capability_staging(
+    data: &super::data_worktree::DataWorktree,
+) -> Result<()> {
+    if capability_staging_at(&data.checkout.join(".engram"))? {
+        return Err(TaskSyncRefusal::IncrementalBasisUnavailable
+            .invalid("memory capability staging is pending; run `engram task-sync export --include-memories --memory-recovery-basis OWN_EXPORT` before continuing. Add `--rebuild` to replace an unfinished combined export")
+            .into());
+    }
+    Ok(())
+}
+
+fn capability_staging_at(path: &Path) -> Result<bool> {
+    if !path.try_exists()? {
         return Ok(false);
     }
-    let root = super::setup::PrivateDirectory::open(&path)?;
+    let root = super::setup::PrivateDirectory::open(path)?;
     Ok(root
         .names(MAX_TASKS)?
         .iter()
@@ -694,11 +711,56 @@ pub fn recover_memory_profile_locked(
     retained: &Path,
     held: &super::memories::directory::PublicationLock,
 ) -> Result<()> {
+    if clear_memory_profile_staging_locked(data, retained, held)? {
+        enable_memory_profile(data)?;
+    }
+    Ok(())
+}
+
+/// Validate and remove interrupted capability staging under the publication
+/// fence. The combined task writer publishes the replacement envelope.
+///
+/// # Errors
+/// Refuses a changed worktree, invalid envelope or unrelated staging before
+/// removing any staged file.
+pub fn clear_memory_profile_staging_locked(
+    data: &super::data_worktree::DataWorktree,
+    retained: &Path,
+    held: &super::memories::directory::PublicationLock,
+) -> Result<bool> {
+    let Some((root, pending)) = capability_staging_for_recovery(data, retained, held)? else {
+        return Ok(false);
+    };
+    data.check_head()?;
+    for name in pending {
+        root.dir().remove_file(name)?;
+    }
+    Ok(true)
+}
+
+/// Admit capability staging without removing it.
+///
+/// # Errors
+/// Refuses an invalid envelope or unrelated staging under the publication fence.
+pub fn validate_memory_profile_staging_locked(
+    data: &super::data_worktree::DataWorktree,
+    retained: &Path,
+    held: &super::memories::directory::PublicationLock,
+) -> Result<()> {
+    capability_staging_for_recovery(data, retained, held)?;
+    Ok(())
+}
+
+fn capability_staging_for_recovery(
+    data: &super::data_worktree::DataWorktree,
+    retained: &Path,
+    held: &super::memories::directory::PublicationLock,
+) -> Result<Option<(super::setup::PrivateDirectory, Vec<std::ffi::OsString>)>> {
     use crate::task_sync::setup::PrivateDirectory;
     held.validate(data)?;
     data.revalidate()?;
     if !memory_profile_recovery_pending(data)? {
-        return Ok(());
+        return Ok(None);
     }
     let file_limit =
         usize::try_from(MAX_FILE_BYTES).context("file byte limit exceeds addressable size")?;
@@ -755,10 +817,7 @@ pub fn recover_memory_profile_locked(
             == Some(&current),
         "project envelope changed during recovery"
     );
-    for name in pending {
-        root.dir().remove_file(name)?;
-    }
-    enable_memory_profile(data)
+    Ok(Some((root, pending)))
 }
 
 /// Explicitly advertises the memory capability in the shared project envelope.
@@ -776,16 +835,9 @@ pub fn enable_memory_profile(data: &super::data_worktree::DataWorktree) -> Resul
     let before = root
         .read_bounded(Path::new("project.json"), file_limit)?
         .context("project envelope missing")?;
-    let mut envelope: FolderProjectDocument = crate::task_sync::parse(&before)?;
-    if let Some(profile) = &envelope.memory_profile {
-        anyhow::ensure!(
-            profile == crate::task_sync::memories::FORMAT,
-            "unsupported memory capability"
-        );
+    let Some(bytes) = with_memory_capability(&before)? else {
         return Ok(());
-    }
-    envelope.memory_profile = Some(crate::task_sync::memories::FORMAT.into());
-    let bytes = pretty(&envelope)?;
+    };
     let pending = format!("project-{}.pending", uuid::Uuid::new_v4());
     let mut file = root.open_file(Path::new(&pending), true, true)?;
     file.write_all(&bytes)?;
@@ -800,6 +852,24 @@ pub fn enable_memory_profile(data: &super::data_worktree::DataWorktree) -> Resul
     root.dir().rename(&pending, root.dir(), "project.json")?;
     data.revalidate()?;
     Ok(())
+}
+
+pub(crate) fn memory_capability_bytes(path: &Path) -> Result<Option<Vec<u8>>> {
+    let before = read_file_with(path, LIMITS, &mut |_, _| Ok(()))?;
+    with_memory_capability(&before)
+}
+
+fn with_memory_capability(before: &[u8]) -> Result<Option<Vec<u8>>> {
+    let mut envelope: FolderProjectDocument = crate::task_sync::parse(before)?;
+    if let Some(profile) = &envelope.memory_profile {
+        anyhow::ensure!(
+            profile == crate::task_sync::memories::FORMAT,
+            "unsupported memory capability"
+        );
+        return Ok(None);
+    }
+    envelope.memory_profile = Some(crate::task_sync::memories::FORMAT.into());
+    Ok(Some(pretty(&envelope)?))
 }
 
 /// Preflight existing output without recording a pending operation.
@@ -1085,7 +1155,7 @@ fn write_data_folder_profile(
 ) -> Result<FolderExchange> {
     let path = data.select_folder(&data.checkout.join(".engram"))?;
     if !include_memories {
-        require_task_only_head(data)?;
+        require_task_only_head(data, "export")?;
     }
     let written = write_folder_at(&path, tree, profile, true)?;
     data.revalidate()?;
@@ -1109,9 +1179,12 @@ pub(crate) fn committed_memory_envelope(bytes: &[u8], head: &str) -> Result<(Fol
     Ok((basis, envelope.memory_profile.is_some()))
 }
 
-/// Refuses a task-only export onto a data HEAD that carries memories, or
+/// Refuses a task-only operation on a data HEAD that carries memories, or
 /// whose committed envelope or memory capability is missing or invalid.
-pub(crate) fn require_task_only_head(data: &super::data_worktree::DataWorktree) -> Result<()> {
+pub(crate) fn require_task_only_head(
+    data: &super::data_worktree::DataWorktree,
+    operation: &str,
+) -> Result<()> {
     let Some(head) = &data.head else {
         return Ok(());
     };
@@ -1169,9 +1242,9 @@ pub(crate) fn require_task_only_head(data: &super::data_worktree::DataWorktree) 
     );
     anyhow::ensure!(
         !capable,
-        TaskSyncRefusal::MemoryProfileRequiresOptIn.invalid(
-            "committed data HEAD advertises project memories; export requires --include-memories"
-        )
+        TaskSyncRefusal::MemoryProfileRequiresOptIn.invalid(format!(
+            "the committed data folder carries the memory component: {operation} with --include-memories"
+        ))
     );
     Ok(())
 }

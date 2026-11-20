@@ -11,6 +11,12 @@ const TREE_LIMIT: usize = 128 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 100_000;
 mod recovery;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static BEFORE_MEMORY_WRITE: std::cell::Cell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::Cell::new(None) };
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct HeadDocument {
@@ -18,6 +24,32 @@ struct HeadDocument {
     project_id: crate::ProjectId,
     key: String,
     head: Head,
+}
+
+/// Find interrupted memory publication before task export can confirm or write.
+pub(crate) fn require_no_pending_publication(data: &DataWorktree) -> Result<()> {
+    let folder = data.checkout.join(".engram");
+    if !folder.try_exists()? {
+        return Ok(());
+    }
+    let root = PrivateDirectory::open(&folder)?;
+    let Some(memories) = optional_child(&root, Path::new("memories"))? else {
+        return Ok(());
+    };
+    for key in memories.names(ENTRY_LIMIT)? {
+        let directory = memories.child(Path::new(&key))?;
+        if directory.names(ENTRY_LIMIT)?.iter().any(|name| {
+            name.to_str().is_some_and(|name| {
+                name.ends_with(".pending")
+                    && (name.starts_with("head-") || name.starts_with("revision-"))
+            })
+        }) {
+            return Err(crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged
+                .invalid("memory publication staging is pending; finish with `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT`")
+                .into());
+        }
+    }
+    Ok(())
 }
 
 /// Reads every selected key without following links. Import refuses unresolved
@@ -258,6 +290,96 @@ pub fn preflight_component(
     }
     data.revalidate()?;
     Ok(u64::try_from(total)?)
+}
+
+/// The exact memory paths and postimages the admitted publication will
+/// change, for confirming a combined task and memory commit later.
+///
+/// # Errors
+/// Refuses invalid selections or unsafe or unreadable memory paths.
+pub fn publication_changes(
+    data: &DataWorktree,
+    basis: &BTreeMap<String, KeyHistory>,
+    selected: &BTreeMap<String, KeyHistory>,
+    recovering: bool,
+) -> Result<BTreeMap<String, Option<String>>> {
+    let folder = data.select_admitted_folder(&data.checkout.join(".engram"))?;
+    let memories = if folder.exists() {
+        optional_child(&PrivateDirectory::open(&folder)?, Path::new("memories"))?
+    } else {
+        None
+    };
+    let mut changes = BTreeMap::new();
+    for (key, history) in selected {
+        validate_key(key)?;
+        let previous = basis.get(key);
+        let head = serde_json::to_string_pretty(&HeadDocument {
+            format: FORMAT.into(),
+            project_id: history.project_id.clone(),
+            key: key.clone(),
+            head: history.head.clone(),
+        })?;
+        let path = format!("memories/{key}/head.json");
+        let directory = match &memories {
+            Some(memories) => optional_child(memories, Path::new(key))?,
+            None => None,
+        };
+        let existing = match &directory {
+            Some(directory) => directory.read_bounded(Path::new("head.json"), FILE_LIMIT)?,
+            None => None,
+        };
+        if previous.is_none_or(|previous| previous.head != history.head)
+            || existing.as_deref() != Some(head.as_bytes())
+        {
+            changes.insert(path, Some(head));
+        }
+        for (id, revision) in &history.revisions {
+            let is_new = previous.is_none_or(|previous| !previous.revisions.contains_key(id));
+            if !is_new && !recovering {
+                continue;
+            }
+            let name = format!("{id}.json");
+            // Recovery preflight already admitted this retained history.
+            // Its writer will restore a missing revision to these exact bytes.
+            let restores_missing = if !is_new && let Some(directory) = &directory {
+                match directory.dir().symlink_metadata(&name) {
+                    Ok(_) => false,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
+                false
+            };
+            if is_new || restores_missing {
+                changes.insert(
+                    format!("memories/{key}/{name}"),
+                    Some(serde_json::to_string_pretty(revision)?),
+                );
+            }
+        }
+        if let Some(previous) = previous {
+            for id in previous.revisions.keys() {
+                if !history.revisions.contains_key(id) {
+                    changes.insert(format!("memories/{key}/{id}.json"), None);
+                }
+            }
+        }
+    }
+    Ok(changes)
+}
+
+fn optional_child(root: &PrivateDirectory, name: &Path) -> Result<Option<PrivateDirectory>> {
+    match root.child(name) {
+        Ok(child) => Ok(Some(child)),
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Each selected revision already on disk holds exactly the bytes the writer
@@ -611,7 +733,6 @@ pub fn write_admitted(
     task_bytes: usize,
 ) -> Result<()> {
     fence.validate(data)?;
-    data.revalidate()?;
     let root = PrivateDirectory::open(&data.select_folder(&data.checkout.join(".engram"))?)?;
     preflight_component(data, basis, selected, recovering, project, Some(task_bytes))?;
     for (key, old) in basis {
@@ -659,24 +780,25 @@ pub fn write_admitted(
             .is_some_and(|bytes| bytes <= TREE_LIMIT),
         "combined task and memory tree exceeds 128 MiB"
     );
-    if recovering {
-        recovery::prepare(&root, basis, selected)?;
+    let cleanup = if recovering {
+        recovery::validate(&root, basis, selected)?
     } else {
         ensure!(
             read_root(&root)? == *basis,
             crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: selected memory export basis changed; an interrupted publication requires --memory-recovery-basis")
         );
+        Vec::new()
+    };
+    let memories = optional_child(&root, Path::new("memories"))?;
+    #[cfg(test)]
+    if let Some(hook) = BEFORE_MEMORY_WRITE.with(std::cell::Cell::take) {
+        hook();
     }
-    let memories = match root.child(Path::new("memories")) {
-        Ok(child) => child,
-        Err(error)
-            if error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
-        {
-            root.create_child(Path::new("memories"))?
-        }
-        Err(error) => return Err(error),
+    data.check_head()?;
+    recovery::remove_staging(&root, cleanup)?;
+    let memories = match memories {
+        Some(child) => child,
+        None => root.create_child(Path::new("memories"))?,
     };
     for (key, history) in selected {
         let directory = match memories.child(Path::new(key)) {

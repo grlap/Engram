@@ -46,6 +46,20 @@ fn refusal_json(output: &Output) -> Value {
     })
 }
 
+#[track_caller]
+fn assert_export_commit_first(output: &Output) {
+    assert!(!output.status.success());
+    let refusal = refusal_json(output);
+    assert_eq!(
+        refusal["error"]["code"],
+        "task_sync_incremental_basis_unavailable"
+    );
+    assert_eq!(
+        refusal["error"]["details"]["reason"],
+        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export"
+    );
+}
+
 fn source_identity(root: &Path) -> Option<engram::source::SourceId> {
     let started = std::time::Instant::now();
     let observation = engram::source::inspect(root, std::time::Duration::from_secs(30));
@@ -803,6 +817,24 @@ fn task_sync_cli_uses_only_data_worktree_and_keeps_code_source_unchanged() {
     let project_bytes = fs::read(folder.join("project.json")).unwrap();
     let first: Value = serde_json::from_slice(&exported.stdout).unwrap();
     assert_eq!(first["route"], "bootstrap");
+    let uncommitted = sync_output(&source, &marker, "export", &folder, &["--json"]);
+    assert_export_commit_first(&uncommitted);
+    data_worktree::git(
+        data,
+        &["add", "--", ".engram/project.json", ".engram/tasks"],
+    );
+    data_worktree::git(
+        data,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "Publish shared planning",
+        ],
+    );
     // Policy files belong to the data folder and survive a repeat, which
     // finds nothing changed and writes nothing.
     fs::write(folder.join(".gitignore"), "*.pending\n").unwrap();
@@ -824,6 +856,10 @@ fn task_sync_cli_uses_only_data_worktree_and_keeps_code_source_unchanged() {
         project_bytes
     );
     assert_eq!(fs::read(folder.join(".gitignore")).unwrap(), b"*.pending\n");
+    assert_eq!(
+        fs::read(folder.join(".gitattributes")).unwrap(),
+        b"*.json text eol=lf\n"
+    );
     for extra in [&["--empty-basis", "--dry-run"][..], &["--empty-basis"][..]] {
         let imported = sync_output(&target, &marker, "import", &folder, extra);
         assert!(

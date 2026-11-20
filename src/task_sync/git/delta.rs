@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     path::{Component, Path},
     time::{Duration, Instant},
 };
@@ -15,6 +16,7 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
+use sha2::Digest;
 
 mod verified;
 pub use verified::{
@@ -27,6 +29,194 @@ pub(super) const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
 // produce: every task path on both sides, each record well under 512 bytes
 // with the longest object ids, plus the tree entries.
 use super::query::MAX_LISTING_BYTES;
+
+/// Compare one commit with an export's exact paths and postimages. The raw
+/// delta supplies blob identities without opening any task document in Git.
+pub(crate) fn matches_export_commit(
+    repository: &Path,
+    project: &ProjectId,
+    parent: Option<&str>,
+    commit: &str,
+    expected: &BTreeMap<&str, Option<&str>>,
+    deadline: Duration,
+) -> Result<bool> {
+    task_sync::ledger::oid(commit)?;
+    if let Some(parent) = parent {
+        task_sync::ledger::oid(parent)?;
+    }
+    if parent == Some(commit) {
+        return Ok(false);
+    }
+    let reader = Reader::bounded(repository, project, deadline)?;
+    let bytes = reader.query(&["cat-file", "commit", commit])?;
+    let object = super::observe_commit(commit, &bytes)?;
+    if !object.parents.iter().map(String::as_str).eq(parent) {
+        return Ok(false);
+    }
+    let mut args = vec![
+        "diff-tree",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-commit-id",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-abbrev",
+    ];
+    if let Some(parent) = parent {
+        args.push(parent);
+    } else {
+        args.push("--root");
+    }
+    args.extend([commit, "--"]);
+    let raw = reader.listing(&args)?;
+    let changes = match parse_changes(&raw) {
+        Err(error)
+            if matches!(
+                error.downcast_ref::<StoreError>(),
+                Some(StoreError::TaskSyncRefused {
+                    refusal: TaskSyncRefusal::DestinationUnknownEntry
+                        | TaskSyncRefusal::DestinationNotFile,
+                    ..
+                })
+            ) =>
+        {
+            return Ok(false);
+        }
+        result => result?,
+    };
+    Ok(changes.len() == expected.len()
+        && changes.iter().all(|change| {
+            let Some(bytes) = change
+                .path
+                .strip_prefix(".engram/")
+                .and_then(|path| expected.get(path))
+            else {
+                return false;
+            };
+            match bytes {
+                None => change.status == "D",
+                Some(bytes) => {
+                    change.status != "D"
+                        && blob_id(bytes.as_bytes(), commit.len()) == change.new_oid
+                }
+            }
+        }))
+}
+
+/// Blob identities at the admitted parent, for selected export paths only.
+pub(crate) struct ExportParentPaths {
+    oid_length: usize,
+    blobs: BTreeMap<String, Option<String>>,
+}
+
+impl ExportParentPaths {
+    pub(crate) fn read(
+        repository: &Path,
+        project: &ProjectId,
+        parent: Option<&str>,
+        paths: BTreeSet<String>,
+        deadline: Duration,
+    ) -> Result<Self> {
+        let Some(commit) = parent else {
+            return Ok(Self {
+                oid_length: 0,
+                blobs: paths.into_iter().map(|path| (path, None)).collect(),
+            });
+        };
+        if paths.is_empty() {
+            return Ok(Self {
+                oid_length: commit.len(),
+                blobs: BTreeMap::new(),
+            });
+        }
+        task_sync::ledger::oid(commit)?;
+        let reader = Reader::bounded(repository, project, deadline)?;
+        let mut input = String::new();
+        for path in &paths {
+            anyhow::ensure!(
+                !path.contains(['\n', '\r', '\0']),
+                "invalid path in retained export proof"
+            );
+            writeln!(input, "{commit}:.engram/{path}")?;
+        }
+        let args = ["cat-file", "--batch-check"];
+        let remaining = reader
+            .total_bound
+            .checked_sub(reader.started.elapsed())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or(super::QueryFailure::Deadline)
+            .map_err(|error| query_error(&args, &error.into(), None))?;
+        let output = super::query::batch_path_metadata(
+            reader.repository,
+            input.as_bytes(),
+            remaining.min(BOUND),
+            u64::try_from(input.len() + 96 * paths.len())?,
+        )
+        .map_err(|error| query_error(&args, &error, None))?;
+        let mut rows = std::str::from_utf8(&output)?.lines();
+        let mut blobs = BTreeMap::new();
+        for (path, expression) in paths.into_iter().zip(input.lines()) {
+            let row = rows.next().ok_or_else(|| malformed_batch(&path))?;
+            let before = if row.strip_suffix(" missing") == Some(expression) {
+                None
+            } else {
+                let mut fields = row.split(' ');
+                let oid = fields.next().ok_or_else(|| malformed_batch(&path))?;
+                if task_sync::ledger::oid(oid).is_err()
+                    || fields.next() != Some("blob")
+                    || fields
+                        .next()
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .is_none()
+                    || fields.next().is_some()
+                {
+                    return Err(malformed_batch(&path).into());
+                }
+                Some(oid.to_owned())
+            };
+            blobs.insert(path, before);
+        }
+        if rows.next().is_some() {
+            return Err(TaskSyncRefusal::GitQueryFailed
+                .invalid("local Git cat-file returned more export paths than asked")
+                .into());
+        }
+        Ok(Self {
+            oid_length: commit.len(),
+            blobs,
+        })
+    }
+
+    /// Compare either a disk preimage or a proposed postimage to the parent.
+    pub(crate) fn matches(&self, path: &str, bytes: Option<&[u8]>) -> Result<bool> {
+        let parent = self
+            .blobs
+            .get(path)
+            .context("export path metadata missing")?;
+        Ok(match (parent, bytes) {
+            (None, None) => true,
+            (Some(parent), Some(bytes)) => *parent == blob_id(bytes, self.oid_length),
+            _ => false,
+        })
+    }
+}
+
+fn blob_id(bytes: &[u8], oid_length: usize) -> String {
+    let header = format!("blob {}\0", bytes.len());
+    if oid_length == 40 {
+        let mut hash = sha1::Sha1::new();
+        hash.update(header.as_bytes());
+        hash.update(bytes);
+        format!("{:x}", hash.finalize())
+    } else {
+        let mut hash = sha2::Sha256::new();
+        hash.update(header.as_bytes());
+        hash.update(bytes);
+        format!("{:x}", hash.finalize())
+    }
+}
 
 /// Typed changed documents, not a complete admitted tree or a stored record.
 /// The caller supplies an already-admitted prior commit and validates the

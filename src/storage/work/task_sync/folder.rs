@@ -102,6 +102,25 @@ impl SqliteStore {
         options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
         dry_run: bool,
     ) -> Result<crate::task_sync::memories::FolderImportOutcome, StoreError> {
+        self.apply_task_sync_folder_with_memories_checked(
+            request,
+            idempotency_key,
+            memories,
+            options,
+            dry_run,
+            || Ok(()),
+        )
+    }
+
+    pub(crate) fn apply_task_sync_folder_with_memories_checked<E: From<StoreError>>(
+        &mut self,
+        request: TaskSyncFolderApply<'_>,
+        idempotency_key: &str,
+        memories: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+        dry_run: bool,
+        check_tip: impl FnOnce() -> Result<(), E>,
+    ) -> Result<crate::task_sync::memories::FolderImportOutcome, E> {
         validate_memory_selection(request.project, memories, options)?;
         let transaction = self.begin_work_mutation()?;
         let mut tasks = apply_task_sync_folder_on(&transaction, request, idempotency_key)?;
@@ -115,10 +134,11 @@ impl SqliteStore {
             options,
             dry_run,
         )?;
+        check_tip()?;
         if dry_run {
-            transaction.rollback()?;
+            transaction.rollback().map_err(StoreError::from)?;
         } else {
-            transaction.commit()?;
+            transaction.commit().map_err(StoreError::from)?;
         }
         Ok(crate::task_sync::memories::FolderImportOutcome {
             tasks,

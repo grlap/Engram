@@ -18,7 +18,7 @@ pub(crate) fn set_aside_exit(commit: Option<&str>) -> String {
         str::to_owned,
     );
     format!(
-        "set the other host's task changes aside without moving the branch back: in the data worktree run `git restore --source={source} --staged --worktree -- .engram/tasks` and commit that; export and commit; then `git revert --no-edit` the set-aside commit, resolving any conflict on a task both hosts changed as an agent merge and committing it, and import"
+        "set the other host's task changes aside without moving the branch back: in the data worktree run `git restore --source={source} --staged --worktree -- .engram/tasks` and commit that; import, then export and commit; then `git revert --no-edit` the set-aside commit, resolving any conflict on a task both hosts changed as an agent merge and committing it, and import"
     )
 }
 
@@ -184,6 +184,17 @@ impl DataWorktree {
     /// # Errors
     /// Refuses a failed or unbounded Git read, and drift since observation.
     pub fn folder_changes(&self) -> Result<std::collections::BTreeSet<String>> {
+        let paths = self.folder_changes_admitted(false)?;
+        self.revalidate()?;
+        Ok(paths)
+    }
+
+    /// Observe status under an existing admission. Combined exports include
+    /// memories alongside the task files and envelope.
+    pub(crate) fn folder_changes_admitted(
+        &self,
+        include_memories: bool,
+    ) -> Result<std::collections::BTreeSet<String>> {
         // The same bound as every other folder listing: a status over a folder
         // at its task limit on a slow disk must finish, not time out.
         let deadline = QUERY_BOUND;
@@ -200,16 +211,16 @@ impl DataWorktree {
         };
         // Status skips a file whose index entry is marked assume-unchanged or
         // skip-worktree, so such a file could hide an edit from this read.
-        for entry in listing(&[
-            "ls-files",
-            "-v",
-            "-z",
-            "--",
-            ".engram/tasks",
-            ".engram/project.json",
-        ])?
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
+        let paths: &[&str] = if include_memories {
+            &[".engram/tasks", ".engram/project.json", ".engram/memories"]
+        } else {
+            &[".engram/tasks", ".engram/project.json"]
+        };
+        let mut index_args = vec!["ls-files", "-v", "-z", "--"];
+        index_args.extend_from_slice(paths);
+        for entry in listing(&index_args)?
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
         {
             ensure!(
                 entry.len() > 2 && entry[1] == b' ',
@@ -256,11 +267,9 @@ impl DataWorktree {
             "--ignored=traditional",
             "--no-renames",
             "--",
-            ".engram/tasks",
-            ".engram/project.json",
         ]);
+        args.extend_from_slice(paths);
         let status = listing(args.as_slice())?;
-        self.revalidate()?;
         let mut paths = std::collections::BTreeSet::new();
         for record in status
             .split(|byte| *byte == 0)
@@ -270,11 +279,12 @@ impl DataWorktree {
                 .get(3..)
                 .ok_or_else(|| anyhow::anyhow!("malformed Git status record"))?;
             let path = String::from_utf8(path.to_vec())?;
-            // The folder's own policy ignores every task-directory entry
-            // that is not a task file, such as a desktop's metadata file or a
-            // nested directory, so only an ignored file at a task file's path
-            // or the envelope's is a change.
+            // The folder policy ignores entries such as desktop metadata.
+            // An ignored document inside a shared component still counts.
             let folder_file = path == ".engram/project.json"
+                || (include_memories
+                    && path.starts_with(".engram/memories/")
+                    && path.rsplit_once('.').is_some_and(|(_, ext)| ext == "json"))
                 || path.strip_prefix(".engram/tasks/").is_some_and(|name| {
                     !name.contains('/')
                         && std::path::Path::new(name)
@@ -287,6 +297,74 @@ impl DataWorktree {
             paths.insert(path);
         }
         Ok(paths)
+    }
+
+    /// Recheck the bound branch and commit immediately before an effect.
+    pub(crate) fn check_head(&self) -> Result<()> {
+        PrivateDirectory::open(&self.checkout)?;
+        ensure!(
+            git_path(&self.checkout, "--git-dir")? == self.git_directory,
+            "data worktree administration changed since observation"
+        );
+        let (branch, commit) = self.observe_tip()?;
+        self.require_expected_tip(&branch, commit.as_deref())
+    }
+
+    /// Recheck the checked-out ref and tip after syncing the publication.
+    /// The write phase already checked the administration directory.
+    pub(crate) fn publication_tip_matches(&self) -> Result<bool> {
+        if let Some(commit) = &self.head {
+            let current = query(
+                &self.checkout,
+                &[
+                    "for-each-ref",
+                    "--format=%(HEAD) %(refname) %(objectname)",
+                    &self.reference,
+                ],
+                false,
+            )?;
+            return Ok(current == format!("* {} {commit}\n", self.reference).as_bytes());
+        }
+        // An unborn branch has no ref record to list.
+        let (branch, commit) = self.observe_tip()?;
+        Ok(branch == self.reference && commit.is_none())
+    }
+
+    fn observe_tip(&self) -> Result<(String, Option<String>)> {
+        let branch = query(&self.checkout, &["symbolic-ref", "--quiet", "HEAD"], true)?;
+        let branch = std::str::from_utf8(&branch)?
+            .trim_end_matches('\n')
+            .to_owned();
+        let commit = query(
+            &self.checkout,
+            &["rev-parse", "--verify", "--quiet", "HEAD"],
+            true,
+        )?;
+        let commit = if commit.is_empty() {
+            None
+        } else {
+            Some(oid_line(&commit)?)
+        };
+        Ok((branch, commit))
+    }
+
+    fn require_expected_tip(&self, branch: &str, commit: Option<&str>) -> Result<()> {
+        if branch != self.reference || commit != self.head.as_deref() {
+            let expected_tip = self.head.as_deref().unwrap_or("<unborn>");
+            let observed_tip = commit.unwrap_or("<unborn>");
+            let observed_branch = if branch.is_empty() {
+                "<detached>"
+            } else {
+                branch
+            };
+            return Err(super::TaskSyncRefusal::IncrementalBasisUnavailable
+                .invalid(format!(
+                    "data worktree HEAD changed since observation: expected {} at {expected_tip}, observed {observed_branch} at {observed_tip}; verify the data branch and rerun import at the new tip. When exporting, import the new tip first",
+                    self.reference,
+                ))
+                .into());
+        }
+        Ok(())
     }
 
     /// Re-observe the exact worktree, administration, branch and HEAD.
@@ -306,10 +384,9 @@ impl DataWorktree {
             .reference
             .strip_prefix("refs/heads/")
             .context("data branch ref missing")?;
-        ensure!(
-            Self::observe_within(&self.code_checkout, &self.checkout, branch, budget)? == *self,
-            "data worktree changed since observation"
-        );
+        let observed = Self::observe_within(&self.code_checkout, &self.checkout, branch, budget)?;
+        self.require_expected_tip(&observed.reference, observed.head.as_deref())?;
+        ensure!(observed == *self, "data worktree changed since observation");
         Ok(())
     }
 
@@ -367,8 +444,7 @@ impl DataWorktree {
         );
         ensure!(
             git_path(&checkout, "--git-common-dir")? == common_directory
-                && git_directory != common_directory
-                && git_directory != git_path(&code_checkout, "--git-dir")?,
+                && git_directory != common_directory,
             "data worktree must have its own administration in the code repository"
         );
         ensure!(

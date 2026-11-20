@@ -23,12 +23,16 @@ use serde::Serialize;
 use super::LocalWorkService;
 use crate::{
     ObjectId, ProjectId, WorkId,
-    storage::{FolderDisk, FolderExportPlan, FolderHead, FolderHeadReason, FolderSource},
+    storage::{
+        FolderDisk, FolderExportConfirmation, FolderExportPlan, FolderHead, FolderHeadReason,
+        FolderSource,
+    },
     task_sync::{
         self, TaskDocument, TaskSyncRefusal, TaskTree,
         data_worktree::DataWorktree,
-        directory::{self, FolderWrite, INCREMENTAL_FORMAT, IncrementalBasis},
+        directory::{self, ExportParent, FolderWrite, INCREMENTAL_FORMAT, IncrementalBasis},
         file_lock::HeldLock,
+        git::ExportParentPaths,
         inventory::InventoryRoot,
         notes::NoteOmissions,
         progress::ExportProfile,
@@ -101,9 +105,24 @@ pub struct FolderExportReceipt {
 pub struct FolderMemoryExport<'a> {
     pub selected: &'a BTreeMap<String, task_sync::memories::KeyHistory>,
     pub resolutions: &'a BTreeMap<String, task_sync::memories::ImportOptions>,
+    /// In recovery, whether the retained component matches the admitted Git
+    /// basis. Check after routing the owned journal's recovery remedy.
+    pub recovery_basis_matches: Option<bool>,
     /// Runs every memory admission check on the captured component and
-    /// returns its bytes, counted against the folder's size limit.
-    pub admit: Box<dyn FnOnce(task_sync::memories::ExportOutcome) -> Result<u64> + 'a>,
+    /// returns the admitted component without publishing it.
+    pub admit: Box<
+        dyn FnOnce(task_sync::memories::ExportOutcome) -> Result<FolderMemoryAdmission<'a>> + 'a,
+    >,
+}
+
+/// The size and exact memory postimages admitted for combined export.
+pub struct FolderMemoryAdmission<'a> {
+    pub bytes: u64,
+    pub files: BTreeMap<String, Option<String>>,
+    /// Finish staging recovery after export admission and before the task
+    /// writer publishes the replacement envelope.
+    pub clear_capability_staging: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
+    pub publish: Box<dyn FnOnce(u64) -> Result<()> + 'a>,
 }
 
 /// One planned folder: its files, membership, encoded size and disk state.
@@ -117,6 +136,19 @@ struct Planned {
     disk: FolderDisk,
     /// The task files planning read, as it read them.
     read: Preimages,
+}
+
+enum RetainedExport {
+    None,
+    Pending(FolderWrite),
+    Replay(FolderWrite, FolderHead),
+    Confirm(FolderExportConfirmation, Option<ObjectId>),
+}
+
+enum OwnedExportSlot {
+    Inactive,
+    RebuildRequired(anyhow::Error),
+    Current(Box<(FolderWrite, ObjectId, FolderHead)>),
 }
 
 impl LocalWorkService {
@@ -141,6 +173,7 @@ impl LocalWorkService {
     /// plan's snapshot and admits it before any write; its size counts
     /// against the folder's limit, and the envelope advertises it. A
     /// task-only export (`None`) refuses a folder that advertises it.
+    #[allow(clippy::too_many_lines)]
     pub fn export_task_sync_data_folder(
         &self,
         data: &DataWorktree,
@@ -152,64 +185,145 @@ impl LocalWorkService {
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let _lock = lock_folder(data)?;
-        // A rebuild writes this host's complete folder over whatever the
-        // folder holds, so an interrupted export it cannot finish is
-        // superseded rather than left to refuse every route; its journal is
-        // dropped only once the rebuild is admitted and about to retain its own.
-        let superseded_journal = if rebuild {
-            match self.finish_interrupted_export(data, now) {
-                Ok(()) => false,
-                Err(error) => {
-                    eprintln!("task-sync rebuild supersedes an unfinished export: {error:#}");
-                    true
-                }
+        if !rebuild {
+            FolderWrite::require_no_unowned_journal(data)?;
+        }
+        let dirty = data.folder_changes_admitted(true)?;
+        let envelope = data.checkout.join(".engram").join("project.json");
+        let recovery_basis_matches = memories
+            .as_ref()
+            .and_then(|memories| memories.recovery_basis_matches);
+        let recovering = recovery_basis_matches.is_some();
+        match &memories {
+            None => {
+                self.require_task_only_folder(data, "export", rebuild, now)?;
+                directory::require_no_capability_staging(data)?;
+            }
+            Some(_) if !recovering => {
+                directory::require_no_capability_staging(data)?;
+                task_sync::memories::directory::require_no_pending_publication(data)?;
+            }
+            Some(_) => {}
+        }
+        // Explicit replacement plans against the admitted worktree and does
+        // not adopt or replay the previous proof.
+        let (previous_write, discard_unrecorded) = if rebuild {
+            match self.owned_export_slot(data, now)? {
+                OwnedExportSlot::Inactive => (None, false),
+                OwnedExportSlot::RebuildRequired(_) => (None, true),
+                OwnedExportSlot::Current(write) => (Some(*write), false),
             }
         } else {
-            self.finish_interrupted_export(data, now)?;
-            false
+            (None, false)
         };
-        let envelope = data.checkout.join(".engram").join("project.json");
-        if memories.is_none()
-            && envelope.try_exists()?
-            && directory::read_folder_basis(&envelope)?.memory_capable
-        {
-            return Err(TaskSyncRefusal::MemoryProfileRequiresOptIn
-                .invalid(
-                    "the data folder carries the memory component: export with --include-memories, so that the task export keeps it",
-                )
+        let (pending, confirmation) = match if rebuild {
+            RetainedExport::None
+        } else {
+            self.inspect_retained_export(data, profile, &dirty, recovering, now)?
+        } {
+            RetainedExport::None => (None, None),
+            RetainedExport::Pending(write) => (Some(write), None),
+            RetainedExport::Confirm(proof, owner) => (None, Some((proof, owner))),
+            RetainedExport::Replay(write, head) => {
+                if memories.is_some() {
+                    return Err(finish_task_only_export());
+                }
+                write.replay(data)?;
+                return Ok(FolderExportReceipt {
+                    route: "unchanged",
+                    notes_included: head.profile.include_notes,
+                    inventory_root: head.inventory_root,
+                    task_count: head.task_count,
+                    export_basis: None,
+                    written: 0,
+                    removed: 0,
+                    superseded: Vec::new(),
+                    omissions: NoteOmissions::default(),
+                    activity_omissions: NoteOmissions::default(),
+                    task_bytes: head.task_bytes,
+                });
+            }
+        };
+        if recovery_basis_matches == Some(false) {
+            if let Some((write, _, _)) = &previous_write
+                && !same_parent(data, write)
+            {
+                return Err(write.restore_combined_export());
+            }
+            return Err(TaskSyncRefusal::MemoryExportBasisChanged
+                .invalid("recovery basis differs from data HEAD")
                 .into());
         }
-        // The committed HEAD decides too, whatever the folder on disk holds:
-        // a task-only export never writes onto committed memories, nor onto
-        // a HEAD whose committed envelope cannot say whether it has them.
-        if memories.is_none() {
-            directory::require_task_only_head(data)?;
-        }
-        let (plan, memory_bytes) = match memories {
-            Some(memories) => {
-                let (plan, mut captured) = self.plan_task_sync_folder_export_with_memories(
-                    profile,
-                    rebuild,
-                    memories.selected,
-                    memories.resolutions,
-                    now,
-                )?;
-                withhold_targets_held_out(
-                    &plan,
-                    data,
-                    &self.project_id,
-                    memories.selected,
-                    &mut captured,
-                )?;
-                (plan, Some((memories.admit)(captured)?))
+        let proof = confirmation.as_ref().map(|(proof, _)| proof);
+        let (plan, memory_bytes, memory_files, clear_capability_staging, publish_memories) =
+            match memories {
+                Some(memories) => {
+                    let (plan, mut captured) = self
+                        .read_store_at(now)?
+                        .plan_task_sync_folder_export_with_memory_confirmation(
+                            &self.project_id,
+                            profile,
+                            rebuild,
+                            memories.selected,
+                            memories.resolutions,
+                            proof,
+                        )?;
+                    withhold_targets_held_out(
+                        &plan,
+                        data,
+                        &self.project_id,
+                        memories.selected,
+                        &mut captured,
+                    )?;
+                    let admitted = (memories.admit)(captured)?;
+                    (
+                        plan,
+                        Some(admitted.bytes),
+                        admitted.files,
+                        admitted.clear_capability_staging,
+                        Some(admitted.publish),
+                    )
+                }
+                None => (
+                    self.read_store_at(now)?
+                        .plan_task_sync_folder_export_with_confirmation(
+                            &self.project_id,
+                            profile,
+                            rebuild,
+                            proof,
+                        )?,
+                    None,
+                    BTreeMap::new(),
+                    None,
+                    None,
+                ),
+            };
+        let (planned, parent_paths) = if plan.complete {
+            let (route, mut files, tree, task_bytes) = self.complete(&plan, data, rebuild)?;
+            if rebuild {
+                let kept = tree
+                    .tasks
+                    .iter()
+                    .map(|task| task.id)
+                    .collect::<BTreeSet<_>>();
+                for relative in dirty
+                    .iter()
+                    .filter_map(|path| path.strip_prefix(".engram/"))
+                {
+                    if !relative.starts_with("tasks/") || files.contains_key(relative) {
+                        continue;
+                    }
+                    let id = task_id(relative)?;
+                    if kept.contains(&id) {
+                        return Err(changed_folder(
+                            "a held task has an uncommitted edit: restore or commit that task's shared file before rebuilding",
+                        ));
+                    }
+                    // The path was already absent on disk. The retained proof
+                    // must still account for its removal from the Git parent.
+                    files.insert(relative.to_owned(), None);
+                }
             }
-            None => (
-                self.plan_task_sync_folder_export(profile, rebuild, now)?,
-                None,
-            ),
-        };
-        let planned = if plan.complete {
-            let (route, files, tree, task_bytes) = self.complete(&plan, data)?;
             // Every path the complete folder writes or removes, and its
             // envelope, as they are before the folder is admitted: a change
             // after this, even one the admission below reads, is never
@@ -224,37 +338,83 @@ impl LocalWorkService {
                 read.insert(relative.to_owned(), fingerprint_path(&folder, relative)?);
             }
             if plan.head.is_none() && !rebuild {
+                if dirty
+                    .iter()
+                    .filter_map(|path| path.strip_prefix(".engram/"))
+                    .any(|path| path.starts_with("tasks/") && !files.contains_key(path))
+                {
+                    return Err(changed_folder(
+                        "the data folder has an uncommitted task deletion: restore or commit it and import the folder, or run `engram task-sync export --rebuild` to replace it",
+                    ));
+                }
                 require_unoccupied(data, &tree, memory_bytes.is_some())?;
             }
             let (root, count) = folder_root(&tree.tasks)?;
-            Planned {
-                route,
-                files,
-                root,
-                count,
-                task_bytes,
-                complete: Some(tree),
-                disk: FolderDisk::Unbound,
-                read,
-            }
+            let from = plan
+                .head
+                .as_ref()
+                .map(|(_, head)| self.read_store_at(now)?.task_sync_folder_import_basis(head))
+                .transpose()?
+                .flatten()
+                .filter(|from| data.head_commit() == Some(from.commit.as_str()));
+            let disk = from
+                .map(|from| written_disk(from, &files))
+                .transpose()?
+                .unwrap_or(FolderDisk::Unbound);
+            (
+                Planned {
+                    route,
+                    files,
+                    root,
+                    count,
+                    task_bytes,
+                    complete: Some(tree),
+                    disk,
+                    read,
+                },
+                None,
+            )
         } else {
             let (_, head) = plan
                 .head
                 .as_ref()
                 .context("incremental plan without a head")?;
-            let base = verify_disk(head, data, &self.project_id, memory_bytes.is_some())?;
-            if plan.changes.is_empty() {
-                // Nothing is written, so no head is recorded: a size the
-                // folder's commits changed is recorded by the next import or
-                // export that writes. A memory component still published
-                // beside the folder must fit with it.
+            let base = export_base(
+                head,
+                data,
+                &dirty,
+                pending.as_ref(),
+                &memory_files,
+                memory_bytes.is_some(),
+                recovering,
+            )?;
+            let memory_only = plan.changes.is_empty() && memory_bytes.is_some();
+            let enable_memories =
+                memory_only && !directory::read_folder_basis(&envelope)?.memory_capable;
+            let memory_write = enable_memories || !memory_files.is_empty();
+            if plan.changes.is_empty()
+                && (!memory_write
+                    || pending.as_ref().is_some_and(|write| {
+                        write.memory_files == memory_files && !enable_memories
+                    }))
+            {
+                // An empty plan does not write task files or an envelope.
                 if let Some(memory_bytes) = memory_bytes {
                     directory::admit_memories_beside(
                         &data.checkout.join(".engram"),
-                        base.task_bytes,
+                        head.task_bytes,
                         memory_bytes,
                     )?;
                 }
+                self.finish_unchanged_export(data, confirmation.as_ref(), now, || {
+                    if let Some(clear) = clear_capability_staging {
+                        clear()?;
+                    }
+                    if let Some(publish) = publish_memories {
+                        publish(head.task_bytes)?;
+                    }
+                    Ok(())
+                })?;
                 return Ok(FolderExportReceipt {
                     route: "unchanged",
                     notes_included: plan.project.notes_included,
@@ -266,42 +426,64 @@ impl LocalWorkService {
                     superseded: Vec::new(),
                     omissions: plan.omissions,
                     activity_omissions: plan.activity_omissions,
-                    task_bytes: base.task_bytes,
+                    task_bytes: head.task_bytes,
                 });
             }
+            if pending.is_some() {
+                if recovering {
+                    return Err(rebuild_combined_export());
+                }
+                return Err(commit_export_first());
+            }
+            if base.is_none() {
+                if recovering {
+                    return Err(rebuild_combined_export());
+                }
+                return Err(changed_folder(
+                    "the last export has no retained commit proof: commit its files and import the committed folder, or export with --rebuild",
+                ));
+            }
+            let parent_paths = ExportParentPaths::read(
+                &data.checkout,
+                &self.project_id,
+                data.head_commit(),
+                plan.changes
+                    .keys()
+                    .copied()
+                    .map(path)
+                    .chain(std::iter::once("project.json".into()))
+                    .chain(memory_files.keys().cloned())
+                    .collect(),
+                GIT_DEADLINE,
+            )?;
             let (files, root, count, task_bytes, read) =
-                incremental(&plan, head, base.task_bytes, data)?;
+                incremental(&plan, head, data, &parent_paths)?;
             // Held tasks keep the other host's documents beside this host's
             // changes; together they must still form a valid folder.
             if !head.pending.is_empty() && !files.is_empty() {
                 self.validate_beside_held(head, profile, data, &files, now)?;
             }
-            let disk = match base.from {
-                Some(from) => {
-                    let mut written = base.carried;
-                    for (relative, bytes) in &files {
-                        written.insert(
-                            task_id(relative)?,
-                            bytes.as_deref().map(|bytes| fingerprint(bytes.as_bytes())),
-                        );
-                    }
-                    FolderDisk::Written {
-                        from,
-                        files: written,
-                    }
-                }
-                None => FolderDisk::Unbound,
-            };
-            Planned {
-                route: "incremental",
-                files,
-                root,
-                count,
-                task_bytes,
-                complete: None,
-                disk,
-                read,
-            }
+            let disk = base
+                .map(|from| written_disk(from, &files))
+                .transpose()?
+                .unwrap_or(FolderDisk::Unbound);
+            (
+                Planned {
+                    route: if memory_only {
+                        "unchanged"
+                    } else {
+                        "incremental"
+                    },
+                    files,
+                    root,
+                    count,
+                    task_bytes,
+                    complete: None,
+                    disk,
+                    read,
+                },
+                Some(parent_paths),
+            )
         };
         let Planned {
             route,
@@ -380,19 +562,31 @@ impl LocalWorkService {
             Some(tree) => {
                 let (bytes, fingerprint) =
                     directory::complete_envelope(tree, profile, basis, memory_bytes.is_some())?;
-                (bytes, Some(fingerprint))
+                (Some(bytes), Some(fingerprint))
+            }
+            None if route == "unchanged" => {
+                let envelope = data.checkout.join(".engram/project.json");
+                (directory::memory_capability_bytes(&envelope)?, None)
             }
             None => (
-                directory::incremental_envelope(
+                Some(directory::incremental_envelope(
                     &plan.project,
                     profile,
                     basis,
                     memory_bytes.is_some(),
-                )?,
+                )?),
                 None,
             ),
         };
-        files.insert("project.json".into(), Some(String::from_utf8(envelope)?));
+        if let Some(envelope) = envelope {
+            files.insert("project.json".into(), Some(String::from_utf8(envelope)?));
+        } else if let Some(memory_bytes) = memory_bytes {
+            directory::admit_memories_beside(
+                &data.checkout.join(".engram"),
+                task_bytes,
+                memory_bytes,
+            )?;
+        }
         // What the readers could not take back is never written.
         let folder = data.checkout.join(".engram");
         let mut policy_bytes = 0_u64;
@@ -412,7 +606,13 @@ impl LocalWorkService {
         // since, such as a merge into the folder, is never overwritten.
         let mut before = BTreeMap::new();
         for relative in files.keys() {
-            let current = fingerprint_path(&folder, relative)?;
+            let bytes = folder_file_bytes(&folder, relative)?;
+            if relative == "project.json"
+                && let Some(parent_paths) = &parent_paths
+            {
+                require_parent_preimage(parent_paths, relative, bytes.as_deref())?;
+            }
+            let current = bytes.as_deref().map(fingerprint);
             if read
                 .get(relative)
                 .is_some_and(|planned| *planned != current)
@@ -433,23 +633,53 @@ impl LocalWorkService {
                     })
             })
             .count();
-        let removed = files.values().filter(|bytes| bytes.is_none()).count();
-        let write = FolderWrite {
+        let removed = files
+            .iter()
+            .filter(|(path, bytes)| {
+                bytes.is_none() && before.get(*path).is_some_and(Option::is_some)
+            })
+            .count();
+        let owner = self.folder_write_owner()?;
+        let mut write = FolderWrite {
+            owner: Some(owner.clone()),
             head: serde_json::to_value(&next)?,
+            head_id: None,
             files,
             before,
+            parent: Some(data.head_commit().map_or(ExportParent::Unborn, |commit| {
+                ExportParent::Commit(commit.to_owned())
+            })),
+            commit_paths: None,
+            published: false,
+            memory_files,
         };
-        if superseded_journal {
-            FolderWrite::discard(data)?;
+        let parent_paths = match parent_paths {
+            Some(paths) => paths,
+            None => ExportParentPaths::read(
+                &data.checkout,
+                &self.project_id,
+                data.head_commit(),
+                write
+                    .files
+                    .keys()
+                    .chain(write.memory_files.keys())
+                    .cloned()
+                    .collect(),
+                GIT_DEADLINE,
+            )?,
+        };
+        let mut commit_paths = BTreeSet::new();
+        for (path, bytes) in write.files.iter().chain(&write.memory_files) {
+            if !parent_paths.matches(path, bytes.as_deref().map(str::as_bytes))? {
+                commit_paths.insert(path.clone());
+            }
         }
-        write.retain(data)?;
-        if let Err(error) = self.record_task_sync_folder_head(&next, now) {
-            FolderWrite::discard(data)?;
-            return Err(error.into());
-        }
-        write.publish(data)?;
-        Ok(FolderExportReceipt {
-            route,
+        let receipt = FolderExportReceipt {
+            route: if commit_paths.is_empty() && written == 0 && removed == 0 {
+                "unchanged"
+            } else {
+                route
+            },
             notes_included: plan.project.notes_included,
             inventory_root: root,
             task_count: count,
@@ -460,7 +690,411 @@ impl LocalWorkService {
             omissions: plan.omissions,
             activity_omissions: plan.activity_omissions,
             task_bytes,
+        };
+        if commit_paths.is_empty() {
+            if let Some((write, _, _)) = previous_write.as_ref()
+                && !same_parent(data, write)
+                && (!write.published || recovering)
+            {
+                return Err(if recovering {
+                    write.restore_combined_export()
+                } else {
+                    write.moved_interrupted_export()?
+                });
+            }
+            if !previous.is_some_and(|(_, head)| {
+                head.import_basis()
+                    .is_some_and(|basis| data.head_commit() == Some(basis.commit.as_str()))
+            }) {
+                let reason = "the planned files already match HEAD but this store has no admitted basis for it";
+                if discard_unrecorded {
+                    let memories = if memory_bytes.is_some() {
+                        " --include-memories"
+                    } else {
+                        ""
+                    };
+                    return Err(changed_folder(&format!(
+                        "{reason}; run `engram task-sync import --basis OWN_EXPORT/project.json{memories}` with your saved pre-merge envelope"
+                    )));
+                }
+                return Err(changed_folder(&format!(
+                    "{reason}; import the committed folder first"
+                )));
+            }
+            if dirty
+                .iter()
+                .any(|path| !path.starts_with(".engram/memories/"))
+            {
+                return Err(changed_folder(
+                    "restore the loose planning files to the admitted commit before exporting again",
+                ));
+            }
+            self.finish_unchanged_export(data, confirmation.as_ref(), now, || {
+                if let Some(clear) = clear_capability_staging {
+                    clear()?;
+                }
+                if let Some(publish) = publish_memories {
+                    publish(task_bytes)?;
+                }
+                Ok(())
+            })?;
+            if discard_unrecorded {
+                FolderWrite::discard(data, Some(&owner))?;
+            }
+            return Ok(receipt);
+        }
+        write.commit_paths = Some(commit_paths);
+        let previous_bytes = write.retained_bytes(data)?;
+        let mut retained = false;
+        let recorded = self
+            .lock_store_at(now)?
+            .record_task_sync_folder_publication(Some(next), proof, now, |head| {
+                let (id, head) = head.context("new export head missing")?;
+                write.head = serde_json::to_value(head)?;
+                write.head_id = Some(id.clone());
+                data.check_head()?;
+                retained = true;
+                write.retain(data)?;
+                #[cfg(test)]
+                if let Some(hook) = AFTER_EXPORT_RETAIN.with(std::cell::Cell::take) {
+                    hook()?;
+                }
+                Ok(())
+            });
+        if let Err(error) = recorded {
+            if retained {
+                write
+                    .restore_retained(data, previous_bytes.as_deref())
+                    .with_context(|| format!("restoring the previous proof after {error:#}"))?;
+            }
+            return Err(error);
+        }
+        if let Some(clear) = clear_capability_staging {
+            data.check_head()?;
+            clear()?;
+        }
+        write.publish_with_memories(data, || match publish_memories {
+            Some(publish) => publish(task_bytes),
+            None => Ok(()),
+        })?;
+        Ok(receipt)
+    }
+
+    pub(super) fn require_task_only_folder(
+        &self,
+        data: &DataWorktree,
+        operation: &str,
+        replace_unrecorded: bool,
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        let envelope = data.checkout.join(".engram").join("project.json");
+        if envelope.try_exists()?
+            && directory::read_folder_basis(&envelope)
+                .with_context(|| format!("reading {}", envelope.display()))?
+                .memory_capable
+        {
+            return Err(TaskSyncRefusal::MemoryProfileRequiresOptIn
+                .invalid(format!(
+                    "the data folder carries the memory component: {operation} with --include-memories"
+                ))
+                .into());
+        }
+        directory::require_task_only_head(data, operation)?;
+        if let Some((write, _, _)) = self.recorded_export(data, replace_unrecorded, now)?
+            && write.writes_memories()?
+        {
+            return Err(TaskSyncRefusal::MemoryProfileRequiresOptIn
+                    .invalid(format!(
+                        "the retained export carries the memory component: {operation} with --include-memories"
+                    ))
+                    .into());
+        }
+        Ok(())
+    }
+
+    /// Verify the retained write against the one commit immediately after its
+    /// observed parent. No body of a Git task blob enters this path.
+    fn inspect_retained_export(
+        &self,
+        data: &DataWorktree,
+        profile: &ExportProfile,
+        dirty: &BTreeSet<String>,
+        recovering: bool,
+        now: DateTime<Utc>,
+    ) -> Result<RetainedExport> {
+        let Some((write, id, head)) = self.recorded_export(data, false, now)? else {
+            return Ok(RetainedExport::None);
+        };
+        if recovering {
+            return Err(if same_parent(data, &write) {
+                if !write.published && !write.writes_memories()? {
+                    finish_task_only_export()
+                } else {
+                    rebuild_combined_export()
+                }
+            } else {
+                write.restore_combined_export()
+            });
+        }
+        if !write.published {
+            if !same_parent(data, &write) {
+                return Err(write.moved_interrupted_export()?);
+            }
+            if write.writes_memories()? {
+                return Err(rebuild_combined_export());
+            }
+            return Ok(RetainedExport::Replay(write, head));
+        }
+        if !head.rebuild_needs_complete_import() && same_parent(data, &write) {
+            if write.writes_memories()? {
+                return Err(rebuild_combined_export());
+            }
+            if dirty.is_empty() && data.head_commit().is_some() {
+                return Err(changed_folder(
+                    "the data folder is clean at the export's original commit; run `engram task-sync import` to account for the discarded export",
+                ));
+            }
+            return Err(commit_export_first());
+        }
+        if !head.rebuild_needs_complete_import()
+            && head.profile.include_notes == profile.include_notes
+            && let Some(proof) = self.prove_export_commit(data, dirty, &write, &id, &head)?
+        {
+            return Ok(RetainedExport::Confirm(proof, write.owner));
+        }
+        Ok(RetainedExport::Pending(write))
+    }
+
+    fn prove_export_commit(
+        &self,
+        data: &DataWorktree,
+        dirty: &BTreeSet<String>,
+        write: &FolderWrite,
+        id: &ObjectId,
+        head: &FolderHead,
+    ) -> Result<Option<FolderExportConfirmation>> {
+        let (Some(commit), Some(parent), Some(paths)) = (
+            data.head_commit().filter(|_| dirty.is_empty()),
+            &write.parent,
+            &write.commit_paths,
+        ) else {
+            return Ok(None);
+        };
+        let parent = match parent {
+            ExportParent::Unborn => None,
+            ExportParent::Commit(commit) => Some(commit.as_str()),
+        };
+        let postimages = write
+            .files
+            .iter()
+            .chain(&write.memory_files)
+            .filter(|(path, _)| paths.contains(*path))
+            .map(|(path, bytes)| (path.as_str(), bytes.as_deref()))
+            .collect::<BTreeMap<_, _>>();
+        if postimages.len() != paths.len() {
+            return Err(changed_folder(
+                "the retained export proof is incomplete; run `engram task-sync export --rebuild`",
+            ));
+        }
+        if !task_sync::git::matches_export_commit(
+            &data.checkout,
+            &self.project_id,
+            parent,
+            commit,
+            &postimages,
+            GIT_DEADLINE,
+        )? {
+            return Ok(None);
+        }
+        let documents = write
+            .files
+            .iter()
+            .filter(|(path, _)| path.as_str() != "project.json")
+            .map(|(path, bytes)| {
+                let id = task_id(path)?;
+                let document = bytes
+                    .as_deref()
+                    .map(|bytes| task_sync::parse::<TaskDocument>(bytes.as_bytes()))
+                    .transpose()?;
+                anyhow::ensure!(
+                    document.as_ref().is_none_or(|document| document.id == id),
+                    "retained task file differs from its id"
+                );
+                Ok((id, document))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        data.check_head()?;
+        Ok(Some(FolderExportConfirmation {
+            expected: id.clone(),
+            head: head.clone(),
+            commit: commit.to_owned(),
+            changes: documents,
+        }))
+    }
+
+    /// Inspect a retained write without replaying or adopting it. An ordinary
+    /// import can apply the exact proof with its other database changes.
+    pub(super) fn prepare_folder_import(
+        &self,
+        data: &DataWorktree,
+        basis: Option<&directory::DestinationBasis>,
+        rebuild: bool,
+        dry_run: bool,
+        now: DateTime<Utc>,
+    ) -> Result<FolderImportRecovery> {
+        let saved_basis = matches!(basis, Some(directory::DestinationBasis::Recorded(_)));
+        let complete_recovery = |owner| FolderImportRecovery {
+            confirmation: None,
+            owner: if dry_run { None } else { owner },
+            requires_committed_basis: true,
+        };
+        let (write, id, head) = match self.owned_export_slot(data, now)? {
+            OwnedExportSlot::Inactive => return Ok(FolderImportRecovery::default()),
+            OwnedExportSlot::RebuildRequired(_) if saved_basis => {
+                return Ok(complete_recovery(Some(self.folder_write_owner()?)));
+            }
+            OwnedExportSlot::RebuildRequired(error) => return Err(error),
+            OwnedExportSlot::Current(write) => *write,
+        };
+        if !write.published {
+            if !same_parent(data, &write) {
+                if saved_basis && write.parent == Some(ExportParent::Unborn) {
+                    // An explicit basis may reconcile the committed folder
+                    // without replaying or adopting the interrupted write.
+                    return Ok(complete_recovery(write.owner));
+                }
+                return Err(write.moved_interrupted_export()?);
+            }
+            if write.writes_memories()? {
+                return Err(rebuild_combined_export());
+            }
+            write.validate_replay(data)?;
+            return Err(interrupted_rebuild_commit_required());
+        }
+        if basis.is_none() && head.rebuild_needs_complete_import() {
+            return Err(unbound_rebuild_basis_required(write.writes_memories()?));
+        }
+        if basis.is_none() && !rebuild {
+            let dirty = data.folder_changes_admitted(true)?;
+            if let Some(proof) = self.prove_export_commit(data, &dirty, &write, &id, &head)? {
+                return Ok(FolderImportRecovery {
+                    confirmation: Some(proof),
+                    owner: if dry_run { None } else { write.owner },
+                    requires_committed_basis: false,
+                });
+            }
+        }
+        Ok(FolderImportRecovery {
+            confirmation: None,
+            owner: if basis.is_none() && !rebuild && !dry_run {
+                write.owner
+            } else {
+                None
+            },
+            requires_committed_basis: false,
         })
+    }
+
+    fn finish_unchanged_export(
+        &self,
+        data: &DataWorktree,
+        confirmation: Option<&(FolderExportConfirmation, Option<ObjectId>)>,
+        now: DateTime<Utc>,
+        publish: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        let publish_checked = || {
+            data.check_head()?;
+            publish()
+        };
+        if let Some((proof, owner)) = confirmation {
+            self.lock_store_at(now)?
+                .record_task_sync_folder_publication(None, Some(proof), now, |_| {
+                    publish_checked()
+                })?;
+            FolderWrite::discard(data, owner.as_ref())
+        } else {
+            publish_checked()
+        }
+    }
+
+    pub(super) fn folder_write_owner(&self) -> Result<ObjectId> {
+        let database = self.database.canonicalize()?;
+        let store = crate::diagnostics::Fingerprint::store(&database);
+        // A host-private filename fingerprint. Moving the database requires
+        // import to establish a new comparison basis at its new path.
+        let filename_key = serde_json::to_vec(&(store, &self.project_id))?;
+        Ok(ObjectId::from_canonical_bytes(&filename_key))
+    }
+
+    fn recorded_export(
+        &self,
+        data: &DataWorktree,
+        replace_unrecorded: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(FolderWrite, ObjectId, FolderHead)>> {
+        match self.owned_export_slot(data, now)? {
+            OwnedExportSlot::Inactive => Ok(None),
+            OwnedExportSlot::RebuildRequired(_) if replace_unrecorded => Ok(None),
+            OwnedExportSlot::RebuildRequired(error) => Err(error),
+            OwnedExportSlot::Current(write) => Ok(Some(*write)),
+        }
+    }
+
+    fn owned_export_slot(
+        &self,
+        data: &DataWorktree,
+        now: DateTime<Utc>,
+    ) -> Result<OwnedExportSlot> {
+        let malformed = || {
+            OwnedExportSlot::RebuildRequired(changed_folder(
+                "preserve the malformed proof and run `engram task-sync export --rebuild`",
+            ))
+        };
+        let owner = self.folder_write_owner()?;
+        let Some(mut journal) = FolderWrite::open(data, Some(&owner))? else {
+            return Ok(OwnedExportSlot::Inactive);
+        };
+        let store = self.read_store_at(now)?;
+        if let Some((id, fingerprint)) = journal.head_key()?
+            && store.task_sync_folder_head_is_displaced(&self.project_id, &id, &fingerprint)?
+        {
+            return Ok(OwnedExportSlot::Inactive);
+        }
+        let write = match journal.read() {
+            Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => {
+                return Ok(malformed());
+            }
+            result => result?,
+        };
+        let planned: FolderHead = match serde_json::from_value(write.head.clone()) {
+            Ok(head) => head,
+            Err(_) => return Ok(malformed()),
+        };
+        if planned.project_id != self.project_id {
+            return Ok(OwnedExportSlot::Inactive);
+        }
+        if let Some((id, head)) = store.task_sync_folder_head(&self.project_id, &planned.profile)?
+            && head == planned
+            && write.head_id.as_ref().is_none_or(|key| *key == id)
+        {
+            return Ok(OwnedExportSlot::Current(Box::new((write, id, head))));
+        }
+        // An explicit import may move the head while leaving its earlier
+        // proof in the slot. Only a never-recorded head requires recovery.
+        if let Some(id) = &write.head_id
+            && store.task_sync_folder_head_was_recorded(id, &planned)?
+        {
+            return Ok(OwnedExportSlot::Inactive);
+        }
+        Ok(OwnedExportSlot::RebuildRequired(
+            if write.writes_memories()? {
+                rebuild_combined_export()
+            } else {
+                changed_folder(
+                    "the retained export has no recorded head. Run `engram task-sync export --rebuild` to replace the interrupted write",
+                )
+            },
+        ))
     }
 
     /// The complete folder: every exported task, removal of every other task
@@ -473,6 +1107,7 @@ impl LocalWorkService {
         &self,
         plan: &FolderExportPlan,
         data: &DataWorktree,
+        rebuild: bool,
     ) -> Result<(&'static str, Files, TaskTree, u64)> {
         let folder = data.checkout.join(".engram");
         let head = plan.head.as_ref().map(|(_, head)| head);
@@ -569,7 +1204,7 @@ impl LocalWorkService {
             }
         }
         tasks.sort_by_key(|task| task.id.0);
-        let route = if plan.head.is_none() {
+        let route = if plan.head.is_none() && (!rebuild || data.head_commit().is_none()) {
             "bootstrap"
         } else {
             "rebuild"
@@ -588,69 +1223,65 @@ impl LocalWorkService {
             task_bytes,
         ))
     }
+}
 
-    /// Finish a publication whose head was recorded, or drop one whose head
-    /// was not; the folder is never touched before its head. A recorded one
-    /// is finished only when every path it writes is still at its preimage or
-    /// already holds the published bytes, and, for a write onto a clean
-    /// commit, over that same commit. Anything else may be a later edit, so
-    /// the journal is kept and the export refused.
-    ///
-    /// # Errors
-    /// Refuses a folder that changed since the interrupted export.
-    pub(super) fn finish_interrupted_export(
-        &self,
-        data: &DataWorktree,
-        now: DateTime<Utc>,
-    ) -> Result<()> {
-        let Some(write) = FolderWrite::pending(data)? else {
-            return Ok(());
-        };
-        let planned: FolderHead = serde_json::from_value(write.head.clone())?;
-        let current = self.task_sync_folder_head(&planned.profile, now)?;
-        if !current.is_some_and(|(_, head)| head == planned) {
-            return FolderWrite::discard(data);
+#[derive(Default)]
+pub(super) struct FolderImportRecovery {
+    owner: Option<ObjectId>,
+    pub(super) confirmation: Option<FolderExportConfirmation>,
+    pub(super) requires_committed_basis: bool,
+}
+
+impl FolderImportRecovery {
+    pub(super) fn finish(&self, data: &DataWorktree) -> Result<()> {
+        if let Some(owner) = &self.owner {
+            FolderWrite::discard(data, Some(owner))?;
         }
-        let folder = data.checkout.join(".engram");
-        let mut changed = Vec::new();
-        for (relative, bytes) in &write.files {
-            let on_disk = fingerprint_path(&folder, relative)?;
-            let published = bytes.as_deref().map(|bytes| fingerprint(bytes.as_bytes()));
-            if on_disk != published && Some(&on_disk) != write.before.get(relative) {
-                changed.push(relative.clone());
-            }
-        }
-        // A write onto a clean commit finishes over that commit, or over a
-        // later one whose task files are still exactly that commit's, such as
-        // one setting other hosts' task changes aside.
-        let moved = match &planned.disk {
-            FolderDisk::Written { from, .. }
-                if !same_tasks(data, &self.project_id, from, data.head_commit()) =>
-            {
-                Some(from.commit.clone())
-            }
-            _ => None,
-        };
-        if !changed.is_empty() || moved.is_some() {
-            let restore = moved.map_or_else(String::new, |commit| {
-                format!(
-                    " The data branch moved past {commit}, which the export wrote onto: {}, letting this export finish first.",
-                    task_sync::data_worktree::set_aside_exit(Some(&commit))
-                )
-            });
-            return Err(TaskSyncRefusal::IncrementalBasisUnavailable
-                .invalid(format!(
-                    "an interrupted export was not finished, and the folder changed since it was planned{}: preserve those changes, then restore the paths to the interrupted export's starting point and export again, or run `engram task-sync export --rebuild`, which writes the complete folder over them.{restore}",
-                    if changed.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({})", changed.join(", "))
-                    }
-                ))
-                .into());
-        }
-        write.publish(data)
+        Ok(())
     }
+}
+
+fn same_parent(data: &DataWorktree, write: &FolderWrite) -> bool {
+    match &write.parent {
+        Some(ExportParent::Commit(commit)) => data.head_commit() == Some(commit.as_str()),
+        Some(ExportParent::Unborn) => data.head_commit().is_none(),
+        None => false,
+    }
+}
+
+fn commit_export_first() -> anyhow::Error {
+    changed_folder(
+        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export",
+    )
+}
+
+fn rebuild_combined_export() -> anyhow::Error {
+    changed_folder(
+        "the combined export is unfinished; run `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT` using the retained pre-export folder",
+    )
+}
+
+fn finish_task_only_export() -> anyhow::Error {
+    changed_folder(
+        "finish the interrupted task-only write with `engram task-sync export` without --include-memories, then commit the folder before exporting with memories",
+    )
+}
+
+pub(super) fn unbound_rebuild_basis_required(include_memories: bool) -> anyhow::Error {
+    let memories = if include_memories {
+        " --include-memories"
+    } else {
+        ""
+    };
+    TaskSyncRefusal::CommitContextRequired
+        .invalid(format!("this rebuild has no admitted comparison basis; commit the rebuilt folder, then run `engram task-sync import --basis OWN_EXPORT/project.json{memories}` with your saved pre-merge rebuild envelope"))
+        .into()
+}
+
+fn interrupted_rebuild_commit_required() -> anyhow::Error {
+    TaskSyncRefusal::CommitContextRequired
+        .invalid("run `engram task-sync export` to finish the interrupted write before committing and importing")
+        .into()
 }
 
 /// A folder this host has no head for holds nothing, or exactly the planning
@@ -679,222 +1310,171 @@ fn require_unoccupied(data: &DataWorktree, tree: &TaskTree, memories: bool) -> R
         .into())
 }
 
-/// The clean commit this export writes onto, if the folder has one, the files
-/// earlier exports already wrote onto it without a commit since, and the
-/// bytes the folder's task files hold as stored.
-struct Base {
-    from: Option<FolderSource>,
-    carried: BTreeMap<WorkId, Option<String>>,
-    task_bytes: u64,
-}
-
-/// Prove the folder on disk is the one `head` recorded, reading only what
-/// changed since: the files the last export wrote, and the task paths a
-/// commit since changed. A folder recorded without a commit is read whole
-/// once, then bound to the next clean commit. A commit since may also change
-/// only how task files are formatted, so their stored size is carried
-/// forward from the files it changed.
-fn verify_disk(
+/// Check the recorded parent and the scoped status without opening Git task
+/// bodies. A retained write at its parent may still be awaiting commit.
+fn export_base(
     head: &FolderHead,
     data: &DataWorktree,
-    project: &ProjectId,
-    memories: bool,
-) -> Result<Base> {
+    dirty: &BTreeSet<String>,
+    pending: Option<&FolderWrite>,
+    memory_files: &Files,
+    include_memories: bool,
+    recovering: bool,
+) -> Result<Option<FolderSource>> {
+    let moved = || {
+        if recovering {
+            return changed_folder(
+                "restore the admitted tip and retry recovery, or run `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT` to replace your output after preserving newer changes",
+            );
+        }
+        let expected = match pending.and_then(|write| write.parent.as_ref()) {
+            Some(ExportParent::Commit(commit)) => Some(commit.as_str()),
+            Some(ExportParent::Unborn) => None,
+            None => match &head.disk {
+                FolderDisk::Committed { commit } => Some(commit.as_str()),
+                FolderDisk::Written { from, .. } => Some(from.commit.as_str()),
+                FolderDisk::Unbound => None,
+            },
+        };
+        export_basis_mismatch(data, expected, include_memories)
+    };
+    if head.rebuild_needs_complete_import() {
+        return Err(unbound_rebuild_basis_required(include_memories));
+    }
     let folder = data.checkout.join(".engram");
-    let dirty = data.folder_changes()?;
-    let current = data.head_commit().map(str::to_owned);
-    let at = |commit: String, task_bytes: u64| FolderSource {
-        commit,
-        inventory_root: head.inventory_root,
-        task_count: head.task_count,
-        task_bytes,
-    };
-    let clean_base = |task_bytes: u64| Base {
-        from: current.clone().map(|commit| at(commit, task_bytes)),
-        carried: BTreeMap::new(),
-        task_bytes,
-    };
-    match &head.disk {
-        FolderDisk::Committed { commit } => {
-            if !dirty.is_empty() {
+    if let Some(write) = pending {
+        if !same_parent(data, write) {
+            return Err(moved());
+        }
+        for (relative, bytes) in &write.files {
+            let written = bytes.as_deref().map(|bytes| fingerprint(bytes.as_bytes()));
+            let current = fingerprint_path(&folder, relative)?;
+            if current != written {
                 return Err(changed_folder(
-                    "the data folder holds uncommitted changes the last import did not leave: commit or restore them. A memory capability that an export enabled or recovered changes only project.json; commit it, then export again",
+                    "the folder no longer holds the last export's files: restore them, or run `engram task-sync import` to account for a discarded export",
                 ));
             }
-            let current = current.as_deref().ok_or_else(|| {
-                changed_folder("the data branch has no commit, but the last import read one")
-            })?;
-            let task_bytes = if current == commit {
-                head.task_bytes
-            } else {
-                prove(
-                    data,
-                    project,
-                    &at(commit.clone(), head.task_bytes),
-                    current,
-                    head,
-                )?
-            };
-            Ok(clean_base(task_bytes))
         }
-        FolderDisk::Written { from, files } => {
-            // Committed since, the folder is proved through Git from the
-            // export's base commit: its own files and any other host's. A
-            // commit whose task files are still exactly the base's, such as
-            // one setting other hosts' changes aside, holds none of the last
-            // export's files: they were discarded, and an import owes them.
-            if dirty.is_empty() {
-                let current = current.as_deref().ok_or_else(|| {
-                    changed_folder("the data branch has no commit to compare the folder with")
-                })?;
-                if current != from.commit && !same_tasks(data, project, from, Some(current)) {
-                    let task_bytes = prove(data, project, from, current, head)?;
-                    return Ok(clean_base(task_bytes));
+        if dirty.iter().any(|changed| {
+            changed.strip_prefix(".engram/").is_none_or(|relative| {
+                !write.files.contains_key(relative) && !write.memory_files.contains_key(relative)
+            })
+        }) {
+            return Err(changed_folder(
+                "the data folder changed beyond the last export's own files: commit what it wrote first, then import any other host's changes before exporting",
+            ));
+        }
+        return Ok(match &head.disk {
+            FolderDisk::Written { from, .. } => Some(from.clone()),
+            _ => None,
+        });
+    }
+    match &head.disk {
+        FolderDisk::Committed { commit } if data.head_commit() == Some(commit.as_str()) => {
+            if dirty.iter().any(|path| {
+                path.strip_prefix(".engram/")
+                    .is_none_or(|relative| !memory_files.contains_key(relative))
+            }) {
+                if recovering {
+                    return Err(rebuild_combined_export());
                 }
+                return Err(changed_folder(
+                    "the data folder has uncommitted changes: commit or restore them, then import any new changes before exporting",
+                ));
             }
+            Ok(head.import_basis())
+        }
+        // The old journal can finish at the commit it was written onto.
+        // There is no retained proof with which to adopt a later commit.
+        FolderDisk::Written { from, files } if data.head_commit() == Some(from.commit.as_str()) => {
             for (&id, expected) in files {
                 if fingerprint_on_disk(&folder, id)? != *expected {
-                    return Err(changed_folder(&format!(
-                        "task {} differs from what the last export wrote: restore it, or commit the folder as exported; if that change was discarded, run `engram task-sync import`, which owes it to the next export",
-                        id.0
-                    )));
+                    return Err(moved());
                 }
             }
-            if dirty.is_empty() {
-                return Ok(clean_base(head.task_bytes));
+            if dirty.iter().any(|changed| {
+                changed != ".engram/project.json"
+                    && changed.strip_prefix(".engram/").is_none_or(|relative| {
+                        task_id(relative).map_or(true, |id| !files.contains_key(&id))
+                    })
+            }) {
+                return Err(moved());
             }
-            let owned = files
-                .keys()
-                .map(|id| format!(".engram/{}", path(*id)))
-                .collect::<BTreeSet<_>>();
-            if !same_tasks(data, project, from, current.as_deref())
-                || dirty
-                    .iter()
-                    .any(|changed| changed != ".engram/project.json" && !owned.contains(changed))
-            {
-                return Err(changed_folder(
-                    "the data folder changed beyond the last export's own files: commit what it wrote first, then merge and import any other host's changes before exporting",
-                ));
-            }
-            Ok(Base {
-                from: Some(from.clone()),
-                carried: files.clone(),
-                task_bytes: head.task_bytes,
-            })
+            Ok(None)
         }
-        FolderDisk::Unbound => {
-            let not_recorded = || {
-                changed_folder(
-                    "the data folder is not the one the last complete export or import recorded: import any other host's changes first, or restore the folder. `engram task-sync export --rebuild` writes the complete folder over it",
-                )
-            };
-            let (root, count) = match current.as_deref().filter(|_| dirty.is_empty()) {
-                Some(commit) => {
-                    let snapshot =
-                        task_sync::git::read_task_snapshot(&data.checkout, project, commit)?;
-                    folder_root(&snapshot.tree.tasks)?
-                }
-                // A folder that is gone is not the recorded one either.
-                None if !folder.try_exists()? => return Err(not_recorded()),
-                None => folder_root(
-                    &directory::read_resolved_data_folder_profile(data, memories)?
-                        .tree
-                        .tasks,
-                )?,
-            };
-            if root != head.inventory_root || count != head.task_count {
-                return Err(not_recorded());
-            }
-            // Read whole anyway, so the stored size is the files' own.
-            Ok(clean_base(stored_task_bytes(&folder)?).filter_dirty(&dirty))
-        }
+        FolderDisk::Unbound if recovering => Err(rebuild_combined_export()),
+        FolderDisk::Unbound => Err(changed_folder(
+            "the last import or export has no committed comparison basis: commit the shared folder and import with `--rebuild --basis BASIS/project.json`, or export with `--rebuild`",
+        )),
+        _ => Err(moved()),
     }
 }
 
-impl Base {
-    /// A folder read whole with uncommitted changes has no clean base.
-    fn filter_dirty(self, dirty: &BTreeSet<String>) -> Self {
-        if dirty.is_empty() {
-            self
-        } else {
-            Self {
-                from: None,
-                carried: BTreeMap::new(),
-                task_bytes: self.task_bytes,
-            }
-        }
-    }
-}
-
-/// The commits from `base` to `current` change the folder only to the root
-/// `head` recorded, read through a rooted diff of the changed task paths.
-/// Returns the bytes the task files hold at `current`: the base's, less the
-/// changed files' stored size before and plus their size after.
-fn prove(
+fn export_basis_mismatch(
     data: &DataWorktree,
-    project: &ProjectId,
-    base: &FolderSource,
-    current: &str,
-    head: &FolderHead,
-) -> Result<u64> {
-    let delta = task_sync::git::read_rooted_task_diff(
-        &data.checkout,
-        project,
-        &base.commit,
-        base.inventory_root,
-        current,
-        GIT_DEADLINE,
-    )?;
-    let mut count = base.task_count;
-    for change in delta.changed.values() {
-        match (&change.before, &change.after) {
-            (None, Some(_)) => count += 1,
-            (Some(_), None) => count = count.saturating_sub(1),
-            _ => {}
-        }
+    expected: Option<&str>,
+    include_memories: bool,
+) -> anyhow::Error {
+    let observed = data.head_commit();
+    let memory_flag = if include_memories {
+        " --include-memories"
+    } else {
+        ""
+    };
+    let rebuild = format!("`engram task-sync export --rebuild{memory_flag}`");
+    if observed == expected {
+        return changed_folder(&format!(
+            "the data folder differs from the last export at HEAD {}; run `engram task-sync import{memory_flag}` first, or {rebuild} to replace the shared folder",
+            observed.unwrap_or("(unborn)"),
+        ));
     }
-    if delta.root != head.inventory_root || count != head.task_count {
-        // A written head's base is the commit it wrote onto, not one that
-        // holds its files; only a committed head names its own commit.
-        let own = matches!(head.disk, FolderDisk::Committed { .. }).then_some(base.commit.as_str());
-        return Err(changed_folder(&format!(
-            "the data branch at {current} holds task changes this host has not imported: import them first (`engram task-sync import`), then export. If that import refuses because this host changed the same planning, {}. `--rebuild` would overwrite the other host's changes",
-            task_sync::data_worktree::set_aside_exit(own)
-        )));
-    }
-    Ok(base
-        .task_bytes
-        .saturating_sub(delta.bytes_before)
-        .saturating_add(delta.bytes_after))
-}
-
-/// `current` is the commit `from` records, or a later one whose task files
-/// are still exactly its own, such as one setting other hosts' task changes
-/// aside. Anything unreadable counts as different.
-fn same_tasks(
-    data: &DataWorktree,
-    project: &ProjectId,
-    from: &FolderSource,
-    current: Option<&str>,
-) -> bool {
-    current.is_some_and(|current| {
-        current == from.commit
-            || task_sync::git::read_rooted_task_diff(
+    let reason = format!(
+        "data HEAD {} does not match the admitted export basis {}",
+        observed.unwrap_or("(unborn)"),
+        expected.unwrap_or("(unborn)"),
+    );
+    if let (Some(expected), Some(observed)) = (expected, observed) {
+        // Recommend ordinary import only when Git proves that it can start
+        // from the recorded commit. This query runs only on refusal.
+        if task_sync::ledger::oid(expected).is_ok()
+            && task_sync::git::query(
                 &data.checkout,
-                project,
-                &from.commit,
-                from.inventory_root,
-                current,
+                &["merge-base", "--is-ancestor", expected, observed],
+                false,
+                None,
                 GIT_DEADLINE,
             )
-            .is_ok_and(|delta| delta.changed.is_empty())
-    })
+            .is_ok()
+        {
+            return changed_folder(&format!(
+                "{reason}; run `engram task-sync import{memory_flag}` first, or {rebuild} to replace the shared folder"
+            ));
+        }
+        return changed_folder(&format!(
+            "{reason}; restore the data branch to {expected} and retry, or run {rebuild} to replace the shared folder"
+        ));
+    }
+    changed_folder(&format!(
+        "{reason}; run {rebuild} to replace the shared folder"
+    ))
 }
 
 fn changed_folder(reason: &str) -> anyhow::Error {
     TaskSyncRefusal::IncrementalBasisUnavailable
         .invalid(reason.to_owned())
         .into()
+}
+
+fn written_disk(from: FolderSource, files: &Files) -> Result<FolderDisk> {
+    let mut written = BTreeMap::new();
+    for (relative, bytes) in files {
+        let after = bytes.as_deref().map(|bytes| fingerprint(bytes.as_bytes()));
+        written.insert(task_id(relative)?, after);
+    }
+    Ok(FolderDisk::Written {
+        from,
+        files: written,
+    })
 }
 
 fn folder_root(tasks: &[TaskDocument]) -> Result<(InventoryRoot, u64)> {
@@ -935,6 +1515,12 @@ fn fingerprint_on_disk(folder: &Path, id: WorkId) -> Result<Option<String>> {
 
 /// One folder file's content fingerprint as it is on disk, `None` if absent.
 fn fingerprint_path(folder: &Path, relative: &str) -> Result<Option<String>> {
+    Ok(folder_file_bytes(folder, relative)?
+        .as_deref()
+        .map(fingerprint))
+}
+
+fn folder_file_bytes(folder: &Path, relative: &str) -> Result<Option<Vec<u8>>> {
     let file = folder.join(relative);
     match std::fs::symlink_metadata(&file) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -949,7 +1535,7 @@ fn fingerprint_path(folder: &Path, relative: &str) -> Result<Option<String>> {
                 .invalid("task folder file is larger than the per-file limit")
                 .into())
         }
-        Ok(_) => Ok(Some(fingerprint(&std::fs::read(&file)?))),
+        Ok(_) => Ok(Some(std::fs::read(&file)?)),
     }
 }
 
@@ -961,12 +1547,19 @@ type Preimages = BTreeMap<String, Option<String>>;
 const GIT_DEADLINE: Duration = Duration::from_secs(60);
 
 #[cfg(test)]
+type ExportRetainHook = fn() -> Result<()>;
+
+#[cfg(test)]
 thread_local! {
     /// Task files this thread read from the folder on disk.
     pub(super) static FILE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    pub(super) static BEFORE_EXPORT_PREIMAGES: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
     /// Runs once an export is planned, before it looks at the folder again.
     pub(super) static AFTER_EXPORT_PLAN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+    pub(super) static AFTER_EXPORT_RETAIN: std::cell::Cell<Option<ExportRetainHook>> =
+        const { std::cell::Cell::new(None) };
 }
 
 fn path(id: WorkId) -> String {
@@ -1069,18 +1662,22 @@ fn withhold_targets_held_out(
 fn incremental(
     plan: &FolderExportPlan,
     head: &FolderHead,
-    stored: u64,
     data: &DataWorktree,
+    parent_paths: &ExportParentPaths,
 ) -> Result<(Files, InventoryRoot, u64, u64, Preimages)> {
+    #[cfg(test)]
+    if let Some(hook) = BEFORE_EXPORT_PREIMAGES.with(|hook| hook.borrow_mut().take()) {
+        hook();
+    }
     let folder = data.checkout.join(".engram");
     let folder = folder.as_path();
     let mut files = Files::new();
     let mut read = Preimages::new();
     let mut root = head.inventory_root;
     let mut count = head.task_count;
-    let mut task_bytes = stored;
+    let mut task_bytes = head.task_bytes;
     for (&id, document) in &plan.changes {
-        let old = read_on_disk(folder, id)?;
+        let old = read_on_disk(folder, id, Some(parent_paths))?;
         // A file that already holds this document is not rewritten: it is
         // neither written nor recorded as written, so no later import can
         // mistake its absence from a commit's changes for a discarded write.
@@ -1158,31 +1755,49 @@ impl LocalWorkService {
 /// One task document as it is in the folder, read alone, with the bytes its
 /// file holds.
 fn on_disk(folder: &Path, id: WorkId) -> Result<Option<(TaskDocument, u64)>> {
-    Ok(read_on_disk(folder, id)?.map(|(task, stored, _)| (task, stored)))
+    Ok(read_on_disk(folder, id, None)?.map(|(task, stored, _)| (task, stored)))
+}
+
+/// Return the size of the matching Git preimage. The caller keeps the raw
+/// checkout bytes for its replay fingerprint.
+fn require_parent_preimage(
+    parent_paths: &ExportParentPaths,
+    relative: &str,
+    bytes: Option<&[u8]>,
+) -> Result<usize> {
+    if parent_paths.matches(relative, bytes)? {
+        return Ok(bytes.map_or(0, <[u8]>::len));
+    }
+    if let Some(bytes) = bytes
+        && let Ok(text) = std::str::from_utf8(bytes)
+        && text.contains("\r\n")
+    {
+        let lf = text.replace("\r\n", "\n");
+        if parent_paths.matches(relative, Some(lf.as_bytes()))? {
+            return Ok(lf.len());
+        }
+    }
+    Err(changed_folder(&format!(
+        "the data folder's {relative} differs from the admitted commit; nothing was written. Commit and import the edit, or set it aside and restore the file from the admitted commit before exporting again"
+    )))
 }
 
 /// One task file read once: its document, stored size and content
 /// fingerprint, `None` if absent.
-fn read_on_disk(folder: &Path, id: WorkId) -> Result<Option<(TaskDocument, u64, String)>> {
-    let file = folder.join(path(id));
-    match std::fs::symlink_metadata(&file) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-        Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => {
-            return Err(TaskSyncRefusal::DestinationNotFile
-                .invalid("task folder entry must be an ordinary file")
-                .into());
-        }
-        Ok(meta) if meta.len() > directory::MAX_FILE_BYTES => {
-            return Err(TaskSyncRefusal::DestinationFileLimit
-                .invalid("task folder file is larger than the per-file limit")
-                .into());
-        }
-        Ok(_) => {}
-    }
+fn read_on_disk(
+    folder: &Path,
+    id: WorkId,
+    parent_paths: Option<&ExportParentPaths>,
+) -> Result<Option<(TaskDocument, u64, String)>> {
+    let relative = path(id);
+    let bytes = folder_file_bytes(folder, &relative)?;
+    let stored = match parent_paths {
+        Some(parent_paths) => require_parent_preimage(parent_paths, &relative, bytes.as_deref())?,
+        None => bytes.as_deref().map_or(0, <[u8]>::len),
+    };
+    let Some(bytes) = bytes else { return Ok(None) };
     #[cfg(test)]
     FILE_READS.with(|count| count.set(count.get() + 1));
-    let bytes = std::fs::read(&file)?;
     let task: TaskDocument =
         task_sync::parse(&bytes).map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     if task.id != id {
@@ -1190,11 +1805,7 @@ fn read_on_disk(folder: &Path, id: WorkId) -> Result<Option<(TaskDocument, u64, 
             .invalid("task filename/id mismatch")
             .into());
     }
-    Ok(Some((
-        task,
-        u64::try_from(bytes.len())?,
-        fingerprint(&bytes),
-    )))
+    Ok(Some((task, u64::try_from(stored)?, fingerprint(&bytes))))
 }
 
 /// The bytes the folder's task files hold on disk, as stored rather than as

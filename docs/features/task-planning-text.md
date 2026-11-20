@@ -80,29 +80,31 @@ writes; a folder already holding other planning refuses as
 `task_sync_destination_occupied`, naming an import first (`--basis` or
 `--empty-basis`) or `--rebuild`. `--rebuild` overwrites the folder with this
 host's planning, including any other host's edits merged into it but not yet
-imported; import those first. Otherwise
-export first proves that the folder on disk is still the one the head records,
-reading only what changed since: after an import, the folder must be that
-commit, or a later one whose task changes, read through a rooted Git diff,
-come to the same membership root; after an incremental export, the files it
-wrote must be on disk as written, and either uncommitted on top of the commit
-it wrote onto or committed in a commit with the same rooted result. A folder
-written by a complete export or a loose-file import is read whole once. Task
-changes on the data branch that this host has not imported refuse as
-`task_sync_incremental_basis_unavailable` with "import them first"; other
-changes to the folder refuse the same way and name commit or restore. The
-folder's state is read with every Git filter driver disabled, and a task or
-envelope file whose index entry is marked assume-unchanged or skip-worktree is
-refused by name, because Git would not report an edit to it. When
-that import in turn refuses because this host changed the same planning, the
-exit only moves the data branch forward: a new commit restores the task files
-of the commit holding this host's last export
-(`git restore --source=COMMIT --staged --worktree -- .engram/tasks`), this host
-exports and commits on top, and `git revert` of that set-aside commit brings
-the other host's changes back for the import. A task both hosts changed can
-conflict in that revert; it is resolved as an agent merge and committed before
-the import. Both refusals name that exit,
-with the commit itself when the head records it. Export
+imported; import those first. Ordinary export uses the recorded commit as
+its comparison basis. It checks the planning paths' status once and does not
+read task blobs from Git. Separately staged evidence packs stay outside that
+status check. After a completed export was committed, the next
+export or ordinary import can adopt a clean new commit with exactly the
+recorded parent and exactly the paths and bytes the retained write produced.
+On an unborn branch this requires a parentless commit. The proof reads the
+commit's parent list and a single raw Git diff. It records the published
+documents as the keyed comparison basis and keeps local edits made since the
+publication queued. A commit that also includes evidence needs ordinary import
+before the next export. A byte-identical rebuild keeps an already admitted
+basis at HEAD. Without that basis, import must establish it. A different tip
+refuses as
+`task_sync_incremental_basis_unavailable`, naming import first or `export
+--rebuild`. Commit an export before running ordinary export again. Confirmation
+compares the completed write against its original Git parent.
+For a rebuild written over an unimported tip, save that rebuild's
+`project.json` before merging. Commit the rebuilt folder and import with
+`--basis OWN_EXPORT/project.json`, where `OWN_EXPORT` holds that saved copy.
+This complete import re-establishes comparison membership. If the export is
+still unfinished, finish it at its original parent before committing.
+The folder's state is read with every Git filter
+driver disabled. A task or envelope file whose index entry is marked
+assume-unchanged or skip-worktree is
+refused by name, because Git would not report an edit to it. Export
 then takes the tasks the project feed changed since the head's cut, with any
 local changes an import passed over, reads the old file of only those tasks,
 writes only those files and updates the membership root by arithmetic. When
@@ -118,16 +120,40 @@ limit, and the resulting folder within the task-count and size limits, from the
 bytes its task files hold as stored, which the head keeps and every import and
 export updates from the files and blobs it touches, without reading unchanged
 tasks. The
-export journals its exact file operations, each path's preimage and its next
-head in the data worktree's Git directory, records the head, and only then
-touches the folder. The next export or import finishes an interrupted
-publication whose head was recorded when every path it writes is still at its
-preimage or already published, and, for a write onto a clean commit, over that
-same commit or a later one whose task files are still exactly that commit's,
-such as a set-aside commit; otherwise it keeps the journal and refuses, so a
-later edit is
-never overwritten. It drops one whose head was not recorded. A dry-run import
-refuses while such a journal is pending, since it cannot finish it.
+export checks that the expected branch and parent are still current, then
+journals its exact file operations, each path's preimage and its next head in
+the data worktree's Git directory. It records the head before touching the
+folder. Live replay finishes an interrupted publication at its original Git
+parent when every written path is still at its preimage or already published.
+If the tip moved, preserve the current commit and the exported task and
+envelope bytes as loose files before restoring the original basis. Stop if
+you cannot preserve them. The replacement proof uses one journal slot. If the
+process stops after replacing that slot and before SQLite commits the matching
+head, ordinary commands refuse and `export --rebuild` replaces the interrupted
+write. A refused admission preserves the prior slot. A completed write
+remains available to verify its commit. A combined export completes only after
+both components finish writing. The slot is a host-private filename derived from the
+canonical store path and project. After moving a store, use import to establish
+its comparison basis. An explicit export rebuild can publish without using an
+unowned legacy journal and leaves it in place. Ordinary exports and imports
+name its path and require the operator to resolve it before continuing.
+Ordinary import confirms a completed export's exact commit in the same
+transaction as its task and memory changes. Dry-run import rolls that
+transaction back. Import with an explicit basis or rebuild leaves a valid
+completed proof unchanged. Finish an interrupted publication through export
+before importing or previewing it. If the export began on an unborn branch
+and the branch now has a commit, preserve the tip and set aside loose files.
+Use the same recovery if an invalid owned journal blocks a rebuild whose
+output already matches HEAD. Import the clean committed folder with
+`--basis OWN_EXPORT/project.json` using your saved pre-merge envelope.
+Include `--include-memories` for a combined folder and commit the memories too.
+The journal is cleared when a live import records the comparison basis.
+Pending memory capability staging uses the
+explicit export with `--include-memories --memory-recovery-basis`. Add `--rebuild` to
+replace an uncommitted combined export or finish one interrupted between the
+task and memory writers. This also applies when loose per-memory staging
+prevents confirmation. For a task-only export, commit the exported files and
+retry the task-only command.
 
 **Import.** With a head that names an applied commit, import is incremental. It
 requires the folder committed in the data worktree (otherwise
@@ -230,9 +256,11 @@ key the folder already holds cannot be withheld, so the export refuses as
 anything: decide the held removal, as the import that held it names, then
 export again.
 
-The complete route, the first import of a store, an explicit basis or
-`--rebuild`, reads the whole folder against a destination basis that the
-caller selects:
+A store that just exported can commit its exact output and run ordinary
+import to record that commit as its comparison basis. A first import
+without that proof, an explicitly selected basis or `--rebuild` uses the
+complete route. It reads the whole folder against a destination basis that
+the caller selects:
 
 - `--basis FILE` names this host's own `project.json` from its export before
   the Git merge, for example as written by

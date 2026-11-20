@@ -622,21 +622,13 @@ fn run_folder_exchange(
                     selected_project,
                     &branch,
                 )?;
-                let path = data.select_folder(&path)?;
+                let path = data.select_admitted_folder(&path)?;
                 let memory_lock = include_memories
                     .then(|| engram::task_sync::memories::directory::publication_lock(&data))
                     .transpose()?;
                 let memory_basis = if include_memories {
                     let committed =
                         engram::task_sync::memories::directory::committed(&data, selected_project)?;
-                    if let Some(retained) = &memory_recovery_basis {
-                        anyhow::ensure!(
-                            engram::task_sync::memories::directory::read_basis(retained)?
-                                == committed,
-                            engram::task_sync::TaskSyncRefusal::MemoryExportBasisChanged
-                                .invalid("recovery basis differs from data HEAD")
-                        );
-                    }
                     anyhow::ensure!(
                         path.exists() || committed.is_empty(),
                         engram::task_sync::TaskSyncRefusal::MemoryExportComponentMissing
@@ -646,6 +638,13 @@ fn run_folder_exchange(
                 } else {
                     BTreeMap::default()
                 };
+                let recovery_basis_matches = memory_recovery_basis
+                    .as_deref()
+                    .map(|retained| {
+                        engram::task_sync::memories::directory::read_basis(retained)
+                            .map(|retained| retained == memory_basis)
+                    })
+                    .transpose()?;
                 let mut resolutions = match memory_resolution {
                     Some(path) => engram::task_sync::memories::directory::read_options(&path)?,
                     None => BTreeMap::default(),
@@ -661,40 +660,72 @@ fn run_folder_exchange(
                 // before any file is written; the task export then counts
                 // the component's bytes against the folder's size limit.
                 let mut admitted = None;
-                let memory_export =
-                    include_memories.then(|| engram::work_service::FolderMemoryExport {
-                        selected: &memory_basis,
+                let memory_export = include_memories.then(|| {
+                    let data = &data;
+                    let basis = &memory_basis;
+                    let held = memory_lock.as_ref();
+                    let recovery = memory_recovery_basis.as_deref();
+                    let admitted = &mut admitted;
+                    engram::work_service::FolderMemoryExport {
+                        selected: basis,
                         resolutions: &resolutions,
-                        admit: Box::new(|captured: engram::task_sync::memories::ExportOutcome| {
-                            let mut complete = memory_basis.clone();
-                            complete.extend(captured.keys.clone());
-                            match &memory_recovery_basis {
-                                // An interrupted capability publication is
-                                // recovered against the envelope it staged,
-                                // before the task route writes a newer one.
-                                Some(retained) => directory::recover_memory_profile_locked(
-                                    &data,
-                                    retained,
-                                    memory_lock.as_ref().context("memory lock missing")?,
-                                )?,
-                                None => anyhow::ensure!(
-                                    !directory::memory_profile_recovery_pending(&data)?,
-                                    "memory capability staging requires --memory-recovery-basis"
-                                ),
-                            }
-                            let bytes =
-                                engram::task_sync::memories::directory::preflight_component(
-                                    &data,
-                                    &memory_basis,
-                                    &complete,
-                                    memory_recovery_basis.is_some(),
-                                    selected_project,
-                                    None,
-                                )?;
-                            admitted = Some((captured, complete));
-                            Ok(bytes)
-                        }),
-                    });
+                        recovery_basis_matches,
+                        admit: Box::new(
+                            move |captured: engram::task_sync::memories::ExportOutcome| {
+                                let mut complete = basis.clone();
+                                complete.extend(captured.keys.clone());
+                                let held = held.context("memory lock missing")?;
+                                let bytes =
+                                    engram::task_sync::memories::directory::preflight_component(
+                                        data,
+                                        basis,
+                                        &complete,
+                                        recovery.is_some(),
+                                        selected_project,
+                                        None,
+                                    )?;
+                                let files =
+                                    engram::task_sync::memories::directory::publication_changes(
+                                        data,
+                                        basis,
+                                        &complete,
+                                        recovery.is_some(),
+                                    )?;
+                                if let Some(retained) = recovery {
+                                    directory::validate_memory_profile_staging_locked(
+                                        data, retained, held,
+                                    )?;
+                                }
+                                Ok(engram::work_service::FolderMemoryAdmission {
+                                    bytes,
+                                    files,
+                                    clear_capability_staging: match recovery {
+                                        Some(retained) => Some(Box::new(move || {
+                                            directory::clear_memory_profile_staging_locked(
+                                                data, retained, held,
+                                            )?;
+                                            Ok(())
+                                        })),
+                                        None => None,
+                                    },
+                                    publish: Box::new(move |task_bytes| {
+                                        engram::task_sync::memories::directory::write_admitted(
+                                            data,
+                                            basis,
+                                            &complete,
+                                            recovery.is_some(),
+                                            held,
+                                            selected_project,
+                                            usize::try_from(task_bytes)?,
+                                        )?;
+                                        *admitted = Some(captured);
+                                        Ok(())
+                                    }),
+                                })
+                            },
+                        ),
+                    }
+                });
                 let receipt = service.export_task_sync_data_folder(
                     &data,
                     &profile,
@@ -703,21 +734,7 @@ fn run_folder_exchange(
                     chrono::Utc::now(),
                 )?;
                 let memory_receipt = if include_memories {
-                    let selected = memory_basis;
-                    let (captured, complete) = admitted.context("memory capture missing")?;
-                    directory::enable_memory_profile(&data)?;
-                    // The task route already admitted the folder, so the
-                    // memory component is published without reading its
-                    // task files again.
-                    engram::task_sync::memories::directory::write_admitted(
-                        &data,
-                        &selected,
-                        &complete,
-                        memory_recovery_basis.is_some(),
-                        memory_lock.as_ref().context("memory lock missing")?,
-                        selected_project,
-                        usize::try_from(receipt.task_bytes)?,
-                    )?;
+                    let captured = admitted.context("memory capture missing")?;
                     for withheld in &captured.withheld {
                         eprintln!("Memory key {} withheld: {}", withheld.key, withheld.reason);
                     }

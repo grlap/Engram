@@ -44,6 +44,17 @@ pub(crate) enum Failure {
     Stderr { command: String, message: String },
 }
 
+fn query_name<'a>(mut args: &[&'a str]) -> Result<&'a str> {
+    while args.first() == Some(&"-c") {
+        args = args
+            .get(2..)
+            .context("missing Git configuration override value")?;
+    }
+    args.first()
+        .copied()
+        .context("missing local Git query command")
+}
+
 pub(crate) fn run(
     root: &Path,
     args: &[&str],
@@ -72,6 +83,7 @@ pub(crate) fn run_observed(
         input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
         "Git admission input exceeded byte bound"
     );
+    let command_name = query_name(args)?;
     let mut command = super::command(root, args);
     command.env_remove("GIT_ATTR_SOURCE");
     command.env("GIT_LITERAL_PATHSPECS", "1");
@@ -89,9 +101,9 @@ pub(crate) fn run_observed(
     }
     run_command_bounded(
         command,
-        args[0],
+        command_name,
         missing,
-        input,
+        input.map(|bytes| (bytes, MAX_BYTES)),
         bound,
         StderrPolicy::ErrorOnly,
         MAX_BYTES,
@@ -107,12 +119,13 @@ pub(crate) fn run_listing_observed(
     bound: Duration,
     output_limit: u64,
 ) -> Result<Vec<u8>> {
+    let command_name = query_name(args)?;
     let mut command = super::command(root, args);
     command.env_remove("GIT_ATTR_SOURCE");
     command.env("GIT_LITERAL_PATHSPECS", "1");
     run_command_bounded(
         command,
-        args[0],
+        command_name,
         false,
         None,
         bound,
@@ -136,7 +149,7 @@ pub(crate) fn run_command(
         command,
         command_name,
         missing,
-        input,
+        input.map(|bytes| (bytes, MAX_BYTES)),
         bound,
         stderr_policy,
         MAX_BYTES,
@@ -188,10 +201,30 @@ pub(super) fn batch_blobs_observed(
         command,
         "cat-file",
         false,
-        Some(input),
+        Some((input, MAX_BYTES)),
         bound,
         stderr_policy,
         output_limit,
+    )
+}
+
+/// Resolve exact commit paths to object metadata in one query, without
+/// opening blob bodies.
+pub(super) fn batch_path_metadata(
+    root: &Path,
+    input: &[u8],
+    bound: Duration,
+    output_limit: u64,
+) -> Result<Vec<u8>> {
+    let command = super::command(root, &["cat-file", "--batch-check"]);
+    run_command_bounded(
+        command,
+        "cat-file",
+        false,
+        Some((input, MAX_LISTING_BYTES)),
+        bound,
+        StderrPolicy::RequireEmpty,
+        output_limit.min(MAX_LISTING_BYTES),
     )
 }
 
@@ -199,7 +232,7 @@ fn run_command_bounded(
     mut command: std::process::Command,
     command_name: &str,
     missing: bool,
-    input: Option<&[u8]>,
+    input: Option<(&[u8], u64)>,
     bound: Duration,
     stderr_policy: StderrPolicy,
     output_limit: u64,
@@ -209,7 +242,7 @@ fn run_command_bounded(
         "invalid local Git query deadline"
     );
     ensure!(
-        input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
+        input.is_none_or(|(bytes, limit)| bytes.len() as u64 <= limit),
         "Git admission input exceeded byte bound"
     );
     let start = Instant::now();
@@ -242,7 +275,7 @@ fn run_command_bounded(
         });
         receiver
     });
-    let input_result = if let Some(input) = input {
+    let input_result = if let Some((input, _)) = input {
         let input = input.to_vec();
         let mut stdin = child.stdin.take().context("missing Git stdin")?;
         let (sender, receiver) = std::sync::mpsc::channel();

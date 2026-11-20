@@ -1,5 +1,11 @@
 use super::*;
+use engram::task_sync::{
+    data_worktree::DataWorktree,
+    directory::{ExportParent, FolderWrite},
+};
 use std::collections::BTreeMap;
+
+const OWNED_JOURNAL_PREFIX: &str = "engram-task-sync-folder-write-";
 
 fn success(output: Output) -> Output {
     assert!(
@@ -8,6 +14,19 @@ fn success(output: Output) -> Output {
         String::from_utf8_lossy(&output.stderr)
     );
     output
+}
+
+fn assert_combined_rebuild(output: &Output) {
+    assert!(!output.status.success());
+    let refusal = refusal_json(output);
+    let error = &refusal["error"];
+    assert_eq!(error["code"], "task_sync_incremental_basis_unavailable");
+    let reason = error["details"]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("export --rebuild --include-memories --memory-recovery-basis"),
+        "{reason}"
+    );
+    assert!(!reason.contains("commit the exported folder"), "{reason}");
 }
 
 fn setup() -> (
@@ -231,6 +250,15 @@ fn memory_sync_cli_explicit_retirement_reports_unseen_suffix_and_counterpart_ret
             .as_str()
             .unwrap()
             .contains("--retire-unseen rule")
+    );
+    // Advance the task comparison basis to the peer commit. The memory
+    // retirement still needs its own explicit decision.
+    let applied = sync_output(&author_home, &marker, "import", &folder, &import_args);
+    assert_eq!(applied.status.code(), Some(3), "{applied:?}");
+    let receipt: Value = serde_json::from_slice(&applied.stdout).unwrap();
+    assert_eq!(
+        receipt["memories"][0]["status"],
+        "memory_concurrent_retirement"
     );
     let withheld = success(sync_output(
         &author_home,
@@ -624,13 +652,17 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
     let data = folder.parent().unwrap();
     git(data, &["add", ".engram"]);
     git(data, &["commit", "-m", "Record first shared memory"]);
-    let memory_before = files(&folder.join("memories"));
     work(&home, &marker, &["add", "second task"]);
+    work(
+        &home,
+        &marker,
+        &["remember", "new shared rule", "--key", "new-rule"],
+    );
     // Export the new task, capturing the exact capability envelope this CLI
     // writes. Then model a capability publication interrupted while staging
     // that envelope: the current envelope without the capability, and half
-    // of the staged bytes. A routine task-only export is deliberately
-    // forbidden on this memory-capable HEAD.
+    // of the staged bytes. The export added a memory key, so committing it
+    // would make the retained pre-export memory basis stale.
     success(sync_output(
         &home,
         &marker,
@@ -638,6 +670,8 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
         &folder,
         &["--include-memories", "--json"],
     ));
+    let memory_before = files(&folder.join("memories"));
+    assert!(folder.join("memories/new-rule/head.json").is_file());
     let project = folder.join("project.json");
     let intended = fs::read(&project).unwrap();
     let mut current_tasks = serde_json::from_slice::<Value>(&intended).unwrap();
@@ -657,9 +691,23 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
         retained.to_str().unwrap(),
         "--json",
     ];
-    success(sync_output(&home, &marker, "export", &folder, &args));
+    let before = files(&folder);
+    assert_combined_rebuild(&sync_output(&home, &marker, "export", &folder, &args));
+    assert_eq!(files(&folder), before);
+    let mut rebuild_args = args.to_vec();
+    rebuild_args.push("--rebuild");
+    let recovered = success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &rebuild_args,
+    ));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "rebuild");
     assert!(!pending.exists());
-    assert_eq!(fs::read(&project).unwrap(), intended);
+    let envelope = serde_json::from_slice::<Value>(&fs::read(&project).unwrap()).unwrap();
+    assert!(envelope.get("memory_profile").is_some(), "{envelope}");
     assert_eq!(files(&folder.join("memories")), memory_before);
     let observed = engram::task_sync::data_worktree::DataWorktree::observe(
         marker.parent().unwrap(),
@@ -675,7 +723,6 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
             .len(),
         2
     );
-    success(sync_output(&home, &marker, "export", &folder, &args));
 }
 
 #[test]
@@ -717,8 +764,8 @@ fn memory_sync_cli_capability_recovery_precedes_a_later_task_change() {
     fs::write(&project, serde_json::to_vec_pretty(&without).unwrap()).unwrap();
     let pending = folder.join(format!("project-{}.pending", uuid::Uuid::new_v4()));
     fs::write(&pending, &staged[..staged.len() / 2]).unwrap();
-    // The store changes before the retry, so the retry writes a newer
-    // envelope than the one staged.
+    // The store changes before the retry, so an explicit rebuild publishes a
+    // newer envelope than the one staged.
     work(&home, &marker, &["add", "third task"]);
     let args = [
         "--include-memories",
@@ -726,7 +773,20 @@ fn memory_sync_cli_capability_recovery_precedes_a_later_task_change() {
         retained.to_str().unwrap(),
         "--json",
     ];
-    success(sync_output(&home, &marker, "export", &folder, &args));
+    let before = files(&folder);
+    assert_combined_rebuild(&sync_output(&home, &marker, "export", &folder, &args));
+    assert_eq!(files(&folder), before);
+    let mut rebuild_args = args.to_vec();
+    rebuild_args.push("--rebuild");
+    let rebuilt = success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &rebuild_args,
+    ));
+    let receipt: Value = serde_json::from_slice(&rebuilt.stdout).unwrap();
+    assert_eq!(receipt["route"], "rebuild");
     assert!(!pending.exists());
     let envelope = serde_json::from_slice::<Value>(&fs::read(&project).unwrap()).unwrap();
     assert!(envelope.get("memory_profile").is_some(), "{envelope}");
@@ -744,6 +804,289 @@ fn memory_sync_cli_capability_recovery_precedes_a_later_task_change() {
             .len(),
         3
     );
+}
+
+fn confirmed_memory_folder(home: &Path, marker: &Path) -> std::path::PathBuf {
+    work(home, marker, &["add", "first task"]);
+    work(home, marker, &["remember", "shared rule", "--key", "rule"]);
+    let folder = data_worktree::folder(marker);
+    let data = folder.parent().unwrap();
+    let args = ["--include-memories", "--json"];
+    success(sync_output(home, marker, "export", &folder, &args));
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Publish task and memory"]);
+    success(sync_output(home, marker, "export", &folder, &args));
+    folder
+}
+
+#[test]
+fn memory_sync_cli_rebuilds_when_loose_head_staging_blocks_exact_confirmation() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let data = folder.parent().unwrap();
+    let retained = owned.path().join("retained-memory-basis");
+    copy_tree(&folder, &retained);
+    let memory_before = files(&folder.join("memories"));
+    work(&home, &marker, &["add", "second task"]);
+    success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    let key = folder.join("memories/rule");
+    let head = fs::read(key.join("head.json")).unwrap();
+    let pending = key.join(format!("head-{}.pending", uuid::Uuid::new_v4()));
+    fs::write(&pending, &head[..head.len() / 2]).unwrap();
+    git(
+        data,
+        &["add", "--", ".engram/project.json", ".engram/tasks"],
+    );
+    git(data, &["commit", "-m", "Commit the task output alone"]);
+    let mut args = vec![
+        "--include-memories",
+        "--memory-recovery-basis",
+        retained.to_str().unwrap(),
+        "--json",
+    ];
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert_combined_rebuild(&refused);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("restore the original basis"));
+    assert_eq!(files(&folder), before);
+    git(data, &["branch", "preserve-exact-task-output"]);
+    git(data, &["reset", "--mixed", "HEAD^"]);
+    assert_eq!(files(&folder), before);
+    args.push("--rebuild");
+    let recovered = success(sync_output(&home, &marker, "export", &folder, &args));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "rebuild");
+    assert_eq!(receipt["task_count"], 2);
+    assert!(!pending.exists());
+    assert_eq!(files(&folder.join("memories")), memory_before);
+}
+
+#[test]
+fn memory_sync_cli_ignored_staging_refusal_preserves_exact_proof() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let checkout = folder.parent().unwrap();
+    let data = combined_data_worktree(&marker, checkout);
+    let parent = data.head_commit().unwrap();
+    let retained = owned.path().join("retained-memory-basis");
+    copy_tree(&folder, &retained);
+    work(&home, &marker, &["add", "second task"]);
+    work(
+        &home,
+        &marker,
+        &["remember", "another shared rule", "--key", "extra"],
+    );
+    success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    git(checkout, &["add", ".engram"]);
+    git(checkout, &["commit", "-m", "Publish exact planning"]);
+    let excludes = owned.path().join("recovery-excludes");
+    fs::write(&excludes, "/.engram/memories/rule/*.pending\n").unwrap();
+    git(
+        checkout,
+        &["config", "core.excludesFile", excludes.to_str().unwrap()],
+    );
+    let memory = folder.join("memories/rule");
+    let canonical = fs::read(memory.join("head.json")).unwrap();
+    let pending_name = format!("head-{}.pending", uuid::Uuid::new_v4());
+    let pending = memory.join(&pending_name);
+    fs::write(&pending, b"unrelated staging").unwrap();
+    let relative = format!(".engram/memories/rule/{pending_name}");
+    git(checkout, &["check-ignore", "--", &relative]);
+
+    let journal = combined_export_journal(&marker, checkout);
+    let head = combined_folder_head(&home);
+    let proof = fs::read(&journal).unwrap();
+    let before = files(&folder);
+    let mut args = vec![
+        "--include-memories",
+        "--memory-recovery-basis",
+        retained.to_str().unwrap(),
+        "--json",
+    ];
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert_combined_rebuild(&refused);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("restore the original basis"));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains(parent));
+    assert_eq!(files(&folder), before);
+    assert_eq!(combined_folder_head(&home), head);
+    assert_eq!(fs::read(&journal).unwrap(), proof);
+
+    // Retain the inconsistent staging separately before restoring the parent.
+    fs::rename(&pending, owned.path().join("preserved-pending")).unwrap();
+    fs::write(&pending, &canonical[..canonical.len() / 2]).unwrap();
+    args.push("--rebuild");
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert_combined_rebuild(&refused);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains(parent));
+    assert_eq!(files(&folder), before);
+    assert_eq!(combined_folder_head(&home), head);
+    assert_eq!(fs::read(&journal).unwrap(), proof);
+
+    git(checkout, &["branch", "preserve-exact-planning"]);
+    git(checkout, &["reset", "--mixed", "HEAD^"]);
+    let recovered = success(sync_output(&home, &marker, "export", &folder, &args));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "rebuild");
+    assert_eq!(receipt["task_count"], 2);
+    assert!(!pending.exists());
+    assert!(folder.join("memories/extra/head.json").is_file());
+    assert_ne!(combined_folder_head(&home), head);
+    assert_ne!(fs::read(journal).unwrap(), proof);
+}
+
+#[test]
+fn memory_sync_cli_discarded_combined_write_with_capability_staging_names_recovery() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let data = folder.parent().unwrap();
+    let retained = owned.path().join("retained-memory-basis");
+    copy_tree(&folder, &retained);
+    work(&home, &marker, &["add", "second task"]);
+    success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    git(
+        data,
+        &["restore", "--worktree", "--", ".engram/project.json"],
+    );
+    git(data, &["clean", "-f", "--", ".engram/tasks"]);
+    let intended = fs::read(folder.join("project.json")).unwrap();
+    let pending = folder.join(format!("project-{}.pending", uuid::Uuid::new_v4()));
+    fs::write(&pending, &intended[..intended.len() / 2]).unwrap();
+    let mut args = vec![
+        "--include-memories",
+        "--memory-recovery-basis",
+        retained.to_str().unwrap(),
+        "--json",
+    ];
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert_combined_rebuild(&refused);
+    assert!(!String::from_utf8_lossy(&refused.stderr).contains("task-sync import"));
+    assert_eq!(files(&folder), before);
+    args.push("--rebuild");
+    let recovered = success(sync_output(&home, &marker, "export", &folder, &args));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "rebuild");
+    assert_eq!(receipt["task_count"], 2);
+    assert!(!pending.exists());
+}
+
+#[test]
+fn memory_sync_cli_moved_tip_refuses_before_capability_cleanup() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let data = folder.parent().unwrap();
+    let retained = owned.path().join("retained-memory-basis");
+    copy_tree(&folder, &retained);
+    let original = files(&folder);
+    let intended = fs::read(folder.join("project.json")).unwrap();
+    let pending = folder.join(format!("project-{}.pending", uuid::Uuid::new_v4()));
+    fs::write(&pending, &intended[..intended.len() / 2]).unwrap();
+    git(
+        data,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Move past the admitted tip",
+        ],
+    );
+    let args = [
+        "--include-memories",
+        "--memory-recovery-basis",
+        retained.to_str().unwrap(),
+        "--json",
+    ];
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert!(!refused.status.success());
+    let refusal = refusal_json(&refused);
+    assert_eq!(
+        refusal["error"]["code"],
+        "task_sync_incremental_basis_unavailable"
+    );
+    let reason = refusal["error"]["details"]["reason"].as_str().unwrap();
+    assert!(reason.contains("restore the admitted tip"), "{reason}");
+    assert!(reason.contains("--memory-recovery-basis"), "{reason}");
+    assert!(!reason.contains("task-sync import"), "{reason}");
+    assert_eq!(files(&folder), before);
+    git(data, &["reset", "--keep", "HEAD^"]);
+    let recovered = success(sync_output(&home, &marker, "export", &folder, &args));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "unchanged");
+    assert_eq!(files(&folder), original);
+}
+
+#[test]
+fn memory_sync_cli_explicit_recovery_restores_a_missing_retained_revision() {
+    let (owned, marker, home) = setup();
+    work(&home, &marker, &["add", "shared task"]);
+    work(
+        &home,
+        &marker,
+        &["remember", "shared rule", "--key", "rule"],
+    );
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let combined = ["--include-memories", "--json"];
+    success(sync_output(&home, &marker, "export", &folder, &combined));
+    git(data, &["add", ".engram"]);
+    git(
+        data,
+        &["commit", "-m", "Publish task planning and memories"],
+    );
+    success(sync_output(&home, &marker, "export", &folder, &combined));
+    let retained = owned.path().join("retained-memory-basis");
+    copy_tree(&folder, &retained);
+    let expected = files(&folder);
+    let revision = fs::read_dir(folder.join("memories").join("rule"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.file_name().unwrap() != "head.json")
+        .unwrap();
+    fs::remove_file(&revision).unwrap();
+
+    let before = files(&folder);
+    assert!(
+        !sync_output(&home, &marker, "export", &folder, &combined)
+            .status
+            .success()
+    );
+    assert_eq!(files(&folder), before);
+    let recovered = success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &[
+            "--include-memories",
+            "--memory-recovery-basis",
+            retained.to_str().unwrap(),
+            "--json",
+        ],
+    ));
+    let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(receipt["route"], "unchanged");
+    assert_eq!(files(&folder), expected);
+    git(data, &["diff", "--exit-code", "HEAD", "--", ".engram"]);
 }
 
 #[test]
@@ -771,11 +1114,7 @@ fn memory_sync_cli_uncommitted_memory_refusal_leaves_worktree_untouched() {
         &folder,
         &["--include-memories", "--json"],
     );
-    assert!(!refused.status.success());
-    assert_eq!(
-        refusal_json(&refused)["error"]["code"],
-        "memory_export_component_changed"
-    );
+    assert_combined_rebuild(&refused);
     assert_eq!(files(&folder), before);
 }
 
@@ -890,6 +1229,302 @@ fn memory_sync_cli_incremental_import_applies_new_memories() {
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn memory_sync_cli_previews_its_own_combined_commit_without_consuming_the_proof() {
+    let (owned, marker, home) = setup();
+    let folder = data_worktree::folder(&marker);
+    let checkout = folder.parent().unwrap();
+    work(
+        &home,
+        &marker,
+        &["remember", "shared rule", "--key", "rule"],
+    );
+    work(&home, &marker, &["add", "shared task"]);
+    success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    git(checkout, &["add", ".engram"]);
+    git(checkout, &["commit", "-m", "Publish combined planning"]);
+
+    let journal = combined_export_journal(&marker, checkout);
+    let before_head = combined_folder_head(&home);
+    let before_proof = fs::read(&journal).unwrap();
+    let before_files = files(&folder);
+    let resolution = owned.path().join("absent-memory-resolution.json");
+    fs::write(&resolution, br#"{"absent":{}}"#).unwrap();
+    for dry_run in [false, true] {
+        let mut args = vec![
+            "--include-memories",
+            "--json",
+            "--memory-resolution",
+            resolution.to_str().unwrap(),
+        ];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        let refused = sync_output(&home, &marker, "import", &folder, &args);
+        assert!(!refused.status.success());
+        assert!(
+            String::from_utf8_lossy(&refused.stderr)
+                .contains("memory resolution names an absent selected key")
+        );
+        assert_eq!(files(&folder), before_files);
+        assert_eq!(combined_folder_head(&home), before_head);
+        assert_eq!(fs::read(&journal).unwrap(), before_proof);
+    }
+    let output = success(sync_output(
+        &home,
+        &marker,
+        "import",
+        &folder,
+        &["--include-memories", "--json", "--dry-run"],
+    ));
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["route"], "incremental", "{receipt}");
+    assert!(
+        receipt["memories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["key"] == "rule"),
+        "{receipt}"
+    );
+    assert_eq!(combined_folder_head(&home), before_head);
+    assert_eq!(fs::read(&journal).unwrap(), before_proof);
+
+    success(sync_output(
+        &home,
+        &marker,
+        "import",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    assert_ne!(combined_folder_head(&home), before_head);
+    assert!(!journal.exists());
+}
+
+#[test]
+fn memory_sync_cli_first_publication_recovery_requires_committed_memories() {
+    let (owned, marker, home) = setup();
+    let folder = data_worktree::folder(&marker);
+    let checkout = folder.parent().unwrap();
+    work(&home, &marker, &["add", "first task"]);
+    work(
+        &home,
+        &marker,
+        &["remember", "shared rule", "--key", "rule"],
+    );
+    success(sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &["--include-memories", "--json"],
+    ));
+    let basis = owned.path().join("saved-project.json");
+    fs::copy(folder.join("project.json"), &basis).unwrap();
+    let journal = combined_export_journal(&marker, checkout);
+    let slot_key = journal
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix(OWNED_JOURNAL_PREFIX))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let data = combined_data_worktree(&marker, checkout);
+    let mut unfinished = FolderWrite::pending(&data, Some(&slot_key))
+        .unwrap()
+        .unwrap();
+    assert_eq!(unfinished.parent, Some(ExportParent::Unborn));
+    assert!(unfinished.published);
+    unfinished.published = false;
+    unfinished.retain(&data).unwrap();
+    let proof = fs::read(&journal).unwrap();
+    git(
+        checkout,
+        &["add", "--", ".engram/project.json", ".engram/tasks"],
+    );
+    git(checkout, &["commit", "-m", "Commit only the task phase"]);
+    assert!(folder.join("memories/rule/head.json").is_file());
+
+    let before = files(&folder);
+    let head = combined_folder_head(&home);
+    let args = [
+        "--include-memories",
+        "--json",
+        "--basis",
+        basis.to_str().unwrap(),
+    ];
+    let refused = sync_output(&home, &marker, "import", &folder, &args);
+    assert!(!refused.status.success());
+    let reason = refusal_json(&refused);
+    assert_eq!(reason["error"]["code"], "task_sync_commit_context_required");
+    assert!(
+        reason["error"]["details"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("import --basis OWN_EXPORT/project.json --include-memories")
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("clean committed task and memory folder")
+    );
+    assert_eq!(files(&folder), before);
+    assert_eq!(combined_folder_head(&home), head);
+    assert_eq!(fs::read(&journal).unwrap(), proof);
+
+    git(checkout, &["add", "--", ".engram/memories"]);
+    git(
+        checkout,
+        &["commit", "-m", "Commit the complete memory component"],
+    );
+    success(sync_output(&home, &marker, "import", &folder, &args));
+    assert_ne!(combined_folder_head(&home), head);
+    assert!(!journal.exists());
+    assert_eq!(files(&folder), before);
+}
+
+#[test]
+fn memory_sync_cli_unbound_rebuild_names_combined_saved_basis() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let checkout = folder.parent().unwrap();
+    git(
+        checkout,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Advance the unimported tip",
+        ],
+    );
+    work(&home, &marker, &["add", "task to publish"]);
+    let rebuild = ["--include-memories", "--rebuild", "--json"];
+    success(sync_output(&home, &marker, "export", &folder, &rebuild));
+    git(checkout, &["add", ".engram"]);
+    git(checkout, &["commit", "-m", "Commit unbound rebuild"]);
+    let head = combined_folder_head(&home);
+    let before = files(&folder);
+    let journal = combined_export_journal(&marker, checkout);
+    let proof = fs::read(&journal).unwrap();
+
+    for command in ["export", "import"] {
+        let refused = sync_output(
+            &home,
+            &marker,
+            command,
+            &folder,
+            &["--include-memories", "--json"],
+        );
+        assert!(!refused.status.success());
+        let refusal = refusal_json(&refused);
+        assert_eq!(
+            refusal["error"]["code"],
+            "task_sync_commit_context_required"
+        );
+        assert!(
+            refusal["error"]["details"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("import --basis OWN_EXPORT/project.json --include-memories")
+        );
+        assert_eq!(combined_folder_head(&home), head);
+        assert_eq!(fs::read(&journal).unwrap(), proof);
+        assert_eq!(files(&folder), before);
+    }
+
+    let basis = owned.path().join("saved-project.json");
+    fs::copy(folder.join("project.json"), &basis).unwrap();
+    let retry = [
+        "--basis",
+        basis.to_str().unwrap(),
+        "--include-memories",
+        "--json",
+    ];
+    success(sync_output(&home, &marker, "import", &folder, &retry));
+    assert_ne!(combined_folder_head(&home), head);
+    assert_eq!(files(&folder), before);
+}
+
+#[test]
+fn memory_sync_cli_invalid_proof_rebuild_names_combined_saved_basis() {
+    let (owned, marker, home) = setup();
+    let folder = confirmed_memory_folder(&home, &marker);
+    let checkout = folder.parent().unwrap();
+    work(&home, &marker, &["add", "later task"]);
+    let rebuild = ["--include-memories", "--rebuild", "--json"];
+    success(sync_output(&home, &marker, "export", &folder, &rebuild));
+    git(checkout, &["add", ".engram"]);
+    git(checkout, &["commit", "-m", "Commit the combined rebuild"]);
+    let journal = combined_export_journal(&marker, checkout);
+    fs::write(&journal, b"{").unwrap();
+    let head = combined_folder_head(&home);
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &rebuild);
+    assert!(!refused.status.success());
+    let refusal = refusal_json(&refused);
+    assert_eq!(
+        refusal["error"]["code"],
+        "task_sync_incremental_basis_unavailable"
+    );
+    assert!(
+        refusal["error"]["details"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("import --basis OWN_EXPORT/project.json --include-memories")
+    );
+    assert_eq!(combined_folder_head(&home), head);
+    assert_eq!(fs::read(&journal).unwrap(), b"{");
+    assert_eq!(files(&folder), before);
+
+    let basis = owned.path().join("saved-project.json");
+    fs::copy(folder.join("project.json"), &basis).unwrap();
+    let retry = [
+        "--basis",
+        basis.to_str().unwrap(),
+        "--include-memories",
+        "--json",
+    ];
+    success(sync_output(&home, &marker, "import", &folder, &retry));
+    assert_ne!(combined_folder_head(&home), head);
+    assert!(!journal.exists());
+    assert_eq!(files(&folder), before);
+}
+
+fn combined_folder_head(home: &Path) -> engram::ObjectId {
+    let project = ProjectId("memory-cli-fixture".into());
+    let profile = ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    };
+    SqliteStore::open(project_database_path(home, &project))
+        .unwrap()
+        .task_sync_folder_head(&project, &profile)
+        .unwrap()
+        .unwrap()
+        .0
+}
+
+fn combined_data_worktree(marker: &Path, checkout: &Path) -> DataWorktree {
+    DataWorktree::observe(marker.parent().unwrap(), checkout, "engram-data").unwrap()
+}
+
+fn combined_export_journal(marker: &Path, checkout: &Path) -> std::path::PathBuf {
+    let data = combined_data_worktree(marker, checkout);
+    fs::read_dir(data.git_directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(OWNED_JOURNAL_PREFIX))
+        })
+        .expect("combined export retains its commit proof")
 }
 
 #[test]
