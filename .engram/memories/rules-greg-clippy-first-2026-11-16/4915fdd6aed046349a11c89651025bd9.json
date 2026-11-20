@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-clippy-first-2026-11-16",
+    "revision_id": "4915fdd6aed046349a11c89651025bd9",
+    "previous": "5aeb89f942804ee290ff4f2222bdf9de",
+    "body_sha256": "ac8b9f6cd9979fbd3360cbc02c86aed786747b31e8c5f117ce7a4a16d5558a23",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T18:48:44.938715800Z"
+    }
+  },
+  "body": "CURRENT (rev 4). GREG, 2026-11-16 about 17:44Z, relayed by Engram::Asistant (mailbox 43498a6e #1396, message 258191f9), verbatim: „Nie. To niech to wejdzie. Clippy poprawione w następnej rundzie. Clippy nie powinno blokowac check-inu. Bledy clippy poprawione w następnej rundzie.”\nSCOPE, clarified by Asistant 2026-11-19 (43498a6e #1613, message d65055e7): this is a GENERAL rule for both projects, not tied to one change. Do not ask Greg again for the same word.\nClippy findings do NOT block a check-in or landing. They are recorded openly, given an owner and fixed in the next round. Real compile errors and failing tests stay blocking, and the decision is not extended to other kinds of errors.\nPRACTICE while the launcher is still fail-fast (FF963, w-ff963d00b50a, is not landed): if a FULL stops ONLY at strict Clippy, run the remaining full-gate stages on the SAME exact commit as focused launcher legs, each with equal admitted, before and after source_ids and its originals kept. If they all pass, the landing proceeds under this Greg word. The landing record cites this quote together with the Asistant relay that names the change (first applied: w-808add714773 / 36e89efe). Those legs are evidence under Greg's word, not a \"composite FULL\".\nOnce FF963 lands, Clippy becomes advisory inside the launcher and this manual step disappears.\nEARLIER (rev 1-2): a practice of running Clippy early to SEE findings; it remains optional."
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1f49f-9bcd-7b00-ab84-c6ef4d3d2783",
+  "external_ref": null,
+  "title": "Name the original-parent recovery when the data branch moves at the export's post-admission file fence",
+  "outcome": "Name the original-parent recovery when the data branch moves at the export's post-admission file fence",
+  "acceptance": [
+    "When another Git operation advances the data branch after the export admitted its new head and before the file fence (task-only and combined cleanup boundary), the refusal names the original-parent recovery with the observed tip, never a generic import that then refuses; a deterministic test advances the branch in that window and the named remedy then succeeds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

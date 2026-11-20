@@ -1,0 +1,34 @@
+{
+  "id": "01a1f553-321f-73c3-8308-297979e6fa09",
+  "external_ref": null,
+  "title": "Review the complete Engram and TermAl test portfolios after sync",
+  "outcome": "Review the complete Engram and TermAl test portfolios after sync",
+  "acceptance": [
+    "Both projects produce a concrete test-portfolio review classifying keep, simplify or remove with a reason and priority for each finding",
+    "The review covers observable behavior versus implementation mirroring, brittleness and internal-detail coupling, cost and timeout versus benchmark character, and redundant duplication or an unnecessarily expensive proof level",
+    "Source-text and source-shape findings feed from the existing inventories without confusing source_id input identity with a metric test",
+    "The resulting recommendations have named implementation owners in the appropriate project tracker and introduce no new gate or mandatory replacement suite",
+    "The review starts after the current sync landings and does not block them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 2,
+  "labels": [
+    "after-sync",
+    "coordination",
+    "greg-directed",
+    "simplification",
+    "tests"
+  ],
+  "assigned_to": "greg/kimi",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

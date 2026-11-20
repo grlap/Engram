@@ -1,0 +1,36 @@
+{
+  "id": "01a1f553-66c1-72f1-baa5-6252b4eb3fea",
+  "external_ref": null,
+  "title": "Audit Engram's existing test portfolio after sync",
+  "outcome": "Audit Engram's existing test portfolio after sync",
+  "acceptance": [
+    "Engram's existing tests are reviewed by suite and concrete case, with keep, simplify or remove recommendations and reasons",
+    "Each recommendation addresses the protected observable behavior, implementation-detail brittleness, cost or timeout versus benchmark character, and duplication or cheaper available proof",
+    "Prioritized findings have named Sol/Opus implementation owners and introduce no new gate",
+    "The source_file_size removal is reused, not repeated, and the audit does not block current sync landings"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "after-sync",
+    "coordination",
+    "engram",
+    "greg-directed",
+    "simplification",
+    "tests"
+  ],
+  "assigned_to": "greg/claude",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1f553-321f-73c3-8308-297979e6fa09",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1db21-e24f-7712-b62e-45fe538db32a"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

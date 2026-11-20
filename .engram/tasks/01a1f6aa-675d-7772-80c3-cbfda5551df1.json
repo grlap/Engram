@@ -1,0 +1,30 @@
+{
+  "id": "01a1f6aa-675d-7772-80c3-cbfda5551df1",
+  "external_ref": null,
+  "title": "Add the direct finding-handoff sentence to the shared wait rule in the testing skill",
+  "outcome": "Add the direct finding-handoff sentence to the shared wait rule in the testing skill",
+  "acceptance": [
+    "The paragraph under '## Wait for a result' in .agents/skills/coder-test-execution/SKILL.md ends with the jointly agreed revised wording, separated by one ASCII space. It preserves immediate in-scope undisputed fixes and routes remaining Medium-or-higher findings requiring a decision. The full line is byte-identical to TermAl step 7 apart from its '7. ' marker (TermAl w-83491649fede).",
+    "The change is Markdown only, with the Claude skill pointer unchanged. It passes the focused launcher’s link check and both independent reviewers review the new frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "agent-experience",
+    "docs",
+    "greg-directed",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

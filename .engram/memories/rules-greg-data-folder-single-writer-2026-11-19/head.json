@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-data-folder-single-writer-2026-11-19",
+  "head": {
+    "state": "active",
+    "chain": [
+      "df04a6595af7456680bbf05521ac7796",
+      "7d2f38f1a8194837a3aaeb960752fa97"
+    ]
+  }
+}

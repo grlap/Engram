@@ -1,0 +1,31 @@
+{
+  "id": "01a1f557-7e01-7440-a166-0e8170fc56ee",
+  "external_ref": null,
+  "title": "Add the ban on source-text and source-shape tests to the testing skill and the review lens",
+  "outcome": "Use one shared testing rule for observable behavior and have reviewers flag tests that measure implementation text or shape.",
+  "acceptance": [
+    "Step 2 of the coder-test-execution skill, as loaded by Codex and Claude, ends with the exact sentence agreed by both coordinators, byte-identical to TermAl’s counterpart.",
+    "The testing review lens adds the agreed source-shape bullet immediately after the existing text-pinning bullet. AGENTS.md and CLAUDE.md stay unchanged.",
+    "The Markdown change passes the focused launcher’s link check and is reviewed by both independent reviewers on the same frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "greg-directed",
+    "ready-to-land",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

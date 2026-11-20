@@ -1,0 +1,31 @@
+{
+  "id": "01a1f758-5fc5-70b1-8424-85c7a24d3520",
+  "external_ref": null,
+  "title": "Confirm an exact committed task-only export after a crash before its completion mark",
+  "outcome": "Confirm an exact committed task-only export after a crash before its completion mark",
+  "acceptance": [
+    "A task-only export that crashes after writing files but before the published mark can be confirmed by ordinary export and by ordinary import when HEAD is exactly its commit with the recorded parent and exact changed paths and bytes",
+    "A commit with an extra path, different postimage bytes or a different parent still refuses without consuming the proof",
+    "A deterministic BEFORE_EXPORT_COMPLETION crash fixture followed by exact commit proves both ordinary export and import recover and continue",
+    "Combined-memory recovery is unchanged and no new Git history search, per-task launch or gate is introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "review-followup",
+    "sync",
+    "tla-plus"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,32 @@
+{
+  "id": "01a1f54c-6cce-7991-9b9d-4db2ad8f695f",
+  "external_ref": null,
+  "title": "Remove source-text and source-shape tests across Engram and TermAl",
+  "outcome": "Remove source-text and source-shape tests across Engram and TermAl",
+  "acceptance": [
+    "Both projects carry the portable rule that no test passes or fails on source text or shape, including line or byte counts, file/function/module counts, required phrases, module layout or grep-style source scans, instead of observable behavior; source_id input identity is explicitly unaffected",
+    "Engram's inventory of existing source-text and source-shape tests is removed without mechanical code splits or replacement static gates",
+    "TermAl's inventory has a named owner in its own tracker and its source-text and source-shape tests are removed without mechanical code splits or replacement static gates",
+    "The wider inventory remains separate from the R25 sync landing and does not block it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "greg-directed",
+    "simplification",
+    "tests"
+  ],
+  "assigned_to": "greg/kimi",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

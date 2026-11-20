@@ -1,0 +1,31 @@
+{
+  "id": "01a1fa2a-77ca-7213-9624-eb48d4598762",
+  "external_ref": null,
+  "title": "First sync after upgrading to the exact-export build needs one export --rebuild when the last own export was committed by the old build",
+  "outcome": "Document the one-time explicit rebuild after an upgrade and name it in the import refusal when the last own export was made by the old build without a journal.",
+  "acceptance": [
+    "Git task-sync documentation explains when the last own export from the previous build needs one export --rebuild and how to establish the new comparison basis.",
+    "The import refusal names export --rebuild as the upgrade recovery, without adopting an unproven commit or weakening divergent-task protection.",
+    "A behavioural test commits an old-style export with no retained exact-export journal and verifies the import names the rebuild remedy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "git-task-sync",
+    "low",
+    "upgrade"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

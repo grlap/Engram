@@ -1,0 +1,32 @@
+{
+  "id": "01a1f550-828e-79d2-bc33-42521939d209",
+  "external_ref": null,
+  "title": "Review every existing Engram test after the sync lands: what it protects, behaviour or shape, cost, duplicates, and keep, simplify or remove",
+  "outcome": "Review every existing Engram test after the sync lands: what it protects, behaviour or shape, cost, duplicates, and keep, simplify or remove",
+  "acceptance": [
+    "Every Engram test file or group is listed with: what it protects; whether it checks observable behaviour or the text or shape of code; whether it is brittle or tied to implementation detail; its cost (runtime and timeout, and whether it is really a benchmark); and duplicates",
+    "Each entry has a proposal (keep, simplify or remove) with a one-line reason, and the list is prioritised",
+    "No new gate or blocker is introduced; the agreed removals and simplifications are filed as items for Sol or Opus authors"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "agent-experience",
+    "greg-directed",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1db21-e24f-7712-b62e-45fe538db32a"
+  ],
+  "blockers": [],
+  "superseded_by": "01a1f553-66c1-72f1-baa5-6252b4eb3fea",
+  "disposal_reason": "Duplicate of Kimi::Consultant's Engram child w-6252b4eb3fea under epic w-297979e6fa09 (c15db92c #388), filed for the same Greg request (Asistant 43498a6e #1620). The scope, Greg's quote and the prerequisite on w-45fe538db32a carry over to it.",
+  "completion": null
+}

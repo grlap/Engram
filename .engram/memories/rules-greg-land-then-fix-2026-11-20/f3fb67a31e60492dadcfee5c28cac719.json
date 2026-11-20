@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-land-then-fix-2026-11-20",
+    "revision_id": "f3fb67a31e60492dadcfee5c28cac719",
+    "previous": null,
+    "body_sha256": "2845ba6ba4e8d9893a5d5e52817a102e96bda33fabbd7175213c0030efb42dbb",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-20T17:30:21.499779400Z"
+    }
+  },
+  "body": "GREG, 2026-11-20 about 17:29Z, relayed by Engram::Asistant (mailbox 43498a6e #1655, message a427d3f2), verbatim: „mozemy czesc bledow odlozyc, zrobic landing i je naprawic w nastepnych turach, odrazu testujac”. Asistant's instruction: apply this to the current sync path, name the concrete deferrable bugs, record owners, ensure fast testing and fixes in the next rounds, and stay transparent with Greg about what is left.\nIt generalises his R34 word („Dla R34 wariant A. Wprowadzić teraz, i później naprawić.”, #1643).\nWORKING RULE (Engram::Fable, decision owner; no new gate):\n- A review or evaluation finding of Medium or lower MAY be deferred and the candidate landed, when ALL of these hold:\n  (1) it causes no data loss or corruption and no security exposure;\n  (2) it does not break an item acceptance criterion;\n  (3) the gates required for landing pass.\n- Each deferred finding gets its own item, filed BEFORE the landing, with a named Sol or Opus owner, a behavioural regression test, and \"fix in the next round right after the landing\".\n- The decision owner records the deferral on the landing item. The coordinator lists every deferred finding to Greg in the landing report (transparency); Greg is not asked case by case.\n- High or Critical findings, data loss and security are NOT deferrable without Greg's own word.\n- This does not loosen the review or gate requirements of the standing approval; it changes only how Mediums are disposed."
+}

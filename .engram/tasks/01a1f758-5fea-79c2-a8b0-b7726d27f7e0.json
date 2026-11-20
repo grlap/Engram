@@ -1,0 +1,31 @@
+{
+  "id": "01a1f758-5fea-79c2-a8b0-b7726d27f7e0",
+  "external_ref": null,
+  "title": "Document export-and-commit before fetch or merge in the task-sync workflow",
+  "outcome": "Document export-and-commit before fetch or merge in the task-sync workflow",
+  "acceptance": [
+    "The task-sync usage skill tells operators to export and commit local planning before fetching or merging the data branch and not to make a planning edit between a merge and its import",
+    "The existing divergent-planning set-aside remedy remains linked for a merge performed with an unexported local edit",
+    "No production code, watcher, global lock or new gate is added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review-followup",
+    "sync",
+    "tla-plus"
+  ],
+  "assigned_to": "greg/claude",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

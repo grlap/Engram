@@ -1,0 +1,29 @@
+{
+  "id": "01a1f5f3-c213-78a2-9879-d6acea224ad2",
+  "external_ref": null,
+  "title": "Report task files written when task-sync export replays an interrupted publication",
+  "outcome": "Report task files written when task-sync export replays an interrupted publication",
+  "acceptance": [
+    "A task-sync export that successfully finishes an interrupted task-only write reports that it replayed the publication and gives the operator accurate write and removal counts.",
+    "A behavioral regression verifies the replay receipt and the subsequent commit-first requirement from the same interrupted state."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-arbitrary-metric-tests-2026-11-19",
+    "revision_id": "b09b1e5869604d6f8f8110c382f5a3f0",
+    "previous": "8cfece0edeba409cb9887ed71545c810",
+    "body_sha256": "6363143e683cdbc1172ff76fbf07eddbdf463b15cdc1941f03d702c55708fa12",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T19:31:22.478060800Z"
+    }
+  },
+  "body": "GREG, 2026-11-19, relayed by Engram::Asistant (mailbox 43498a6e), verbatim:\n- #1616 (about 19:29Z, message 9ad7e2ba): „Absolutnie usunac ten test!!! + Kimi To jest tautologia. Zakaz tego typu testów” (about tests/source_file_size.rs, the 2,499-line limit that stopped the w-808a landing).\n- #1617 (about 19:30Z, message 12d034fa): „Nie możemy mieć testów co sprawdzają kod zródłowy. To się zmienia!!!”\nRULE (both projects):\n- No test may pass or fail on the TEXT or SHAPE of the source code (line or byte counts, file, function or module counts, required phrases, module layout, grep-style scans of src) instead of observable behaviour.\n- Remove existing ones. Do not split code mechanically to satisfy them. Do not replace them with another static gate.\n- This extends the existing bans on text-pinning and implementation-mirroring tests.\n- It does NOT affect source_id, the input identity that binds a test result to the exact source.\n- Kimi::Consultant agrees the short portable wording and inventories and removes cases in both projects.\n- Sync landing stays the priority. Only the file-size test is removed inside the 808a R25 candidate (w-0474dd241b14); the wider inventory is its own item."
+}

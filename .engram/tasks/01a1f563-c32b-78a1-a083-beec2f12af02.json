@@ -1,0 +1,29 @@
+{
+  "id": "01a1f563-c32b-78a1-a083-beec2f12af02",
+  "external_ref": null,
+  "title": "Specify the review severity for source-shape tests",
+  "outcome": "Make the testing lens consistent about the severity and removal action for tests that measure implementation text or shape.",
+  "acceptance": [
+    "The testing lens states the agreed severity and disposition for source scans, code line or size caps, implementation counts and layout guards, while preserving the existing fixture and source identity exceptions.",
+    "The wording is reconciled with the other project's review instructions before it changes the agreed rule."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

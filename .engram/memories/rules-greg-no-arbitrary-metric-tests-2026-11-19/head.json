@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-arbitrary-metric-tests-2026-11-19",
+  "head": {
+    "state": "active",
+    "chain": [
+      "8f0cb967386b4fa3a4acb29478c5f2a9",
+      "8cfece0edeba409cb9887ed71545c810",
+      "b09b1e5869604d6f8f8110c382f5a3f0"
+    ]
+  }
+}

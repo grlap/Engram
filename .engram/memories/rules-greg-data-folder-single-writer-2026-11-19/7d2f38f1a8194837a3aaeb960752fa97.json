@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-data-folder-single-writer-2026-11-19",
+    "revision_id": "7d2f38f1a8194837a3aaeb960752fa97",
+    "previous": "df04a6595af7456680bbf05521ac7796",
+    "body_sha256": "a4b1fa3fac1302eab406f279153452832d747fec14c1f2aae988151b0ca97f62",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T16:29:58.972101100Z"
+    }
+  },
+  "body": "GREG, 2026-11-19 about 16:23Z, relayed by Engram::Asistant (mailbox 43498a6e #1609, message abb12e77), verbatim: „tak, ladujemy”. He was answering Fable's #1608 (message 82a767e8), option A.\nRULE (task sync, both projects): while an export or import runs, no other process commits in the SAME LOCAL data folder (data worktree). The tip check before any effect stays; it is one of Greg's five simple-sync checks.\nA reviewer finding whose only trigger is another Git writer racing on that local data branch during a running export or import does NOT block landing. It is filed as its own item, to be fixed later.\nThis is an assumption about the local folder. It does NOT forbid independent work or sync by other hosts.\nCLARIFICATION, Greg about 16:29Z via Asistant #1610 (message 17f55acb), verbatim: „i zeby nie miec tez jakies rozbudowanej synchronizacji pomiedzy agentami inaczej bedzie problem”.\nSo the rule is a plain usage assumption, NOT a coordination protocol: no lock, no watcher, no permission handoff between agents. In practice one session per project runs the data sync. A violation is caught by the existing tip check, which refuses with an ordinary Git remedy (fetch, merge or import, then retry). Real conflicts are handled with plain repository and Git semantics.\nFirst applied: w-808add714773 R23 (8bfbbeb1), with its two race-class Mediums deferred as separate items."
+}

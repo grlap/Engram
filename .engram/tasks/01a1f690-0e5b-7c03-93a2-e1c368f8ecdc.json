@@ -1,0 +1,28 @@
+{
+  "id": "01a1f690-0e5b-7c03-93a2-e1c368f8ecdc",
+  "external_ref": null,
+  "title": "Report zero task writes when a CRLF rebuild skips publication",
+  "outcome": "Report zero task writes when a CRLF rebuild skips publication",
+  "acceptance": [
+    "A Git-clean CRLF checkout whose committed planning already matches the rebuilt output returns a receipt with zero task writes and removals, and leaves the files, folder head and retained slot unchanged. A regression test covers that no-op rebuild."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

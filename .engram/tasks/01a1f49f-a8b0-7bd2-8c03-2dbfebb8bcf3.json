@@ -1,0 +1,29 @@
+{
+  "id": "01a1f49f-a8b0-7bd2-8c03-2dbfebb8bcf3",
+  "external_ref": null,
+  "title": "Skip rewriting unchanged memory heads during export confirmation and recheck the branch tip before the SQLite commit",
+  "outcome": "Skip rewriting unchanged memory heads during export confirmation and recheck the branch tip before the SQLite commit",
+  "acceptance": [
+    "Confirming a clean exact combined child with no local changes performs no physical write of unchanged memory head files, shown by a deterministic count",
+    "When a confirmation callback does write, the expected ref and object id are rechecked immediately before the SQLite commit and proof removal; a mismatch refuses and keeps the proof, shown by a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

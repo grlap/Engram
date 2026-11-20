@@ -1,0 +1,27 @@
+{
+  "id": "01a1f756-c324-78e3-9a83-b835a6d4a0dd",
+  "external_ref": null,
+  "title": "Don't suggest restoring the data branch when the ancestor query itself fails during an export refusal",
+  "outcome": "Don't suggest restoring the data branch when the ancestor query itself fails during an export refusal",
+  "acceptance": [
+    "export_basis_mismatch distinguishes `git merge-base --is-ancestor` exit code 1 (not an ancestor) from any other failure (timeout, exit 128); on any other failure the refusal names a neutral remedy (inspect the branch, or export --rebuild), never 'restore the data branch', shown by a test that injects the query failure on a descendant HEAD"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

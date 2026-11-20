@@ -1,0 +1,30 @@
+{
+  "id": "01a1f759-8e20-7dc1-b2cb-180ff6a147b1",
+  "external_ref": null,
+  "title": "Avoid reading a displaced task-sync rebuild journal before an edited export",
+  "outcome": "Avoid reading a displaced task-sync rebuild journal before an edited export",
+  "acceptance": [
+    "After a large rebuild is committed and explicitly imported with its saved basis, an ordinary export of one local task edit performs zero full reads of the displaced journal. The deterministic fixture instruments every full prior-slot read, including the rollback preparation path.",
+    "Preserve exact retained journal bytes on rollback, and preserve the existing crash states and recovery behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "deferred-review",
+    "performance",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

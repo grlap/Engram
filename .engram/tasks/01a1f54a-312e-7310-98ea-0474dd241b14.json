@@ -1,0 +1,29 @@
+{
+  "id": "01a1f54a-312e-7310-98ea-0474dd241b14",
+  "external_ref": null,
+  "title": "Remove the source file size test, its exceptions file and its docs section",
+  "outcome": "Remove the source file size test, its exceptions file and its docs section",
+  "acceptance": [
+    "tests/source_file_size.rs and tests/source_file_size_exceptions.json are deleted, and docs/development.md no longer describes a source file line limit",
+    "No code is split and no replacement check of a line, size or count metric is added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "agent-experience",
+    "greg-directed",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

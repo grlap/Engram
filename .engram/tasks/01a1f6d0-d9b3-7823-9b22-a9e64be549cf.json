@@ -1,0 +1,28 @@
+{
+  "id": "01a1f6d0-d9b3-7823-9b22-a9e64be549cf",
+  "external_ref": null,
+  "title": "Describe a rewound data HEAD as a task-sync export basis mismatch",
+  "outcome": "Describe a rewound data HEAD as a task-sync export basis mismatch",
+  "acceptance": [
+    "With a clean older HEAD on the selected data branch and a newer confirmed comparison basis, ordinary export preserves its typed basis refusal, names the observed HEAD and the expected commit without claiming ancestry, and gives an applicable recovery option including explicit rebuild."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

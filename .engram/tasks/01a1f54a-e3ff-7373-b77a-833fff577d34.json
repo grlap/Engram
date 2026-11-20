@@ -1,0 +1,31 @@
+{
+  "id": "01a1f54a-e3ff-7373-b77a-833fff577d34",
+  "external_ref": null,
+  "title": "Remove tests that check the text or shape of the source code instead of behaviour",
+  "outcome": "Remove tests that check the text or shape of the source code instead of behaviour",
+  "acceptance": [
+    "Every Engram test that passes or fails on the text or shape of source code (line or byte counts, file, function or module counts, required phrases, module layout or grep-style scans of src) rather than observable behaviour is removed, with the list of removed tests and the reason for each recorded on this item",
+    "Tests that read files only as fixtures or to locate the crate, and the source_id input identity, are kept",
+    "No replacement static gate is added",
+    "AGENTS.md and CLAUDE.md state the ban in the portable wording agreed by Kimi::Consultant and both coordinators"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "agent-experience",
+    "greg-directed",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1f54c-6cce-7991-9b9d-4db2ad8f695f",
+  "disposal_reason": "Duplicate. Kimi::Consultant filed w-4db2ad8f695f (c15db92c #385) for the same inventory and removal of source-text/shape tests, covering both Engram and TermAl. My grep candidates are in this item's note for Kimi to reuse.",
+  "completion": null
+}

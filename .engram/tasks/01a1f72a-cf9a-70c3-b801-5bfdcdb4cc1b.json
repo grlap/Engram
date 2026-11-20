@@ -1,0 +1,40 @@
+{
+  "id": "01a1f72a-cf9a-70c3-b801-5bfdcdb4cc1b",
+  "external_ref": null,
+  "title": "Publish confirmed TLA findings as a continuation of autonomous-engineering.html",
+  "outcome": "Publish confirmed TLA findings as a continuation of autonomous-engineering.html",
+  "acceptance": [
+    "The page is authored by Astra::CV only after new confirmed TLA findings have completed Claude::TLA, Kimi, Opus and Sol confirmation",
+    "It continues autonomous-engineering.html with concrete findings, model bounds and assumptions, impact and agreed remedies, without an unbounded always-works claim",
+    "Model artifacts and intended recovery are distinguished from real product defects, and every product finding names its owner and follow-up item",
+    "If the completed TLA work produces no publishable new finding, the task is closed without creating a page",
+    "The page introduces no production-code change or new quality gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "documentation",
+    "greg-directed",
+    "tla-plus",
+    "website"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Authored and linked the local CV continuation How two hosts agree on a task. Kimi verified the corrected page at SHA-256 fcc5b858d8d50e00596b5da00ae13ece72d0f21414b8d671985835ac572f3efb. Independent evaluation dd4c92e4a378486bb3139aeac74194ea passed all five criteria. The website edits are uncommitted and unpublished.",
+    "completed_at": "2026-11-20T05:31:20.467700400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

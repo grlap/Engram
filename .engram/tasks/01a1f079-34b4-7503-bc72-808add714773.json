@@ -4,9 +4,10 @@
   "title": "Incremental task-sync export starts one git cat-file per task (5,165 on TermAl) and runs past 300 s after a rebuild bootstrap",
   "outcome": "Incremental task-sync export starts one git cat-file per task (5,165 on TermAl) and runs past 300 s after a rebuild bootstrap",
   "acceptance": [
-    "On TermAl's Central store (5,165 tasks), an ordinary incremental export right after a recorded export (cursor-only, no task changed) completes within 60 s and starts a number of git processes that does not grow with the task count",
-    "An ordinary incremental export with a few changed tasks reads, via git, only those tasks' blobs (or a bounded batch), never one git process per task in the project",
-    "A deterministic count test on fixtures of different sizes (e.g. 200 and 2,000 tasks) shows git process starts for the first incremental export after an export --rebuild bootstrap do not scale with project size"
+    "The store records the exact commit that holds its export. A subsequent export or import on a clean data worktree adopts HEAD as that export only when its parent is the recorded basis and its diff changes exactly the files the last export wrote. Adoption uses one parent query and one changed-path diff, with no history search. An unexpected tip refuses with an explicit import-first or export --rebuild remedy.",
+    "Ordinary export admits the data worktree once, runs one Git status scoped to its data and checks HEAD against the recorded basis. It writes only feed-changed tasks and project.json from the database. It returns early on an empty plan and performs no Git task-content reads or chunked queries.",
+    "A deterministic Git-start hook test reports identical export launch counts with 1, 100 and 2,000 changed tasks in a 2,000-task project, and at project sizes of 200 and 2,000 tasks. It includes the first ordinary export after a committed --rebuild bootstrap.",
+    "Existing limits, typed refusals and disclosure rules remain in force. No new protection layer or wall-clock assertion is introduced."
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,
@@ -21,12 +22,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Implemented incremental task-sync export with constant Git launch counts; R35 full gate passed 12/12 and the fresh independent acceptance evaluation passed all four criteria on exact commit 4e0c11cd3c686235bd512567c47a75cbb24f0aca/tree 14271e09f4437867d4fa6aba71cdda56e1206122. Fast-forwarded origin/master and installed the exact release build (fingerprint e83c650752adb27e61b6f35e80b48141873426a7a7214c7aa42216af0b262aa1); readiness passed on all six live stores. The Engram task-data sync did not complete: import/export reconciliation refused, with no data pushed; details and the local unpushed set-aside commit are recorded in the post-landing closeout note. No TermAl restart was performed.",
+    "completed_at": "2026-11-20T18:14:30.061616100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

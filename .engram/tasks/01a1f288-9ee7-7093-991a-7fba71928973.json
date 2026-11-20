@@ -1,0 +1,28 @@
+{
+  "id": "01a1f288-9ee7-7093-991a-7fba71928973",
+  "external_ref": null,
+  "title": "Route missing review-inventory coverage reports through the review parent",
+  "outcome": "A read-only reviewer records missing TermAl inventory coverage in its review result and the parent forwards the fix request through the consuming project's supported route.",
+  "acceptance": [
+    "The portable Engram skill names the reviewer and parent roles and sends inventory coverage fixes through the project's supported host-feedback route without directing a read-only reviewer to write or contact the host."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

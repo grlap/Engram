@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-watcher-named-waker-2026-11-19",
+    "revision_id": "a84d6c75b8d44b57b064ceb3bcb2e2e6",
+    "previous": "1dca6d2fa41945c884788f9e2ec4e9c7",
+    "body_sha256": "b1348adf73c85153e5bd5e92f8dd7068538261ba60fb7e3005de1381224a4df8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-20T16:13:32.053324Z"
+    }
+  },
+  "body": "GREG, 2026-11-19 about 02:40Z, relayed by Engram::Asistant (43498a6e #1587), verbatim: „+ Kimi, ktos cos czekal. to nie powinno byc tak, BEZ WATCHERA, musi byc wiadomo, kto co ma wznowic”.\nSIMPLE RULE for both teams (a summary of rules-waits-and-wakes, which still holds in detail). The final text landed in the coder-test-execution skill of both projects (Engram f5dd92bf, TermAl 64b38ccc).\n1. Every wait names ONE session that will wake it and the exact result that triggers it.\n2. The session that produces that result sends it DIRECTLY to the named waiter as soon as it has it. The waiter never watches or polls.\n3. No conditional \"start when X is free\" GO. A slot is either free now (LAUNCH NOW), or its current holder sends its END directly to the next named waiter.\n4. No watcher, monitor process or polling loop. A coordinator never takes a \"check at HH:MM\" or deadline-recovery role.\n5. When a coordinator finds a session idle on an unnamed wait, it fixes the handoff at once: it names the waker and tells both.\n6. Added by Opus2: an END message to the next waiter states FreeVirtualMemory and C: free space at END.\n7. CURRENT TEXT (rev 4, 2026-11-20; agreed by Engram::Fable and Termal::Fable2 #8408, Kimi concurring on the diagnosis), byte-identical to the skill sentence both projects land (Engram: the candidate replacing d2b123f0 under w-cbfda5551df1; TermAl w-83491649fede):\n\"After every review pair, an implementing parent fixes in-scope, undisputed findings at once (review-changes §7). Any open Medium or higher that it does not fix, because it is disputed, out of scope or needs a decision, the review parent sends DIRECTLY to the decision owner, with the candidate, the finding and the requested ruling; that ruling back to the review parent is its waker. The slot END to the scheduler stays a separate message and never counts as reporting a finding. No watcher and no new gate.\"\nWhy rev 4: the Opus confirmer of the Coord TLA+ model (w-869f59ef5224) found that rev 3 (\"any open Medium … the waker is the decision owner's ruling\") contradicted review-changes §7, which has an implementing parent continue directly. Read literally, rev 3 stalled every routine in-scope fix.\nTrigger cases: on 2026-11-19, 11334 held a GO conditional on \"D8D4 releasing Central\" with nobody named to tell it. On 2026-11-20 at 00:03Z, the R30 pair's Medium, a needs-decision case, was recorded only as an item note plus a slot END to Opus2; the decision owner (Fable) found it at 01:24Z."
+}

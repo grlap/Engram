@@ -1,0 +1,41 @@
+{
+  "id": "01a1f6af-25e0-7d43-a823-7d425bd8df14",
+  "external_ref": null,
+  "title": "Model task-sync crash, retry and two-host exchange in TLA+",
+  "outcome": "Model task-sync crash, retry and two-host exchange in TLA+",
+  "acceptance": [
+    "A bounded TLA+ model covers export planning, recorded head, journal, file publication, confirmation, import commit or rollback, crash and retry, expected-tip movement, and two independently writable hosts exchanging through Git fast-forward, merge and non-fast-forward outcomes",
+    "The model checks concrete safety invariants: no overwrite of uncommitted local data, no own-export adoption without the exact parent and changed paths, no journal removal before the comparison basis is recorded, no source head for content not imported, no durable dry-run effect, no duplicate imported versions or reminted identities on retry, and explicit conflict rather than silent reset or merge",
+    "The model states its bounds and fairness or quiescence assumptions and checks whether retries converge when no new commits arrive; it makes no unbounded always-works claim",
+    "An actual TLC run reports the complete spec, configuration, state counts, constraints and results, with retained artifacts and every counterexample minimized and explained",
+    "Kimi independently reviews the model against the Rust protocol and checks each reported violation or successful invariant; every actionable counterexample receives a concrete implementation reproduction or regression-test proposal for Sol/Opus",
+    "The work changes no production code, adds no gate and does not block or consume the current sync landing's build capacity"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "formal-verification",
+    "greg-directed",
+    "sync",
+    "tla-plus"
+  ],
+  "assigned_to": "greg/claude",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered a bounded TLA+ model of Engram's task-sync folder exchange. It models the Rust candidate dc092ddc (R31; the protocol is equivalent at R34; it does not describe master f5dd92bf). The final spec is v11, sha256 27086bc9f1a301f25fe3d919d2ab1d349f0d64b0d88a93d8d86a354434255c70. TLC ran on DL560 s4 under Opus2 GOs, the final run being round 9 (#3185): 25 configurations.\n- Clean: every safety configuration, on the full invariant set and the action properties ExplicitConflict, NoInventedValue, NoReplacedRecord and DryRunHarmless.\n- Bounded convergence: Converge and ConvergeBootstrap, under the stated order and fairness assumptions.\n- Documented findings F1–F5 (class b) reproduced; each has a filed follow-up (w-2f8a670c3179, w-ba1e43c78db5, w-85c7a24d3520, w-0a11063c9536, w-b7726d27f7e0).\n- S1 (class a, Medium) is tracked in w-45fe538db32a.\n- Five reachability witnesses and three negative controls (NegReplace, NegReplaceCount, NegSilent) behaved as intended.\n- All counterexamples are minimized and explained in the README.\nReviews:\n- Kimi's C5 reviews passed (v6–v11).\n- Opus and Sol confirmed v11 with no Medium or higher (Fable #38).\n- Independent acceptance evaluation (session-19117): all 6 criteria PASS.\nAfter the evaluation, Opus's two README Notes were applied without re-review, as Fable ruled: NoInventedValue is stated for governing planning only, and MergeFirst/F3Min/F4Min/F5Min are marked as PARTIAL checks of ExplicitConflict and NoInventedValue. The final handoff MANIFEST.sha256 is sha256 22325822b82dd266ba98d41a82dbfa68206eca9b265a887c6d09e6ee46c6d05f (the evaluated manifest was 817451b9…e1e0; README.md alone changed).\nTermAl defect found on the way, filed as TermAl P0 w-27e5e342bba4: the evaluator's evidence read expires when a note lands mid-run.\nNo production code or tests changed, no gate added, and no sync landing capacity was used.\nCLEANUP (Codex executes directory removal):\n(a) DL560 Engram-runner clone: target/tla-7d425bd8* (every round's job directory and job script, rounds 1–9 including r5-v7, r6-v8, r6-v1, r7-v9, r7b-v9, r8-v10 and r9-v11), plus target/tla/jdk once no other job needs the portable JDK.\n(b) Central C:\\github\\Personal\\Engram\\target\\tla, EXCEPT handoff\\. target/tla/handoff on Central stays until Kimi has delivered the page package to Astra::CV.\n(c) Outside the repository, needs Greg's word: C:\\Users\\grzeg\\AppData\\Local\\Temp\\tlc-1730617097668066647 (SANY standard modules from the first parse).",
+    "completed_at": "2026-11-20T08:57:03.407857100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  }
+}

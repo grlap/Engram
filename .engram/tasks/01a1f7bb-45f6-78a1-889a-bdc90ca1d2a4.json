@@ -1,0 +1,34 @@
+{
+  "id": "01a1f7bb-45f6-78a1-889a-bdc90ca1d2a4",
+  "external_ref": null,
+  "title": "Test exact own-export adoption when import confirms and applies beside a held task",
+  "outcome": "Test exact own-export adoption when import confirms and applies beside a held task",
+  "acceptance": [
+    "A deterministic Rust test drives one transaction that both confirms an exact own export and applies an incoming change beside one held task",
+    "Only an exact own commit with the recorded parent, exact changed paths and exact postimages is adopted; an extra path, changed bytes or wrong parent refuses with no durable effects",
+    "The held task retains its held admission and every later local edit remains owed to a subsequent export",
+    "The test runs after the 808a landing and adds no new gate or per-task Git process growth"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "after-sync",
+    "sync",
+    "tests",
+    "tla-plus"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1f079-34b4-7503-bc72-808add714773"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

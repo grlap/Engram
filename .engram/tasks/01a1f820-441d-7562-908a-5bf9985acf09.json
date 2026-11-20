@@ -1,0 +1,31 @@
+{
+  "id": "01a1f820-441d-7562-908a-5bf9985acf09",
+  "external_ref": null,
+  "title": "Keep a notes or evaluations continuation valid when records were only appended after its cut",
+  "outcome": "Keep a notes or evaluations continuation valid when records were only appended after its cut",
+  "acceptance": [
+    "A show --notes/--gates (and the other record windows) continuation taken before a new note, gate or observation is appended to the same item keeps paging the older rows it announced, instead of refusing with \"the window changed; start a fresh window\"",
+    "A continuation is still refused when the boundary record no longer matches, when it belongs to another item or window kind, or when its cut is in the future",
+    "A behavioural test captures a first page, appends a note to the item, follows the continuation and receives exactly the older rows; a second test proves the boundary-mismatch refusal still fires",
+    "No new state, protection layer or wall-clock assertion is introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "evaluation",
+    "termal-reported"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

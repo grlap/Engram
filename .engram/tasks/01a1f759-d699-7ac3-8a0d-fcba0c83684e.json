@@ -1,0 +1,28 @@
+{
+  "id": "01a1f759-d699-7ac3-8a0d-fcba0c83684e",
+  "external_ref": null,
+  "title": "Keep the task-sync bootstrap Git-count test independent of a fixed total",
+  "outcome": "Keep the task-sync bootstrap Git-count test independent of a fixed total",
+  "acceptance": [
+    "The parentless rebuild regression compares complete Git command maps at 200 and 2,000 tasks and asserts one scoped status and one diff-tree. A legitimate reduction in Git launches can pass without updating an absolute expected total. The test still checks exact commit adoption, zero task reads and zero task writes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "deferred-review",
+    "task-sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

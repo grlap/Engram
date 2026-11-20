@@ -1,0 +1,29 @@
+{
+  "id": "01a1f6b1-2255-7460-ab90-28bf3b4fa41d",
+  "external_ref": null,
+  "title": "Clarify when a review finding needs a decision-owner ruling",
+  "outcome": "Keep routine fixes moving while routing findings that need a decision directly to the decision owner.",
+  "acceptance": [
+    "The shared skill distinguishes a routine in-scope fix from an open Medium-or-higher finding that needs a decision owner’s ruling.",
+    "Any change to the shared passage is agreed with TermAl and preserves the separate resource END route and direct decision wake."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "agent-experience",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

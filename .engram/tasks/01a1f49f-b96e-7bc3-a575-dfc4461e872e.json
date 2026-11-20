@@ -1,0 +1,28 @@
+{
+  "id": "01a1f49f-b96e-7bc3-a575-dfc4461e872e",
+  "external_ref": null,
+  "title": "Document that only one process commits in a local data folder while a task-sync export or import runs",
+  "outcome": "Document that only one process commits in a local data folder while a task-sync export or import runs",
+  "acceptance": [
+    "The git task sync docs state that while an export or import runs no other process commits in the same local data folder, that the tip check before any effect still refuses detected drift, and that other hosts sync independently"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "greg-directed",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

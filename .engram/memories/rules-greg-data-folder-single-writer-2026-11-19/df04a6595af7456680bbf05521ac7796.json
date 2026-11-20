@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-data-folder-single-writer-2026-11-19",
+    "revision_id": "df04a6595af7456680bbf05521ac7796",
+    "previous": null,
+    "body_sha256": "f6b05b5edaf88a2ca07e673923413d12df2fc335aab03ea68b32f7bcc864c967",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-19T16:24:04.633563500Z"
+    }
+  },
+  "body": "GREG, 2026-11-19 about 16:23Z, relayed by Engram::Asistant (mailbox 43498a6e #1609, message abb12e77), verbatim: „tak, ladujemy”. He was answering Fable's #1608 (message 82a767e8), option A.\nRULE (task sync, both projects): while an export or import runs, no other process commits in the SAME LOCAL data folder (data worktree). The tip check before any effect stays; it is one of Greg's five simple-sync checks.\nA reviewer finding whose only trigger is another Git writer racing on that local data branch during a running export or import does NOT block landing. It is filed as its own item, to be fixed later.\nThis is an assumption about the local folder. It does NOT forbid independent work or sync by other hosts.\nFirst applied: w-808add714773 R23 (8bfbbeb1) landed with its two race-class Mediums deferred as separate items."
+}

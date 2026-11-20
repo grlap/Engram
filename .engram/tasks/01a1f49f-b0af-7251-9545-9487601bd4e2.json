@@ -1,0 +1,28 @@
+{
+  "id": "01a1f49f-b0af-7251-9545-9487601bd4e2",
+  "external_ref": null,
+  "title": "Correct two task-sync refusal remedies: add the saved-basis folder argument, and say commit-first for a completed combined write",
+  "outcome": "Correct two task-sync refusal remedies: add the saved-basis folder argument, and say commit-first for a completed combined write",
+  "acceptance": [
+    "The printed saved-basis import command includes its folder positional argument and runs as printed",
+    "A completed combined write is reported with the commit-first remedy, not described as unfinished"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
