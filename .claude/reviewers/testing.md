@@ -15,6 +15,7 @@ cross-platform coverage.
   such as link validation or review input fingerprinting, are not such tests
   (Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e #490,
   #495 and #498: 'Poprawic reviewers aby nigdy to nie wróciło.').
+- Report a test that asserts on implementation text or shape instead of runtime behavior; do not request such a guard (`source_id` is exempt).
 - Canonical JSON tests cover key ordering and malformed input; identity tests
   preserve minted ids independently of bytes, and fingerprint tests compare
   content without treating a fingerprint as a record id or corruption check.
