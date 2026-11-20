@@ -78,15 +78,16 @@ impl Host {
         receipt["work"]["short_ref"].as_str().unwrap().to_owned()
     }
 
-    fn title(&self, id: engram::WorkId) -> String {
+    fn store(&self) -> SqliteStore {
         SqliteStore::open(project_database_path(
             &self.home,
             &ProjectId(PROJECT.into()),
         ))
         .unwrap()
-        .get_work_item(id)
-        .unwrap()
-        .title
+    }
+
+    fn title(&self, id: engram::WorkId) -> String {
+        self.store().get_work_item(id).unwrap().title
     }
 
     fn git(&self, args: &[&str]) {
@@ -190,6 +191,93 @@ fn identity<'a>(args: &[&'a str]) -> Vec<&'a str> {
     ];
     all.extend_from_slice(args);
     all
+}
+
+fn own_rebuild_with_later_edit(root: &Path) -> (Host, engram::WorkId, std::path::PathBuf) {
+    let host = Host::new(root, "a");
+    host.work(&["add", "Shared"]);
+    assert_eq!(host.receipt("export", &[])["route"], "bootstrap");
+    host.commit_and_confirm_export(&[], "Publish Shared");
+    let task = directory::read_folder(&host.folder()).unwrap().tree.tasks[0].id;
+    let reference = task.0.to_string();
+    host.git(&[
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Advance the unimported tip",
+    ]);
+    host.work(&["update", &reference, "--title", "Shared at rebuild"]);
+    assert_eq!(host.receipt("export", &["--rebuild"])["route"], "rebuild");
+    let basis = root.join("saved-project.json");
+    fs::copy(host.folder().join("project.json"), &basis).unwrap();
+    host.commit("Commit the rebuild");
+    host.work(&["update", &reference, "--title", "Shared after rebuild"]);
+    (host, task, basis)
+}
+
+#[test]
+fn task_sync_cli_own_rebuild_basis_keeps_later_local_planning() {
+    let fixture = test_support::temp_home().unwrap();
+    let (host, task, basis) = own_rebuild_with_later_edit(fixture.path());
+    let basis = basis.to_str().unwrap();
+    assert_eq!(
+        host.refusal("export", &[]).0,
+        "task_sync_commit_context_required"
+    );
+    let preview = host.receipt("import", &["--basis", basis, "--dry-run"]);
+    assert_eq!(preview["dry_run"], true);
+    assert_eq!(
+        host.refusal("export", &[]).0,
+        "task_sync_commit_context_required"
+    );
+    let imported = host.receipt("import", &["--basis", basis]);
+    assert_eq!(imported["route"], "complete");
+    assert_eq!(host.title(task), "Shared after rebuild");
+    assert_eq!(host.task_file(task)["title"], "Shared at rebuild");
+    let exported = host.receipt("export", &[]);
+    assert_eq!(exported["route"], "incremental");
+    assert_eq!(exported["written"], 1);
+    assert_eq!(host.task_file(task)["title"], "Shared after rebuild");
+}
+
+#[test]
+fn task_sync_cli_own_rebuild_basis_refuses_a_peer_edit_to_the_same_task() {
+    let fixture = test_support::temp_home().unwrap();
+    let (host, task, basis) = own_rebuild_with_later_edit(fixture.path());
+    let peer = Host::new(fixture.path(), "b");
+    peer.merge_from(&host);
+    peer.receipt("import", &["--empty-basis"]);
+    peer.work(&[
+        "update",
+        &task.0.to_string(),
+        "--title",
+        "Shared edited by peer",
+    ]);
+    assert_eq!(peer.receipt("export", &[])["written"], 1);
+    peer.commit("Publish peer edit to Shared");
+    host.merge_from(&peer);
+
+    let folder_head = || {
+        host.store()
+            .task_sync_folder_head(
+                &ProjectId(PROJECT.into()),
+                &ExportProfile {
+                    include_notes: false,
+                    origin_machine: None,
+                },
+            )
+            .unwrap()
+    };
+    let before = folder_head();
+    let peer_commit = host.head();
+    let peer_file = host.task_file(task);
+    let (code, message) = host.refusal("import", &["--basis", basis.to_str().unwrap()]);
+    assert_eq!(code, "task_sync_divergent_planning");
+    assert!(message.contains(&task.0.to_string()), "{message}");
+    assert_eq!(host.title(task), "Shared after rebuild");
+    assert_eq!(host.task_file(task), peer_file);
+    assert_eq!(host.head(), peer_commit);
+    assert_eq!(folder_head(), before);
 }
 
 /// Two hosts that share notes under their own aliases, enrolled on host A's

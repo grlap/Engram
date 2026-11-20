@@ -175,13 +175,14 @@ impl LocalWorkService {
         let rewritten = recorded.as_ref().is_some_and(|(_, head)| {
             head.rebuild_needs_complete_import() || (head.rewritten && import_basis.is_some())
         });
-        // An explicit basis selects the complete route, which records a
-        // fresh head; without one, a head that names an imported commit
-        // continues incrementally.
-        let incremental = !rebuild && basis.is_none() && !rewritten && import_basis.is_some();
+        // An exact own rebuild already supplies the complete comparison
+        // basis. Confirm it without applying any of its tasks as edits.
+        let own_rebuild = !automatic && confirmation.is_some();
+        let incremental =
+            !rebuild && (basis.is_none() || own_rebuild) && !rewritten && import_basis.is_some();
         if incremental {
             let (id, head) = recorded.context("incremental import without a head")?;
-            let receipt = self.import_incremental(
+            let mut receipt = self.import_incremental(
                 data,
                 &id,
                 &head,
@@ -194,6 +195,9 @@ impl LocalWorkService {
                 confirmation,
                 now,
             )?;
+            if own_rebuild {
+                receipt.route = "complete";
+            }
             recovery.finish(data)?;
             return Ok(receipt);
         }

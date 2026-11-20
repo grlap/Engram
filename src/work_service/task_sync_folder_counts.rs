@@ -607,6 +607,51 @@ fn count_inexact_rebuild_import(size: usize) -> BTreeMap<String, usize> {
     queries
 }
 
+fn count_export_after_own_rebuild_basis(size: usize) -> BTreeMap<String, usize> {
+    let exchange = Exchange::new(size);
+    let host = &exchange.a;
+    let id = exchange.ids()[0];
+    let now = chrono::Utc::now;
+    exchange.git(&[
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Advance the unimported tip",
+    ]);
+    host.rename(&[id], "at the rebuild");
+    let rebuilt = host
+        .service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), true, None, now())
+        .unwrap();
+    assert_eq!(rebuilt.route, "rebuild");
+    let basis = DestinationBasis::Recorded(Box::new(
+        directory::read_folder_basis(&exchange.checkout.join(".engram/project.json")).unwrap(),
+    ));
+    exchange.commit("Publish the rebuild");
+    host.rename(&[id], "after the rebuild");
+    let imported = host
+        .service
+        .import_task_sync_data_folder(&exchange.data(), Some(&basis), false, false, None, now())
+        .unwrap();
+    assert_eq!(imported.route, "complete");
+
+    let (phase, queries) = counted_export(&exchange);
+    assert_eq!((phase.route.as_str(), phase.written), ("incremental", 1));
+    assert_eq!((phase.blob_reads, phase.file_reads), (0, 1));
+    assert_eq!(queries.get("status"), Some(&1));
+    assert!(!queries.contains_key("diff-tree"));
+    eprintln!("first export after own rebuild basis: tasks={size} Git starts={queries:?}");
+    queries
+}
+
+#[test]
+fn ordinary_export_after_own_rebuild_basis_has_constant_git_starts() {
+    assert_eq!(
+        count_export_after_own_rebuild_basis(200),
+        count_export_after_own_rebuild_basis(2_000)
+    );
+}
+
 #[test]
 fn ordinary_export_git_starts_are_constant_across_folder_and_change_counts() {
     let mut first_after_rebuild = Vec::new();

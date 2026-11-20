@@ -370,9 +370,24 @@ pub(super) fn confirm_folder_export_on(
             cut.position,
         )?);
 
+    // A complete rebuild replaces membership. Its retained write includes
+    // all non-held postimages, but a member missing from the rebuild's Git
+    // parent did not need a deletion in the write.
+    let rebuild = proof.head.rebuild_needs_complete_import();
+    let dropped = if rebuild {
+        baseline::load(transaction, project)?
+            .into_iter()
+            .flat_map(|baseline| baseline.tree.tasks)
+            .filter(|task| !proof.changes.contains_key(&task.id))
+            .map(|task| task.id)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let eligible = proof
         .changes
         .iter()
+        .chain(dropped.iter().map(|id| (id, &None)))
         .filter(|(id, _)| !head.pending.contains_key(*id));
     let prior = baseline::entries(transaction, project, eligible.clone().map(|(id, _)| *id))?;
     let changes = eligible
@@ -381,7 +396,7 @@ pub(super) fn confirm_folder_export_on(
         })
         .map(|(id, document)| (*id, document.clone()))
         .collect::<BTreeMap<_, _>>();
-    if !changes.is_empty() {
+    if rebuild || !changes.is_empty() {
         let previous = baseline::head(transaction, project)?.map(|head| head.record);
         let advanced = changes.keys().copied().collect::<Vec<_>>();
         baseline::append(

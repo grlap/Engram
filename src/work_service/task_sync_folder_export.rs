@@ -974,7 +974,32 @@ impl LocalWorkService {
         if basis.is_none() && head.rebuild_needs_complete_import() {
             return Err(unbound_rebuild_basis_required(write.writes_memories()?));
         }
-        if basis.is_none() && !rebuild {
+        // A saved basis may adopt this host's own complete rebuild, even
+        // when this store's planning has advanced since the rebuild.
+        let own_rebuild = if let Some(directory::DestinationBasis::Recorded(saved)) = basis
+            && head.reason == FolderHeadReason::Rebuild
+            && head.rewritten
+        {
+            saved.project_id == head.project_id
+                && saved.profile == head.profile
+                && saved.export_basis.is_some()
+                && saved.incremental.as_ref().is_some_and(|incremental| {
+                    incremental.inventory_root == head.inventory_root
+                        && incremental.task_count == head.task_count
+                        && incremental.cut == head.cut
+                })
+                && write
+                    .files
+                    .get("project.json")
+                    .and_then(Option::as_deref)
+                    .is_some_and(|envelope| {
+                        directory::folder_basis_from_bytes(envelope.as_bytes())
+                            .is_ok_and(|published| &published == saved.as_ref())
+                    })
+        } else {
+            false
+        };
+        if !rebuild && (basis.is_none() || own_rebuild) {
             let dirty = data.folder_changes_admitted(true)?;
             if let Some(proof) = self.prove_export_commit(data, &dirty, &write, &id, &head)? {
                 return Ok(FolderImportRecovery {

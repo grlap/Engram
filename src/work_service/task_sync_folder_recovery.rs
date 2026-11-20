@@ -2760,10 +2760,7 @@ fn first_store_rebuild_of_an_existing_commit_requires_its_saved_basis() {
         .import_task_sync_data_folder(&exchange.data(), Some(&basis), false, false, None, now())
         .unwrap();
     assert_eq!(imported.route, "complete");
-    assert_eq!(
-        owned_write(service, &exchange.data()).as_ref(),
-        Some(&journal)
-    );
+    assert!(owned_write(service, &exchange.data()).is_none());
     assert_eq!(export(false).unwrap().route, "unchanged");
 }
 
@@ -3377,6 +3374,14 @@ fn a_displaced_proof_keeps_export_decodes_constant_across_head_history() {
         .unwrap();
     assert_eq!(rebuild.route, "rebuild");
     exchange.commit("Publish the rebuilt planning");
+    // Keep the rebuilt bytes but make the tip inexact so importing the
+    // saved basis displaces the retained proof instead of confirming it.
+    exchange.git(&[
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Advance beyond the exact rebuild commit",
+    ]);
     let data = exchange.data();
     let proof = owned_write(service, &data).unwrap();
     assert_eq!(
