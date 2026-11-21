@@ -449,6 +449,71 @@ pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
     })
 }
 
+/// Carry forward the existing incremental envelope after Git has selected the task files.
+pub(crate) fn merged_envelope(
+    local: &[u8],
+    fetched: &[u8],
+    root: super::inventory::InventoryRoot,
+    count: u64,
+) -> Result<Vec<u8>> {
+    let mut local: FolderProjectDocument = crate::task_sync::parse(local)?;
+    let fetched: FolderProjectDocument = crate::task_sync::parse(fetched)?;
+    anyhow::ensure!(
+        local.project == fetched.project
+            && local.profile == fetched.profile
+            && local.memory_profile == fetched.memory_profile
+            && local.folder_exchange.complete == fetched.folder_exchange.complete,
+        "the data tips select different project or disclosure profiles; reconcile the project envelope before importing"
+    );
+    let basis = local
+        .folder_exchange
+        .incremental
+        .as_mut()
+        .ok_or_else(merge_requires_incremental_basis)?;
+    basis.inventory_root = root;
+    basis.task_count = count;
+    local.folder_exchange.export_basis = None;
+    Ok(pretty(&local)?)
+}
+
+pub(crate) fn merge_requires_incremental_basis() -> crate::storage::StoreError {
+    TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
+        "the task merge requires a recorded incremental basis; use the explicit folder workflow and run `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`",
+    )
+}
+
+/// Replace the ordinary envelope of a pending data merge without following
+/// links or truncating a file that may also be named outside the checkout.
+pub(crate) fn replace_merge_envelope(
+    data: &super::data_worktree::DataWorktree,
+    bytes: &[u8],
+) -> Result<()> {
+    let root = crate::task_sync::setup::PrivateDirectory::open(
+        &data.select_folder(&data.checkout.join(".engram"))?,
+    )?;
+    let envelope = Path::new("project.json");
+    let file_limit = usize::try_from(MAX_FILE_BYTES)?;
+    root.read_bounded(envelope, file_limit)?
+        .context("project envelope missing during merge")?;
+    anyhow::ensure!(
+        bytes.len() <= file_limit,
+        "merged project envelope exceeds file bound"
+    );
+    let pending = format!("project-merge-{}.pending", uuid::Uuid::new_v4());
+    let mut file = root.open_file(Path::new(&pending), true, true)?;
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    drop(file);
+    let replaced: Result<()> = (|| {
+        written?;
+        root.dir().rename(&pending, root.dir(), envelope)?;
+        Ok(())
+    })();
+    if replaced.is_err() {
+        let _ = root.dir().remove_file(&pending);
+    }
+    replaced
+}
+
 fn read_stored(path: &Path) -> Result<TaskTree> {
     Ok(stored_tree(&read_documents(path)?)?)
 }

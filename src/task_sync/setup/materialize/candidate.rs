@@ -7,11 +7,22 @@ use std::{collections::BTreeMap, io::Write, path::Path};
 
 pub(super) type Documents = BTreeMap<String, Vec<u8>>;
 
-pub(super) fn disclose(documents: &Documents) -> Result<TaskTree> {
+pub(crate) fn disclose(documents: &Documents) -> Result<TaskTree> {
     let tree = TaskTree::from_stored_documents(documents)?;
-    let refused: Vec<_> = tree
-        .tasks
-        .iter()
+    disclose_tasks(tree.tasks.iter())?;
+    ensure!(
+        documents
+            .values()
+            .all(|bytes| bytes.ends_with(b"\n") && !bytes.contains(&b'\r')),
+        "materialization requires retained LF document bytes; it never rewrites the candidate"
+    );
+    Ok(tree)
+}
+
+pub(crate) fn disclose_tasks<'a>(
+    tasks: impl Iterator<Item = &'a crate::task_sync::TaskDocument>,
+) -> Result<()> {
+    let refused: Vec<_> = tasks
         .filter(|task| {
             notes::restricted(&task.labels)
                 || notes::validate_notes(&task.notes, &task.labels).is_err()
@@ -33,13 +44,7 @@ pub(super) fn disclose(documents: &Documents) -> Result<TaskTree> {
             refused.len().saturating_sub(16)
         );
     }
-    ensure!(
-        documents
-            .values()
-            .all(|bytes| bytes.ends_with(b"\n") && !bytes.contains(&b'\r')),
-        "materialization requires retained LF document bytes; it never rewrites the candidate"
-    );
-    Ok(tree)
+    Ok(())
 }
 
 pub(super) fn write(directory: &Directory, documents: &Documents) -> Result<()> {

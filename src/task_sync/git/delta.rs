@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use sha2::Digest;
 
 mod verified;
+pub(crate) use verified::merged_task_membership;
 pub use verified::{
     ChangedTask, VerifiedTaskDelta, read_rooted_task_diff, read_tasks_at, read_verified_task_delta,
 };
@@ -71,7 +72,51 @@ pub(crate) fn matches_export_commit(
     }
     args.extend([commit, "--"]);
     let raw = reader.listing(&args)?;
-    let changes = match parse_changes(&raw) {
+    matches_export_changes(&raw, expected, commit.len(), true)
+}
+
+/// Compare the index selected for the next commit against retained export
+/// postimages, before the data branch can move.
+pub(crate) fn matches_staged_export(
+    repository: &Path,
+    parent: &str,
+    expected: &BTreeMap<String, Option<String>>,
+    deadline: Duration,
+    require_all: bool,
+) -> Result<bool> {
+    task_sync::ledger::oid(parent)?;
+    let raw = super::query_listing(
+        repository,
+        &[
+            "diff",
+            "--cached",
+            "--raw",
+            "-z",
+            "--no-renames",
+            "--ignore-submodules=none",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-abbrev",
+            parent,
+            "--",
+        ],
+        deadline,
+        MAX_LISTING_BYTES,
+    )?;
+    let expected = expected
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_deref()))
+        .collect();
+    matches_export_changes(&raw, &expected, parent.len(), require_all)
+}
+
+fn matches_export_changes(
+    raw: &[u8],
+    expected: &BTreeMap<&str, Option<&str>>,
+    oid_length: usize,
+    require_all: bool,
+) -> Result<bool> {
+    let changes = match parse_changes(raw) {
         Err(error)
             if matches!(
                 error.downcast_ref::<StoreError>(),
@@ -86,7 +131,7 @@ pub(crate) fn matches_export_commit(
         }
         result => result?,
     };
-    Ok(changes.len() == expected.len()
+    Ok((!require_all || changes.len() == expected.len())
         && changes.iter().all(|change| {
             let Some(bytes) = change
                 .path
@@ -98,8 +143,7 @@ pub(crate) fn matches_export_commit(
             match bytes {
                 None => change.status == "D",
                 Some(bytes) => {
-                    change.status != "D"
-                        && blob_id(bytes.as_bytes(), commit.len()) == change.new_oid
+                    change.status != "D" && blob_id(bytes.as_bytes(), oid_length) == change.new_oid
                 }
             }
         }))
@@ -308,7 +352,7 @@ pub(super) fn read_documents(
 ) -> Result<(BTreeMap<WorkId, TaskDocument>, BTreeSet<WorkId>)> {
     let mut upserts = BTreeMap::new();
     let mut removed = BTreeSet::new();
-    let mut total_bytes = 0_usize;
+    let mut selected = Vec::new();
     for change in changes {
         if change.path == ".engram/project.json"
             || policy_path(&change.path)
@@ -321,25 +365,23 @@ pub(super) fn read_documents(
         if change.status == "D" {
             removed.insert(id);
         } else {
-            let bytes = reader.blob(&change.new_oid, &change.path)?;
-            total_bytes = total_bytes.checked_add(bytes.len()).ok_or_else(|| {
-                TaskSyncRefusal::DestinationTreeLimit
-                    .invalid("task commit delta exceeds byte bound")
-            })?;
-            if total_bytes > byte_limit {
-                return Err(TaskSyncRefusal::DestinationTreeLimit
-                    .invalid("task commit delta exceeds byte bound")
-                    .into());
-            }
-            let task: TaskDocument = task_sync::parse(&bytes)
-                .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-            if task.id != id {
-                return Err(TaskSyncRefusal::InvalidGraph
-                    .invalid("task filename/id mismatch")
-                    .into());
-            }
-            upserts.insert(id, task);
+            selected.push((id, change));
         }
+    }
+    let wanted = selected
+        .iter()
+        .map(|(_, change)| (change.new_oid.as_str(), change.path.as_str()))
+        .collect::<Vec<_>>();
+    let blobs = reader.blobs_with_limit(&wanted, byte_limit)?;
+    for ((id, _), bytes) in selected.into_iter().zip(blobs) {
+        let task: TaskDocument = task_sync::parse(&bytes)
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+        if task.id != id {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task filename/id mismatch")
+                .into());
+        }
+        upserts.insert(id, task);
     }
     let document = task_sync::ProjectDocument {
         format: task_sync::FORMAT.into(),
@@ -398,8 +440,8 @@ impl<'a> Reader<'a> {
             .map_err(|error| query_error(args, &error, None))
     }
 
-    /// A path listing that grows with the change count, such as a commit
-    /// diff, bounded for every task the folder limits allow on both sides.
+    /// A path listing bounded for the full folder inventory or for both sides
+    /// of its commit diff.
     fn listing(&self, args: &[&str]) -> Result<Vec<u8>> {
         let remaining = self
             .total_bound
@@ -474,7 +516,7 @@ impl<'a> Reader<'a> {
     pub(super) fn entries(&self, tree: &str, names: &[&str]) -> Result<Vec<Entry>> {
         let mut args = vec!["ls-tree", "-z", tree, "--"];
         args.extend_from_slice(names);
-        parse_entries(&self.query(&args)?)
+        parse_entries(&self.listing(&args)?)
     }
 
     pub(super) fn metadata_with_size(
@@ -539,15 +581,19 @@ impl<'a> Reader<'a> {
     /// large delta stays within its deadline. Each blob keeps the per-file
     /// limit and all of them together the delta byte bound.
     pub(super) fn blobs(&self, wanted: &[(&str, &str)]) -> Result<Vec<Vec<u8>>> {
+        self.blobs_with_limit(wanted, MAX_DELTA_BYTES)
+    }
+
+    fn blobs_with_limit(&self, wanted: &[(&str, &str)], byte_limit: usize) -> Result<Vec<Vec<u8>>> {
         self.batch(
             wanted,
             directory::MAX_FILE_BYTES,
-            MAX_DELTA_BYTES,
+            byte_limit,
             super::QueryStderrPolicy::ErrorOnly,
             &|refusal| match refusal {
                 BatchRefusal::Output => TaskSyncRefusal::DestinationTreeLimit
                     .invalid(format!(
-                        "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes, or one of them exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
+                        "the selected folder documents exceed their byte bound of {byte_limit} bytes, or one exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
                         directory::MAX_FILE_BYTES
                     ))
                     .into(),

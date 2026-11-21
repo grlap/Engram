@@ -445,7 +445,7 @@ impl AttemptIo for GitIo<'_> {
     }
 }
 
-fn selected_tip(bytes: &[u8], reference: &str) -> Result<Option<String>> {
+pub(super) fn selected_tip(bytes: &[u8], reference: &str) -> Result<Option<String>> {
     if bytes.is_empty() {
         return Ok(None);
     }

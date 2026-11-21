@@ -2,6 +2,7 @@
 
 mod admission;
 mod candidate;
+pub(crate) use candidate::disclose_tasks;
 mod completion;
 mod journal;
 mod publication;

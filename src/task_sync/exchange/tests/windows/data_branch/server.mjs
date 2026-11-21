@@ -46,10 +46,16 @@ const server = https.createServer({
     if (request.method === "GET" && url.searchParams.get("service") === "git-receive-pack" && fs.existsSync(raceFile)) {
       const race = JSON.parse(fs.readFileSync(raceFile, "utf8"));
       fs.renameSync(raceFile, path.join(root, "race-fired.json"));
-      await run(["-c", "protocol.file.allow=always", "push", "--porcelain", "--", path.join(root, "data.git"), `${race.commit}:refs/heads/engram-data`], {
-        cwd: race.repository,
-        env: { ...process.env, GIT_ALLOW_PROTOCOL: "file" },
-      });
+      if (race.delete) {
+        await run(["update-ref", "-d", "refs/heads/engram-data", race.delete], {
+          cwd: path.join(root, "data.git"),
+        });
+      } else {
+        await run(["-c", "protocol.file.allow=always", "push", "--porcelain", "--", path.join(root, "data.git"), `${race.commit}:refs/heads/engram-data`], {
+          cwd: race.repository,
+          env: { ...process.env, GIT_ALLOW_PROTOCOL: "file" },
+        });
+      }
     }
     const bytes = await run(["http-backend"], {
       input: body,

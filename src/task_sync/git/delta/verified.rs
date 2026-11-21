@@ -158,6 +158,46 @@ fn read(
     if !policy_blobs.is_empty() {
         reader.blobs(&policy_blobs)?;
     }
+    let delta = read_task_changes(&reader, tasks, base_root)?;
+    let project_document = task_sync::ProjectDocument {
+        format: task_sync::FORMAT.into(),
+        project_id: project.clone(),
+        notes_included: new.profile.include_notes,
+    };
+    task_sync::validate_selected_documents(
+        &project_document,
+        delta
+            .changed
+            .values()
+            .filter_map(|task| task.after.as_ref()),
+    )
+    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    Ok(VerifiedTaskDelta {
+        base_commit: base.into(),
+        incoming_commit: incoming.into(),
+        base_object,
+        incoming_object,
+        base: old,
+        incoming: new,
+        changed: delta.changed,
+        root: delta.root,
+        bytes_before: delta.bytes_before,
+        bytes_after: delta.bytes_after,
+    })
+}
+
+struct TaskChanges {
+    changed: BTreeMap<WorkId, ChangedTask>,
+    root: InventoryRoot,
+    bytes_before: u64,
+    bytes_after: u64,
+}
+
+fn read_task_changes(
+    reader: &Reader<'_>,
+    tasks: Vec<(WorkId, super::Change)>,
+    base_root: InventoryRoot,
+) -> Result<TaskChanges> {
     // Every old and new blob through one batched read, in diff order.
     let mut wanted = Vec::new();
     for (_, change) in &tasks {
@@ -202,28 +242,62 @@ fn read(
         }
         changed.insert(id, ChangedTask { before, after });
     }
-    let project_document = task_sync::ProjectDocument {
-        format: task_sync::FORMAT.into(),
-        project_id: project.clone(),
-        notes_included: new.profile.include_notes,
-    };
-    task_sync::validate_selected_documents(
-        &project_document,
-        changed.values().filter_map(|task| task.after.as_ref()),
-    )
-    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    Ok(VerifiedTaskDelta {
-        base_commit: base.into(),
-        incoming_commit: incoming.into(),
-        base_object,
-        incoming_object,
-        base: old,
-        incoming: new,
+    Ok(TaskChanges {
         changed,
         root,
         bytes_before,
         bytes_after,
     })
+}
+
+/// Derive a provisional merge tree's task membership from an imported commit.
+/// Full tree admission remains with the caller before it advances the head.
+pub(crate) fn merged_task_membership(
+    repository: &Path,
+    project: &ProjectId,
+    base: &str,
+    base_root: InventoryRoot,
+    base_count: u64,
+    merged_tree: &str,
+    deadline: Duration,
+) -> Result<(InventoryRoot, u64)> {
+    task_sync::ledger::oid(base)?;
+    task_sync::ledger::oid(merged_tree)?;
+    let reader = Reader::bounded(repository, project, deadline)?;
+    let raw = reader.listing(&[
+        "diff-tree",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-commit-id",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-abbrev",
+        base,
+        merged_tree,
+        "--",
+        ".engram/tasks",
+    ])?;
+    let tasks = parse_changes(&raw)?
+        .into_iter()
+        .map(|change| Ok((task_path(&change.path)?, change)))
+        .collect::<Result<Vec<_>>>()?;
+    let delta = read_task_changes(&reader, tasks, base_root)?;
+    let mut count = base_count;
+    for task in delta.changed.values() {
+        let next = match (&task.before, &task.after) {
+            (None, Some(_)) => count.checked_add(1),
+            (Some(_), None) => count.checked_sub(1),
+            _ => Some(count),
+        };
+        count = next.ok_or_else(|| {
+            TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
+                "the recorded task count cannot be updated; run `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`",
+            )
+        })?;
+    }
+    Ok((delta.root, count))
 }
 
 impl VerifiedTaskDelta {

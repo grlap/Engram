@@ -2,6 +2,10 @@ use super::*;
 use std::path::PathBuf;
 #[cfg(windows)]
 use std::process::Command;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod policy_cases;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod unix;
 
 fn target() -> ExchangeTarget {
     ExchangeTarget {
@@ -11,6 +15,7 @@ fn target() -> ExchangeTarget {
             reference: "refs/heads/main".into(),
         },
         url: "https://example.invalid/project.git".into(),
+        transport: super::target::Transport::Https,
         helpers: vec!["manager".into()],
         helper_config: Vec::new(),
     }
@@ -118,7 +123,7 @@ fn task_exchange_typed_commands_are_exact_non_force_and_do_not_expand_callers() 
     );
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 #[tokio::test]
 async fn task_exchange_unsupported_platform_never_launches_the_command() {
     let mut command = std::process::Command::new("must-not-be-launched");

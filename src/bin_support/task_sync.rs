@@ -33,6 +33,24 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Exchange a configured project's task and memory data through its Git data branch.
+    Sync {
+        #[arg(long, default_value = "origin")]
+        remote: String,
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
+        /// Observe the selected data heads without changing local or remote state.
+        #[arg(long)]
+        dry_run: bool,
+        /// Leave the imported local commit ready for a later push.
+        #[arg(long)]
+        no_push: bool,
+        /// Commit the resolved files of the pending Git data merge.
+        #[arg(long, conflicts_with = "dry_run")]
+        reconciled: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Execute one explicit ledger/data step; never dispatches network or merges.
     Step {
         /// Typed action as JSON or @FILE; retain it unchanged for exact retries.
@@ -413,6 +431,55 @@ async fn run_observed(
         return Ok(ExitCode::SUCCESS);
     }
     match args.operation {
+        TaskSyncCommand::Sync {
+            remote,
+            branch,
+            dry_run,
+            no_push,
+            reconciled,
+            json,
+        } => {
+            use engram::task_sync::exchange::{Cancellation, RunLimits};
+            let cancel = Cancellation::default();
+            let result = Box::pin(service.sync_data_folder(
+                project_file,
+                &engram::work_service::DataSyncOptions {
+                    remote,
+                    branch,
+                    dry_run,
+                    no_push,
+                    reconciled,
+                },
+                RunLimits::default(),
+                &cancel,
+            ))
+            .await;
+            let receipt = match result {
+                Ok(receipt) => receipt,
+                Err(error) => return refusal_outcome(Err(error), json),
+            };
+            attribution.print_notices();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+            } else if let Some(reason) = &receipt.pending {
+                println!("{reason}");
+            } else if dry_run {
+                println!(
+                    "Local {}. Remote {}.",
+                    receipt.local_head,
+                    receipt.remote_head.as_deref().unwrap_or("absent")
+                );
+            } else if let Some(command) = receipt.resume_command {
+                println!("Imported local data. Run {command} to push it.");
+            } else {
+                println!("Project data synchronized at {}.", receipt.local_head);
+            }
+            return Ok(if receipt.pending.is_some() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
         TaskSyncCommand::Step { request } => {
             let request = crate::parse_bounded_json_input::<engram::task_sync::driver::StepRequest>(
                 &request,

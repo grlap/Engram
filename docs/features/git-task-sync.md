@@ -10,8 +10,8 @@ Design selected on 2026-10-09. The [explicit directory profile](task-planning-te
 implements planning text, opt-in shared notes and informational machine activity.
 The [host-local opt-in and explicit prepared materialization](task-planning-text.md#materializing-a-selected-preparation)
 are implemented, together with the internal exchange foundation below.
-Automated exchange and reconciliation remain planned. The
-contract below describes that broader target. This replaces sequential
+The ordinary sync command composes the folder route with Git.
+The contract below also describes the broader exchange target. This replaces sequential
 single-writer handoff as the selected personal cross-machine workflow.
 Previous portable writer-epoch, release/acquire, dedicated-ref and scheduled
 push proposals are not prerequisites for this feature. Local SQLite remains
@@ -23,6 +23,32 @@ Linux reconcile through the same configured Git remote and dedicated orphan data
 then import locally. The shared Git remote is their meeting point, not an Engram authority;
 Engram has no hub. Platform transport/subprocess support must be verified per OS
 but does not change this model or transfer claims/runtime authority.
+
+## Synchronize with one command
+
+Run `engram task-sync sync` from the code checkout after enabling task sync
+and enrolling the dedicated data worktree with its first committed import.
+The command selects `origin` and `engram-data` by default. It exports local
+changes and commits them, fetches and merges the data branch, imports the
+resulting commit, then pushes it by fast-forward. The committed folder
+profile selects tasks and shared project memories. Selected memory keys
+use the same revision and retirement admission as folder import. A
+committed evidence component requires the explicit evidence exchange.
+
+The supported endpoints are direct HTTPS, SSH with a known host key and
+noninteractive OpenSSH, and absolute local repository paths. Fetch and push
+use the same configured endpoint. `--dry-run` observes the refs without
+writing. `--no-push` leaves the imported commit ready for a subsequent
+`sync`. A non-fast-forward rejection triggers one new fetch, merge and
+import before retrying. A held or refused import preserves the local commit
+and stops publication. For a Git conflict, edit the selected data files and
+run `engram task-sync sync --reconciled`. The merge updates the incremental
+folder basis from the last imported commit and the changed staged task files.
+If the local envelope carries only a legacy complete-export fingerprint,
+finish the merge through the explicit folder workflow and import the
+committed result with `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`.
+`--json` reports the local and observed remote heads, import result and
+publication status.
 
 The ordinary CLI folder route is confined to the selected project's
 `MAIN/.engram-data/.engram`. `task-sync export` and `task-sync import` first
@@ -225,11 +251,25 @@ same reconciliation step, or a retry's stop. It never pushes again and is never
 recorded as unknown, and no observation is admitted after it. A genuinely
 uncertain result keeps its unresolved observation. No merge text, commit
 metadata or publication success is invented by the adapter. The original
-request and each publication witness
-remain retained. This is an explicit library/service path for complete retained
-candidates; managed proportional publication and the ordinary CLI
-exchange workflow remain separate implementation work. The transport still has
-the existing Windows-only process-confinement boundary.
+request and each publication witness remain retained. This complete retained
+candidate path has its own progress records. The ordinary `task-sync sync`
+command uses the data worktree's Git and folder operations instead. Before
+pushing, it checks the data and disclosure profile of each distinct outgoing
+tree outside the observed remote history, or the complete history if the
+remote ref is absent. Publication requires a fast-forward and the exact
+audited remote ref value, including absence when creating the ref. If the
+remote advances, sync can fetch, reconcile and audit once more. A deletion
+or rewind leaves publication pending.
+Sync publishes only the unpublished commits it created with its fixed Git
+identity and messages. Review and push any manual data commits yourself, then
+rerun sync. Git policy blobs already at the observed tip can carry forward.
+New policy blobs must match the generated Engram policy before sync can
+publish them. If the repository configures custom Git merge drivers, resolve
+and commit any divergent merge yourself before rerunning sync.
+
+The transport owns children through a Job Object on Windows and an isolated
+session and process group on macOS and Linux. A Unix process that leaves the
+owned group is outside its cleanup scope.
 
 `SqliteStore::completed_task_sync_exchange` is a read-only library seam taking
 `CompletedExchangeRequest { binding, intent }`. It compares the complete original
@@ -1440,10 +1480,12 @@ removal, not an explicit forced deletion. Retire it only after preserving data
 and reconciling pending exchange. Local code `.engram/` private state is never
 published or rewritten by data setup.
 
-Hosts fetch the bound data ref, use Engram's merge/reducer and create a new
-fast-forward data commit on top of the fetched tip. No Git merge, rebase, forced
-push or history rewrite is part of this exchange. Data pushes require their
-explicit Git authority; local initialization and preparation grant none.
+Hosts fetch the bound data ref and reconcile changes before importing and
+pushing. Ordinary `task-sync sync` may create a Git merge commit in the data
+worktree. The explicit retained exchange uses its own reconciliation recipe.
+Both routes push a fast-forward update without rebasing or rewriting the
+branch. Data pushes require their explicit Git authority. Local initialization
+and preparation grant none.
 Retain one branch per project; epoch rollover or history squash is a separate
 retention decision. Project/store progress binds the selected data history;
 changing a code branch never replaces the database or rolls sync backward.

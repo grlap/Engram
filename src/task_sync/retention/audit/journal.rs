@@ -105,6 +105,23 @@ impl AuditReservation {
         self.journal_state()
     }
 
+    /// Admit ordinary sync only when no managed write holds this repository.
+    /// A standard sync never repairs or settles an explicit custody operation.
+    pub(crate) fn require_idle_for_ordinary_sync(&self) -> Result<()> {
+        let recovery = "managed task-sync custody is pending or unproved; preserve the repository and recover the exact managed_audit request before running sync";
+        ensure!(pending_journal(&self.directory)?.is_none(), "{recovery}");
+        let head = read_head(&self.directory)?;
+        let journal = self.journal_state()?;
+        if head.is_some_and(|head| head.mode == super::AuditMode::Managed) {
+            let journal = journal.context(recovery)?;
+            crate::task_sync::retention::validate_journal(&self.git_directory, &journal)?;
+            ensure!(journal.writes.is_empty(), "{recovery}");
+        } else {
+            ensure!(journal.is_none(), "{recovery}");
+        }
+        Ok(())
+    }
+
     fn journal_state(&self) -> Result<Option<Journal>> {
         journal_state(&self.directory)
     }

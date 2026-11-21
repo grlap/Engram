@@ -12,7 +12,9 @@ pub use delta::{
     ChangedTask, CommitTaskDelta, VerifiedTaskDelta, read_rooted_task_diff, read_task_delta,
     read_tasks_at, read_verified_task_delta,
 };
-pub(crate) use delta::{ExportParentPaths, matches_export_commit};
+pub(crate) use delta::{
+    ExportParentPaths, matches_export_commit, matches_staged_export, merged_task_membership,
+};
 #[cfg(test)]
 pub(crate) use evidence::decode_selected_pack;
 pub(crate) use evidence::read_selected_evidence_remaining;
@@ -31,10 +33,42 @@ pub(crate) use query::test_clock::PendingQuery;
 #[cfg(test)]
 pub(crate) use query::wait_until_exit;
 pub(crate) use query::{MAX_LISTING_BYTES, run_listing_observed as query_listing};
-pub(crate) use snapshot::observe_commit;
+
+pub(crate) fn changed_task_ids(
+    repository: &Path,
+    before: &str,
+    after: &str,
+    deadline: std::time::Duration,
+) -> anyhow::Result<std::collections::BTreeSet<crate::WorkId>> {
+    crate::task_sync::ledger::oid(before)?;
+    crate::task_sync::ledger::oid(after)?;
+    let paths = query_listing(
+        repository,
+        &[
+            "diff-tree",
+            "--name-only",
+            "--no-commit-id",
+            "--no-renames",
+            "-r",
+            "-z",
+            before,
+            after,
+            "--",
+            ".engram/tasks",
+        ],
+        deadline,
+        MAX_LISTING_BYTES,
+    )?;
+    paths
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| delta::task_path(std::str::from_utf8(path)?))
+        .collect()
+}
 pub use snapshot::read_memory_snapshot;
-pub(crate) use snapshot::read_task_snapshot_bounded;
 pub use snapshot::{CommitObject, CommitTaskSnapshot, read_task_snapshot};
+pub(crate) use snapshot::{admit_ordinary_data_tree, observe_commit, ordinary_data_policy};
+pub(crate) use snapshot::{read_memory_snapshot_with_bytes, read_task_snapshot_bounded};
 
 use std::{
     path::Path,

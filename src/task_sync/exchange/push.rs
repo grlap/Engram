@@ -9,37 +9,37 @@ pub(super) fn classify_failure(
     stdout: &[u8],
     commit: &str,
     reference: &str,
+    leased: bool,
 ) -> RunError {
-    if error == RunError::Git && exit_code == Some(1) && non_fast_forward(stdout, commit, reference)
-    {
-        RunError::NonFastForward
-    } else {
-        error
+    if error != RunError::Git || exit_code != Some(1) {
+        return error;
+    }
+    match selected_status(stdout, commit, reference) {
+        Some("[rejected] (non-fast-forward)" | "[rejected] (fetch first)") => {
+            RunError::NonFastForward
+        }
+        Some("[remote rejected] (failed to update ref)") => RunError::RefUpdateRejected,
+        Some("[rejected] (stale info)") if leased => RunError::RefUpdateRejected,
+        _ => error,
     }
 }
 
-fn non_fast_forward(stdout: &[u8], commit: &str, reference: &str) -> bool {
+fn selected_status<'a>(stdout: &'a [u8], commit: &str, reference: &str) -> Option<&'a str> {
     if !stdout.ends_with(b"\n") {
-        return false;
+        return None;
     }
-    let Ok(stdout) = std::str::from_utf8(stdout) else {
-        return false;
-    };
+    let stdout = std::str::from_utf8(stdout).ok()?;
     let mut records = stdout.lines().filter(|line| line.contains('\t'));
-    let Some(record) = records.next() else {
-        return false;
-    };
+    let record = records.next()?;
     if records.next().is_some() {
-        return false;
+        return None;
     }
-    let fields = record.split('\t').collect::<Vec<_>>();
-    fields.len() == 3
-        && fields[0] == "!"
-        && fields[1] == format!("{commit}:{reference}")
-        && matches!(
-            fields[2],
-            "[rejected] (non-fast-forward)" | "[rejected] (fetch first)"
-        )
+    let mut fields = record.split('\t');
+    let status = fields.next()?;
+    let refspec = fields.next()?;
+    let reason = fields.next()?;
+    (status == "!" && refspec == format!("{commit}:{reference}") && fields.next().is_none())
+        .then_some(reason)
 }
 
 #[cfg(test)]

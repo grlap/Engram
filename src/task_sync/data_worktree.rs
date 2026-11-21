@@ -232,30 +232,7 @@ impl DataWorktree {
                 String::from_utf8_lossy(&entry[2..])
             );
         }
-        let configured = super::git::query(
-            &self.checkout,
-            &["config", "--name-only", "--get-regexp", r"^filter\."],
-            true,
-            None,
-            deadline,
-        )?;
-        let drivers = String::from_utf8(configured)?
-            .lines()
-            .filter_map(|key| key.strip_prefix("filter.")?.rsplit_once('.'))
-            .map(|(driver, _)| driver.to_owned())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut overrides = Vec::new();
-        for driver in &drivers {
-            for (key, value) in [
-                ("clean", ""),
-                ("smudge", ""),
-                ("process", ""),
-                ("required", "false"),
-            ] {
-                overrides.push("-c".to_owned());
-                overrides.push(format!("filter.{driver}.{key}={value}"));
-            }
-        }
+        let overrides = self.filter_overrides_within(Budget::PerQuery)?;
         let mut args = overrides.iter().map(String::as_str).collect::<Vec<_>>();
         args.extend([
             "status",
@@ -297,6 +274,34 @@ impl DataWorktree {
             paths.insert(path);
         }
         Ok(paths)
+    }
+
+    /// Prevent worktree reads and effects from invoking configured Git filters.
+    pub(crate) fn filter_overrides_within(&self, budget: Budget) -> Result<Vec<String>> {
+        let configured = query_within(
+            &self.checkout,
+            &["config", "--name-only", "--get-regexp", r"^filter\."],
+            true,
+            budget,
+        )?;
+        let drivers = String::from_utf8(configured)?
+            .lines()
+            .filter_map(|key| key.strip_prefix("filter.")?.rsplit_once('.'))
+            .map(|(driver, _)| driver.to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut overrides = Vec::new();
+        for driver in &drivers {
+            for (key, value) in [
+                ("clean", ""),
+                ("smudge", ""),
+                ("process", ""),
+                ("required", "false"),
+            ] {
+                overrides.push("-c".to_owned());
+                overrides.push(format!("filter.{driver}.{key}={value}"));
+            }
+        }
+        Ok(overrides)
     }
 
     /// Recheck the bound branch and commit immediately before an effect.

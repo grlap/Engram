@@ -12,8 +12,9 @@ mod repository;
 pub(crate) use files::DIRECTORY_LISTINGS;
 pub(in crate::task_sync) use files::Directory as PrivateDirectory;
 
-pub(crate) use materialize::materialize;
 pub use materialize::{MaterializeReceipt, MaterializeSelection};
+pub(crate) use materialize::{disclose_tasks, materialize};
+pub(crate) use policy::is_generated_data_policy;
 
 use std::path::{Path, PathBuf};
 

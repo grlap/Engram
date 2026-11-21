@@ -1024,14 +1024,22 @@ fn main() -> ExitCode {
         .stack_size(CLI_STACK_BYTES)
         .spawn(run_cli)
     {
-        Ok(handle) => match handle.join() {
-            Ok(Ok(code)) => code,
-            Ok(Err(error)) => {
-                emit_anyhow_error(&error);
-                bin_support::control::failure_exit_code(&error)
+        Ok(handle) => {
+            let outcome = handle.join();
+            let cleanup = engram::task_sync::exchange::drain_process_cleanup();
+            if let Err(error) = &cleanup {
+                emit_anyhow_error(&anyhow::anyhow!(error.clone()));
             }
-            Err(payload) => std::panic::resume_unwind(payload),
-        },
+            match outcome {
+                Ok(Ok(code)) if cleanup.is_ok() => code,
+                Ok(Ok(_)) => ExitCode::FAILURE,
+                Ok(Err(error)) => {
+                    emit_anyhow_error(&error);
+                    bin_support::control::failure_exit_code(&error)
+                }
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
+        }
         Err(error) => {
             emit_anyhow_error(&anyhow::Error::from(error));
             ExitCode::FAILURE

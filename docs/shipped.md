@@ -293,3 +293,9 @@ bounded summary reads and native consumption call the existing verification and
 acceptance owners; neither capture nor export grants eligibility or authority.
 It performs no network operation and grants no Git or execution authority.
 See [explicit exchange steps](features/git-task-sync.md#explicit-exchange-command-steps).
+
+`engram task-sync sync` exports and commits changes from an enrolled data
+worktree, merges Git updates, imports the selected commit and pushes by
+fast-forward. It uses the committed task and memory profile and supports
+direct HTTPS, noninteractive SSH with a known host key, and absolute local
+repository paths. [Ordinary sync command](features/git-task-sync.md#synchronize-with-one-command).

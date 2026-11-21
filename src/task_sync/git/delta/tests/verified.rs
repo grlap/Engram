@@ -11,6 +11,52 @@ fn root(tasks: &[TaskDocument]) -> InventoryRoot {
         .unwrap()
 }
 
+#[test]
+fn staged_merge_membership_reads_only_the_changed_task_documents() {
+    let fixture = Fixture::new(12);
+    let base_root = root(&fixture.tree.tasks);
+    let base = fixture.commit();
+    let original = &fixture.tree.tasks[0];
+    let removed = &fixture.tree.tasks[1];
+    let mut edited = original.clone();
+    edited.title = "Resolved task planning".into();
+    fixture.write(&edited);
+    fs::remove_file(fixture.root.join(Fixture::relative(removed.id))).unwrap();
+    let added = task();
+    fixture.write(&added);
+    fixture.git(&["add", "--all"]);
+    let staged = fixture.text(&["write-tree"]);
+    reads();
+
+    let (merged_root, count) = merged_task_membership(
+        &fixture.root,
+        &fixture.tree.project.project_id,
+        &base,
+        base_root,
+        12,
+        &staged,
+        std::time::Duration::from_secs(60),
+    )
+    .unwrap();
+
+    let expected = base_root
+        .excluding(original)
+        .unwrap()
+        .including(&edited)
+        .unwrap()
+        .excluding(removed)
+        .unwrap()
+        .including(&added)
+        .unwrap();
+    assert_eq!((merged_root, count), (expected, 12));
+    let mut opened = reads();
+    opened.sort();
+    let mut selected = [original.id, original.id, removed.id, added.id].map(Fixture::relative);
+    selected.sort();
+    assert_eq!(opened, selected);
+    assert_eq!(fixture.text(&["rev-parse", "HEAD"]), base);
+}
+
 fn verified(
     fixture: &Fixture,
     base: &str,

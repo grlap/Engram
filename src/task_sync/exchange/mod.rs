@@ -1,7 +1,7 @@
-//! Explicit HTTPS Git execution. This module grants no commit or push authority.
+//! Explicit Git transport execution. This module grants no commit or push authority.
 //!
 //! Engram launches Git directly. Git may use its own shell to invoke an admitted
-//! credential helper; caller text is never a shell command. SSH is unsupported.
+//! credential helper; caller text is never a shell command.
 //! Windows children start suspended, join a kill-on-close job, then resume. A
 //! hard parent exit before assignment can leave an inert suspended child: this
 //! is not atomic confinement. After assignment, dropping the job kills its tree.
@@ -25,17 +25,18 @@ pub use bootstrap::audit_incoming_data_commit;
 mod command;
 pub(crate) mod delta;
 pub(crate) mod evidence;
+pub(crate) mod ordinary;
 pub use evidence::apply_evidence_exchange;
 mod successor;
 pub use successor::apply_planning_successor;
 #[cfg(all(test, windows))]
 #[path = "tests/windows/diagnostics.rs"]
 mod fixture_diagnostics;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 mod process;
-/// Confined process control exists only on Windows. Elsewhere every launch is
+/// Confined process control exists on Windows and Unix. Elsewhere every launch is
 /// refused before spawn, behind the same awaited interface.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 mod process {
     use super::{Cancellation, RunError, RunLimits, RunOutput};
 
@@ -55,13 +56,23 @@ mod process {
         cancel: &Cancellation,
         _commit: &str,
         _reference: &str,
+        _leased: bool,
     ) -> std::future::Ready<Result<RunOutput, RunError>> {
         execute(command, limits, cancel, false)
+    }
+
+    pub(super) fn execute_predicate(
+        command: std::process::Command,
+        _limits: RunLimits,
+        _cancel: &Cancellation,
+    ) -> std::future::Ready<Result<bool, RunError>> {
+        drop(command);
+        std::future::ready(Err(RunError::UnsupportedPlatform))
     }
 }
 #[cfg(test)]
 mod phase_trace;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, unix, test))]
 mod push;
 mod retained;
 mod target;
@@ -75,6 +86,21 @@ pub(crate) mod test_support {
     std::thread_local! {
         pub(crate) static LAUNCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
         pub(crate) static SERVICE_STARTED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    }
+}
+
+/// Finish cleanup for Git processes whose operation futures have ended.
+///
+/// # Errors
+/// Refuses when termination could not be established by the owner.
+pub fn drain_process_cleanup() -> Result<(), RunError> {
+    #[cfg(unix)]
+    {
+        process::drain()
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(())
     }
 }
 
@@ -188,14 +214,14 @@ impl std::fmt::Debug for RunOutput {
 /// Refusals deliberately contain no URL, helper output or credential material.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RunError {
-    #[error("task exchange process control is supported only on Windows")]
+    #[error("task exchange process control is supported only on Windows, macOS and Linux")]
     UnsupportedPlatform,
     #[error(
-        "task exchange requires one direct HTTPS URL without userinfo, query, fragment or unsafe characters; use an ASCII unreserved path, '/' and percent encoding; SSH and other transports are unsupported"
+        "task exchange requires matching direct HTTPS endpoints without userinfo, query, fragment or unsafe characters; use an ASCII unreserved path, '/' and percent encoding. Ordinary task-sync sync also accepts direct SSH and absolute local repository paths"
     )]
     UnsupportedTarget,
     #[error(
-        "task exchange requires manager, manager-core or wincred without helper arguments; remove unsupported helper configuration explicitly"
+        "task exchange requires Git Credential Manager or the operating system's admitted credential helper without helper arguments"
     )]
     UnsupportedHelper,
     #[error(
@@ -207,7 +233,7 @@ pub enum RunError {
     )]
     UnsupportedGitVersion { found: String },
     #[error(
-        "task exchange does not support Git URL rewrite configuration; choose a direct configured HTTPS destination"
+        "task exchange does not support Git URL rewrite configuration; choose a direct configured destination"
     )]
     UnsupportedRewrite,
     #[error(
@@ -232,12 +258,21 @@ pub enum RunError {
     Spawn,
     #[error("task exchange process or pipe failed; a remote result may be unknown")]
     Process,
+    #[error("task exchange cleanup was not proved: {detail}; interrupted={interrupted:?}")]
+    Cleanup {
+        detail: String,
+        interrupted: Option<Box<Self>>,
+    },
     #[error("task exchange Git command failed; no success or publication is implied")]
     Git,
     #[error(
         "task exchange selected branch was refused as non-fast-forward; preserve the commit and reconcile the data tips"
     )]
     NonFastForward,
+    #[error(
+        "task exchange remote could not update the selected ref; observe the selected tip before continuing"
+    )]
+    RefUpdateRejected,
 }
 
 /// Execute a previously captured target after rechecking its effective configuration.
@@ -273,6 +308,16 @@ pub(crate) async fn run_remaining(
     if &current != target {
         return Err(RunError::TargetChanged);
     }
+    run_selected(target, operation, remaining(limits, started)?, cancel).await
+}
+
+async fn run_selected(
+    target: &ExchangeTarget,
+    operation: &ExchangeOperation,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<RunOutput, RunError> {
+    let started = Instant::now();
     let command = command::network(target, operation)?;
     if let ExchangeOperation::Push { commit } = operation {
         let remaining = remaining(limits, started)?;
@@ -285,6 +330,7 @@ pub(crate) async fn run_remaining(
             cancel,
             commit,
             &target.selection.reference,
+            false,
         )
         .await;
     }

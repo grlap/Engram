@@ -265,6 +265,30 @@ impl SqliteStore {
         self.work_read_snapshot(|store| Ok(Ledger::load(&store.connection)?.bindings.remove(id)))
     }
 
+    pub(crate) fn require_settled_task_sync_steps(
+        &self,
+        project: &crate::ProjectId,
+        git_directory: &std::path::Path,
+    ) -> Result<(), StoreError> {
+        use view::{read, select};
+        self.work_read_snapshot(|store| {
+            let connection = &store.connection;
+            let mut budget = read::ReadBudget::default();
+            for id in select::bindings(connection, select::Bindings::Root(git_directory))? {
+                let binding = read::binding_on(connection, &id, &mut budget)?;
+                if &binding.project != project || select::successor(connection, &id)?.is_some() {
+                    continue;
+                }
+                let tail = read::tail_on(connection, &id, &binding, &mut budget)?;
+                require(
+                    tail.operation.is_none_or(|operation| operation.progress.stage == reduce::Stage::Settled),
+                    "an explicit task-sync step is still pending for this checkout; finish or recover that operation before running sync",
+                )?;
+            }
+            Ok(())
+        })
+    }
+
     /// Read a binding's attributed progress in its explicit sequence order.
     /// Object identities and timestamps are not used as ordering cursors.
     ///

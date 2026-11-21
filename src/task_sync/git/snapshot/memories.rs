@@ -12,14 +12,6 @@ const MAX_FILES_PER_KEY: usize = 100_000;
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
 
-pub(super) fn validate(
-    reader: &Reader<'_>,
-    root: &Entry,
-    project: &crate::ProjectId,
-) -> Result<usize> {
-    Ok(read(reader, root, project)?.1)
-}
-
 pub(super) fn read(
     reader: &Reader<'_>,
     root: &Entry,

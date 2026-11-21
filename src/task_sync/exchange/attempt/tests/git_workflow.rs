@@ -184,6 +184,7 @@ impl AttemptIo for GitFixture {
                 &output.stdout,
                 commit,
                 BRANCH,
+                false,
             ))
         })
     }

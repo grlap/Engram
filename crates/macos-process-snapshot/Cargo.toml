@@ -1,0 +1,13 @@
+[package]
+name = "macos-process-snapshot"
+version = "0.1.0"
+edition = "2024"
+description = "Bounded read-only macOS process-group snapshot bytes"
+license = "Apache-2.0"
+publish = false
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

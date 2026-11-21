@@ -319,6 +319,67 @@ impl FolderWrite {
         Ok(())
     }
 
+    /// Check that the dirty folder is exactly the published export, before a
+    /// sync command commits it. No preimage is accepted as a postimage.
+    pub(crate) fn sync_commit_postimages(
+        &self,
+        data: &DataWorktree,
+        dirty: &BTreeSet<String>,
+    ) -> Result<BTreeMap<String, Option<String>>> {
+        use crate::task_sync::setup::PrivateDirectory;
+
+        let refused = || {
+            TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
+                "the data folder no longer matches the retained export; preserve its edits before running sync",
+            )
+        };
+        let paths = self.commit_paths.as_ref().ok_or_else(refused)?;
+        let expected = paths
+            .iter()
+            .map(|path| format!(".engram/{path}"))
+            .collect::<BTreeSet<_>>();
+        if *dirty != expected {
+            return Err(refused().into());
+        }
+        let folder = data.checkout.join(".engram");
+        let mut postimages = BTreeMap::new();
+        for path in paths {
+            let relative = Path::new(path);
+            if relative
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                return Err(refused().into());
+            }
+            let expected = self
+                .files
+                .get(path)
+                .or_else(|| self.memory_files.get(path))
+                .ok_or_else(refused)?;
+            let parent = folder.join(relative.parent().ok_or_else(refused)?);
+            let actual = match PrivateDirectory::open(&parent) {
+                Ok(directory) => directory.read_bounded(
+                    Path::new(relative.file_name().ok_or_else(refused)?),
+                    usize::try_from(super::MAX_FILE_BYTES)?,
+                )?,
+                Err(error)
+                    if error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    None
+                }
+                Err(error) => return Err(error),
+            };
+            if actual.as_deref() != expected.as_ref().map(String::as_bytes) {
+                return Err(refused().into());
+            }
+            postimages.insert(path.clone(), expected.clone());
+        }
+        data.check_head()?;
+        Ok(postimages)
+    }
+
     fn publish_files(&self, data: &DataWorktree) -> Result<()> {
         data.check_head()?;
         let folder = data.checkout.join(".engram");

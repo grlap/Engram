@@ -1,6 +1,6 @@
 //! Fixed argument construction; only Git interprets admitted credential facilities.
 
-use super::{ExchangeOperation, ExchangeTarget, RunError};
+use super::{ExchangeOperation, ExchangeTarget, RunError, target::Transport};
 use std::{
     path::Path,
     process::{Command, Stdio},
@@ -176,31 +176,17 @@ pub(super) fn local(repository: &Path, args: &[&str]) -> Command {
     command
 }
 
-pub(super) fn network(
-    target: &ExchangeTarget,
-    operation: &ExchangeOperation,
-) -> Result<Command, RunError> {
+fn transport(target: &ExchangeTarget) -> Command {
     let mut command = local(&target.selection.repository, &[]);
+    let protocol = match target.transport {
+        Transport::Https => "https",
+        Transport::Ssh => "ssh",
+        Transport::Local => "file",
+    };
     command
         .args([
             "-c",
-            "protocol.https.allow=always",
-            "-c",
-            "credential.interactive=false",
-            "-c",
-            "credential.trace=false",
-            "-c",
-            "credential.traceSecrets=false",
-            "-c",
-            "credential.traceMsAuth=false",
-            "-c",
-            "credential.debug=false",
-            "-c",
-            "core.askPass=",
-            "-c",
-            "http.followRedirects=false",
-            "-c",
-            "http.sslVerify=true",
+            &format!("protocol.{protocol}.allow=always"),
             "-c",
             "submodule.recurse=false",
             "-c",
@@ -212,7 +198,143 @@ pub(super) fn network(
             "-c",
             "push.negotiate=false",
         ])
-        .env("GIT_ALLOW_PROTOCOL", "https");
+        .env("GIT_ALLOW_PROTOCOL", protocol)
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C");
+    match target.transport {
+        Transport::Https => https_settings(&mut command, target),
+        Transport::Ssh => {
+            command
+                .env(
+                    "GIT_SSH_COMMAND",
+                    "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes",
+                )
+                .env("GIT_SSH_VARIANT", "ssh")
+                .env("SSH_ASKPASS_REQUIRE", "never");
+        }
+        Transport::Local => {}
+    }
+    command
+}
+
+pub(super) fn fetch_tip(target: &ExchangeTarget, commit: &str) -> Result<Command, RunError> {
+    if !object_id(commit) {
+        return Err(RunError::InvalidOperation);
+    }
+    let mut command = transport(target);
+    fetch(&mut command, target).arg(commit);
+    Ok(command)
+}
+
+fn fetch<'a>(command: &'a mut Command, target: &ExchangeTarget) -> &'a mut Command {
+    command.args([
+        "fetch",
+        "--no-tags",
+        "--no-prune",
+        "--no-prune-tags",
+        "--no-recurse-submodules",
+        "--no-write-fetch-head",
+        "--no-auto-maintenance",
+        "--",
+        &target.url,
+    ])
+}
+
+pub(super) fn network(
+    target: &ExchangeTarget,
+    operation: &ExchangeOperation,
+) -> Result<Command, RunError> {
+    let mut command = transport(target);
+    match operation {
+        ExchangeOperation::Observe => {
+            command.args([
+                "ls-remote",
+                "--refs",
+                "--heads",
+                "--",
+                &target.url,
+                &target.selection.reference,
+            ]);
+        }
+        ExchangeOperation::Fetch {
+            commit,
+            retention_ref,
+        } => {
+            if !object_id(commit)
+                || !retention_ref.starts_with("refs/engram-exchange/")
+                || !reference(retention_ref)
+            {
+                return Err(RunError::InvalidOperation);
+            }
+            fetch(&mut command, target).arg(format!("{commit}:{retention_ref}"));
+        }
+        ExchangeOperation::Push { commit } => {
+            push(&mut command, target, commit, None)?;
+        }
+    }
+    Ok(command)
+}
+
+pub(super) fn push_at_observed_tip(
+    target: &ExchangeTarget,
+    commit: &str,
+    observed: Option<&str>,
+) -> Result<Command, RunError> {
+    let mut command = transport(target);
+    push(&mut command, target, commit, Some(observed.unwrap_or("")))?;
+    Ok(command)
+}
+
+fn push(
+    command: &mut Command,
+    target: &ExchangeTarget,
+    commit: &str,
+    lease: Option<&str>,
+) -> Result<(), RunError> {
+    if !object_id(commit) || lease.is_some_and(|tip| !tip.is_empty() && !object_id(tip)) {
+        return Err(RunError::InvalidOperation);
+    }
+    command.args([
+        "push",
+        "--porcelain",
+        "--no-verify",
+        "--recurse-submodules=no",
+        "--no-follow-tags",
+        "--no-mirror",
+        "--no-prune",
+        "--signed=false",
+    ]);
+    if let Some(tip) = lease {
+        command.arg(format!(
+            "--force-with-lease={}:{tip}",
+            target.selection.reference
+        ));
+    }
+    command
+        .args(["--", &target.url])
+        .arg(format!("{commit}:{}", target.selection.reference));
+    Ok(())
+}
+
+fn https_settings(command: &mut Command, target: &ExchangeTarget) {
+    command.args([
+        "-c",
+        "credential.interactive=false",
+        "-c",
+        "credential.trace=false",
+        "-c",
+        "credential.traceSecrets=false",
+        "-c",
+        "credential.traceMsAuth=false",
+        "-c",
+        "credential.debug=false",
+        "-c",
+        "core.askPass=",
+        "-c",
+        "http.followRedirects=false",
+        "-c",
+        "http.sslVerify=true",
+    ]);
     // Separate keys and values cannot reinterpret URL bytes as the value of a
     // different key. Admission requires Git >= 2.31 and restricts URL syntax too.
     let mut settings = vec![
@@ -239,60 +361,6 @@ pub(super) fn network(
         command.env(format!("GIT_CONFIG_KEY_{index}"), key);
         command.env(format!("GIT_CONFIG_VALUE_{index}"), value);
     }
-    match operation {
-        ExchangeOperation::Observe => {
-            command.args([
-                "ls-remote",
-                "--refs",
-                "--heads",
-                "--",
-                &target.url,
-                &target.selection.reference,
-            ]);
-        }
-        ExchangeOperation::Fetch {
-            commit,
-            retention_ref,
-        } => {
-            if !object_id(commit)
-                || !retention_ref.starts_with("refs/engram-exchange/")
-                || !reference(retention_ref)
-            {
-                return Err(RunError::InvalidOperation);
-            }
-            command.args([
-                "fetch",
-                "--no-tags",
-                "--no-prune",
-                "--no-prune-tags",
-                "--no-recurse-submodules",
-                "--no-write-fetch-head",
-                "--no-auto-maintenance",
-                "--",
-                &target.url,
-            ]);
-            command.arg(format!("{commit}:{retention_ref}"));
-        }
-        ExchangeOperation::Push { commit } => {
-            if !object_id(commit) {
-                return Err(RunError::InvalidOperation);
-            }
-            command.args([
-                "push",
-                "--porcelain",
-                "--no-verify",
-                "--recurse-submodules=no",
-                "--no-follow-tags",
-                "--no-mirror",
-                "--no-prune",
-                "--signed=false",
-                "--",
-                &target.url,
-            ]);
-            command.arg(format!("{commit}:{}", target.selection.reference));
-        }
-    }
-    Ok(command)
 }
 
 pub(super) fn object_id(value: &str) -> bool {

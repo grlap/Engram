@@ -68,6 +68,14 @@ pub(super) fn validate_recorded(edit: &Edit) -> Result<bool> {
     Ok(propose(&edit.path, edit.before.clone())? == *edit)
 }
 
+pub(crate) fn is_generated_data_policy(name: &str, bytes: &[u8]) -> Result<bool> {
+    ensure!(
+        matches!(name, ".gitignore" | ".gitattributes"),
+        "invalid data policy name"
+    );
+    Ok(propose(name, None)?.after == bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

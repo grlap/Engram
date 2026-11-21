@@ -74,8 +74,8 @@ pub struct MemoryImport<'a> {
     pub fence: &'a PublicationLock,
     pub selected: &'a BTreeMap<String, KeyHistory>,
     pub options: &'a BTreeMap<String, ImportOptions>,
-    /// The bytes the selected memory files hold on disk, as the fenced read
-    /// measured them, counted against the folder's size limit.
+    /// Raw bytes in the selected memory files or commit blobs, counted against
+    /// the folder's size limit.
     pub bytes: u64,
 }
 
@@ -402,7 +402,7 @@ impl LocalWorkService {
         // The folder the delta leads to stays within what the complete reader
         // would take, envelope, policy files and memory component included.
         let folder = data.checkout.join(".engram");
-        // The memory files count as the fenced read measured them on disk.
+        // Count the raw bytes of the selected memory component.
         let mut other_bytes = memory_bytes;
         for name in ["project.json", ".gitignore", ".gitattributes"] {
             if let Ok(meta) = std::fs::symlink_metadata(folder.join(name)) {

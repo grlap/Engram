@@ -151,6 +151,12 @@ enum OwnedExportSlot {
     Current(Box<(FolderWrite, ObjectId, FolderHead)>),
 }
 
+pub(super) enum SyncExport {
+    None,
+    Commit(BTreeMap<String, Option<String>>),
+    Import,
+}
+
 impl LocalWorkService {
     /// Export shared planning into the data worktree's `.engram` folder.
     ///
@@ -930,6 +936,55 @@ impl LocalWorkService {
             commit: commit.to_owned(),
             changes: documents,
         }))
+    }
+
+    /// Resume a retained ordinary export at its original parent, or verify
+    /// its exact local commit before sync can merge a peer's history.
+    pub(super) fn sync_export_state(
+        &self,
+        data: &DataWorktree,
+        now: DateTime<Utc>,
+    ) -> Result<SyncExport> {
+        let _lock = lock_folder(data)?;
+        FolderWrite::require_no_unowned_journal(data)?;
+        let Some((write, id, head)) = self.recorded_export(data, false, now)? else {
+            return Ok(SyncExport::None);
+        };
+        if head.rebuild_needs_complete_import() {
+            return Err(unbound_rebuild_basis_required(write.writes_memories()?));
+        }
+        let mut dirty = data.folder_changes_admitted(true)?;
+        if !same_parent(data, &write) {
+            if !write.published
+                || self
+                    .prove_export_commit(data, &dirty, &write, &id, &head)?
+                    .is_none()
+            {
+                return Err(write.moved_interrupted_export()?);
+            }
+            return Ok(SyncExport::Import);
+        }
+        if !write.published {
+            if write.writes_memories()? {
+                return Err(rebuild_combined_export());
+            }
+            if dirty.iter().any(|path| {
+                path.strip_prefix(".engram/")
+                    .is_none_or(|relative| !write.files.contains_key(relative))
+            }) {
+                return Err(changed_folder(
+                    "preserve uncommitted data before finishing the retained export",
+                ));
+            }
+            write.clone().replay(data)?;
+            dirty = data.folder_changes_admitted(true)?;
+        }
+        if dirty.is_empty() {
+            return Ok(SyncExport::Import);
+        }
+        Ok(SyncExport::Commit(
+            write.sync_commit_postimages(data, &dirty)?,
+        ))
     }
 
     /// Inspect a retained write without replaying or adopting it. An ordinary

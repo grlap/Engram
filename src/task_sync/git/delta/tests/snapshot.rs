@@ -37,6 +37,22 @@ fn bounded_snapshot_refuses_exhausted_budget_and_reads_the_selected_commit_witho
 }
 
 #[test]
+fn ordinary_admission_reads_a_large_valid_task_inventory() {
+    // The tree's task names and object ids exceed the small query bound,
+    // while the task documents remain within the supported folder limits.
+    let fixture = Fixture::new(12_000);
+    let commit = fixture.commit();
+    crate::task_sync::git::admit_ordinary_data_tree(
+        &fixture.root,
+        &fixture.tree.project.project_id,
+        &commit,
+        std::time::Duration::from_secs(60),
+        None,
+    )
+    .unwrap();
+}
+
+#[test]
 fn data_policy_edits_preserve_task_snapshots_and_proportional_delta_reads() {
     let fixture = Fixture::new(2);
     let base = fixture.commit();

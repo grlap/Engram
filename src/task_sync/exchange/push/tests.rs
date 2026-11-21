@@ -24,7 +24,8 @@ fn only_one_exact_selected_ref_non_fast_forward_is_a_known_refusal() {
                 Some(1),
                 &bytes,
                 &commit,
-                "refs/heads/engram-data"
+                "refs/heads/engram-data",
+                false,
             ),
             RunError::NonFastForward
         );
@@ -63,7 +64,8 @@ fn only_one_exact_selected_ref_non_fast_forward_is_a_known_refusal() {
                     Some(1),
                     &other,
                     &commit,
-                    "refs/heads/engram-data"
+                    "refs/heads/engram-data",
+                    false,
                 ),
                 RunError::Git
             );
@@ -88,7 +90,8 @@ fn incomplete_transport_errors_keep_their_uncertainty_even_with_a_refusal_excerp
                 Some(1),
                 &bytes,
                 &commit,
-                "refs/heads/engram-data"
+                "refs/heads/engram-data",
+                false,
             ),
             error
         );
@@ -101,7 +104,8 @@ fn incomplete_transport_errors_keep_their_uncertainty_even_with_a_refusal_excerp
                 exit_code,
                 &bytes,
                 &commit,
-                "refs/heads/engram-data"
+                "refs/heads/engram-data",
+                false,
             ),
             RunError::Git
         );
@@ -221,7 +225,8 @@ fn actual_single_ref_refusal_between_two_local_clones_is_distinct_from_resolved_
             rejected.status.code(),
             &rejected.stdout,
             &local,
-            reference
+            reference,
+            false,
         ),
         RunError::NonFastForward
     );
@@ -271,7 +276,7 @@ fn actual_single_ref_refusal_between_two_local_clones_is_distinct_from_resolved_
         ],
     );
     assert!(accepted.status.success());
-    assert!(!non_fast_forward(&accepted.stdout, &resolved, reference));
+    assert!(selected_status(&accepted.stdout, &resolved, reference).is_none());
     assert_eq!(ok(&bare, &config, &["rev-parse", reference]), resolved);
     assert_eq!(
         ok(&left, &config, &["show", "-s", "--format=%P", &resolved]),

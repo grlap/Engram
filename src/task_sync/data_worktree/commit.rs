@@ -1,9 +1,61 @@
 //! Construct exact operation-owned Git bytes without advancing the data branch.
 
-use super::{DataWorktree, QUERY_BOUND, Result, ensure, git, oid_line, query};
+use super::{
+    Context, DataWorktree, PrivateDirectory, QUERY_BOUND, Result, ensure, git, oid_line, query,
+};
 use crate::task_sync::{ledger::RetainedCommit, retention};
 use chrono::{DateTime, Utc};
-use std::fmt::Write;
+use std::{fmt::Write, io::Write as _, path::Path};
+
+const OWNED_SYNC_COMMITS: &str = "engram-ordinary-sync-commits";
+
+impl DataWorktree {
+    fn owned_sync_commits(&self, create: bool) -> Result<Option<PrivateDirectory>> {
+        let admin = PrivateDirectory::open(&self.git_directory)?;
+        let name = Path::new(OWNED_SYNC_COMMITS);
+        match admin.dir().symlink_metadata(name) {
+            Ok(_) => admin.child(name).map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
+                admin.create_child(name).map(Some)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Keep private, exact commit receipts across later sync calls. The
+    /// ordinary sync holds the repository audit reservation through this write.
+    pub(crate) fn record_owned_sync_commit(&self, commit: &str) -> Result<()> {
+        super::super::ledger::oid(commit)?;
+        let owned = self
+            .owned_sync_commits(true)?
+            .context("missing ordinary sync commit receipt directory")?;
+        let mut file = owned.open_file(Path::new(commit), true, true)?;
+        file.write_all(commit.as_bytes())?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    pub(crate) fn require_owned_sync_commits(&self, commits: &[&str]) -> Result<()> {
+        let refuse_manual = || {
+            anyhow::anyhow!(
+                "ordinary task sync will not publish commits it did not create; review the unpublished data history and push it yourself, then rerun sync"
+            )
+        };
+        let owned = self.owned_sync_commits(false)?.ok_or_else(refuse_manual)?;
+        for commit in commits {
+            super::super::ledger::oid(commit)?;
+            ensure!(
+                owned
+                    .read_bounded(Path::new(commit), commit.len())?
+                    .as_deref()
+                    == Some(commit.as_bytes()),
+                refuse_manual()
+            );
+        }
+        Ok(())
+    }
+}
 
 /// Complete caller selection. A fixed whole-second date and exact message keep
 /// the same Git object across a lost response; no user/global Git identity is

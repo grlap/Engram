@@ -3,6 +3,9 @@
 
 use super::*;
 
+#[path = "ordinary_sync.rs"]
+mod ordinary_sync;
+
 const PROJECT: &str = "incremental-cli";
 
 struct Host {

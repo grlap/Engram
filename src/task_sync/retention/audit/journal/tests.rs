@@ -65,6 +65,26 @@ fn exact_pending_write_replays_and_divergent_or_stale_settlement_preserves_it() 
 }
 
 #[test]
+fn ordinary_sync_cannot_advance_an_unsettled_managed_request() {
+    let (_home, reservation) = fixture();
+    reservation.require_idle_for_ordinary_sync().unwrap();
+    reservation
+        .reserve_artifact(
+            uuid::Uuid::new_v4(),
+            Family::Delta,
+            &"managed request before SQL",
+        )
+        .unwrap();
+    let pending = reservation.journal_state().unwrap().unwrap();
+
+    assert!(reservation.require_idle_for_ordinary_sync().is_err());
+    assert_eq!(reservation.journal_state().unwrap(), Some(pending.clone()));
+
+    reservation.settle_journal(&pending).unwrap();
+    reservation.require_idle_for_ordinary_sync().unwrap();
+}
+
+#[test]
 fn interrupted_exact_publication_recovers_without_reminting_its_revision() {
     let (home, reservation) = fixture();
     let before = reservation.journal().unwrap().unwrap();

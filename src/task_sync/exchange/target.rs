@@ -1,7 +1,18 @@
-//! Capture and recheck effective configuration, without inferring Git authority.
+//! Select a configured endpoint for literal Git operations.
 
 use super::{Cancellation, RunError, RunLimits, command, execute};
-use std::{fmt, path::PathBuf, time::Instant};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    time::Instant,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Transport {
+    Https,
+    Ssh,
+    Local,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetSelection {
@@ -15,6 +26,7 @@ pub struct TargetSelection {
 pub struct ExchangeTarget {
     pub(super) selection: TargetSelection,
     pub(super) url: String,
+    pub(super) transport: Transport,
     pub(super) helpers: Vec<String>,
     pub(super) helper_config: Vec<u8>,
 }
@@ -22,7 +34,7 @@ pub struct ExchangeTarget {
 impl fmt::Debug for ExchangeTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ExchangeTarget")
-            .field("transport", &"https")
+            .field("transport", &self.transport)
             .field("helper_count", &self.helpers.len())
             .finish_non_exhaustive()
     }
@@ -69,6 +81,24 @@ impl ExchangeTarget {
         limits: RunLimits,
         cancel: &Cancellation,
     ) -> Result<Self, RunError> {
+        Self::capture_endpoint(selection, limits, cancel, false).await
+    }
+
+    /// The ordinary folder command also accepts admitted SSH and local paths.
+    pub(crate) async fn capture_ordinary_remaining(
+        selection: &TargetSelection,
+        limits: RunLimits,
+        cancel: &Cancellation,
+    ) -> Result<Self, RunError> {
+        Self::capture_endpoint(selection, limits, cancel, true).await
+    }
+
+    async fn capture_endpoint(
+        selection: &TargetSelection,
+        limits: RunLimits,
+        cancel: &Cancellation,
+        ordinary: bool,
+    ) -> Result<Self, RunError> {
         limits.validate()?;
         let started = Instant::now();
         validate_selection(selection)?;
@@ -102,8 +132,10 @@ impl ExchangeTarget {
             cancel,
         )
         .await?;
-        let url = single_url(&fetch)?;
-        if single_url(&push)? != url {
+        let (url, transport) = single_url(&fetch)?;
+        if (!ordinary && transport != Transport::Https)
+            || single_url(&push)? != (url.clone(), transport)
+        {
             return Err(RunError::UnsupportedTarget);
         }
         // Reusing a get-url result as an explicit URL can apply insteadOf a
@@ -133,6 +165,15 @@ impl ExchangeTarget {
                 return Err(RunError::UnsupportedConfiguration);
             }
         }
+        if transport != Transport::Https {
+            return Ok(Self {
+                selection: selection.clone(),
+                url,
+                transport,
+                helpers: Vec::new(),
+                helper_config: Vec::new(),
+            });
+        }
         let mut config = command::local(
             &selection.repository,
             &[
@@ -151,6 +192,7 @@ impl ExchangeTarget {
         Ok(Self {
             selection: selection.clone(),
             url,
+            transport,
             helpers,
             helper_config: output,
         })
@@ -205,15 +247,35 @@ fn validate_selection(selection: &TargetSelection) -> Result<(), RunError> {
     Ok(())
 }
 
-fn single_url(bytes: &[u8]) -> Result<String, RunError> {
+fn single_url(bytes: &[u8]) -> Result<(String, Transport), RunError> {
     let value = std::str::from_utf8(bytes).map_err(|_| RunError::UnsupportedTarget)?;
     let value = value.strip_suffix('\n').unwrap_or(value);
-    let tail = value
-        .strip_prefix("https://")
-        .ok_or(RunError::UnsupportedTarget)?;
+    if value.len() > 4096 || value.chars().any(char::is_control) {
+        return Err(RunError::UnsupportedTarget);
+    }
+    let transport = if let Some(tail) = value.strip_prefix("https://") {
+        validate_https(value, tail)?;
+        Transport::Https
+    } else if Path::new(value).is_absolute() && !value.contains("://") {
+        Transport::Local
+    } else if let Some(tail) = value.strip_prefix("ssh://") {
+        let (host, path) = tail.split_once('/').ok_or(RunError::UnsupportedTarget)?;
+        validate_ssh(host, path, true)?;
+        Transport::Ssh
+    } else {
+        if value.contains("://") {
+            return Err(RunError::UnsupportedTarget);
+        }
+        let (host, path) = value.split_once(':').ok_or(RunError::UnsupportedTarget)?;
+        validate_ssh(host, path, false)?;
+        Transport::Ssh
+    };
+    Ok((value.to_owned(), transport))
+}
+
+fn validate_https(value: &str, tail: &str) -> Result<(), RunError> {
     let (authority, path) = tail.split_once('/').unwrap_or((tail, ""));
-    if value.len() > 4096
-        || authority.is_empty()
+    if authority.is_empty()
         || value.contains(['@', '?', '#', '\\'])
         || !value.bytes().all(|b| b.is_ascii_graphic())
         || !authority
@@ -225,7 +287,35 @@ fn single_url(bytes: &[u8]) -> Result<String, RunError> {
     {
         return Err(RunError::UnsupportedTarget);
     }
-    Ok(value.to_owned())
+    Ok(())
+}
+
+fn validate_ssh(authority: &str, path: &str, allow_port: bool) -> Result<(), RunError> {
+    let (user, host) = authority
+        .split_once('@')
+        .map_or((None, authority), |(user, host)| (Some(user), host));
+    let host_character = |byte: u8| byte.is_ascii_alphanumeric() || b".-_".contains(&byte);
+    let host_valid = |value: &str| {
+        !value.is_empty() && !value.starts_with('-') && value.bytes().all(host_character)
+    };
+    let (host, port) = if allow_port {
+        host.rsplit_once(':')
+            .map_or((host, None), |(host, port)| (host, Some(port)))
+    } else {
+        (host, None)
+    };
+    if !host_valid(host)
+        || user.is_some_and(|user| !host_valid(user))
+        || port.is_some_and(|port| !port.parse::<u16>().is_ok_and(|port| port != 0))
+        || path.is_empty()
+        || path.starts_with('-')
+        || !path
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte))
+    {
+        return Err(RunError::UnsupportedTarget);
+    }
+    Ok(())
 }
 
 fn require_git_version(bytes: &[u8]) -> Result<(), RunError> {
@@ -294,21 +384,46 @@ fn helper_names(bytes: &[u8]) -> Result<Vec<String>, RunError> {
     let bytes = bytes
         .strip_suffix(&[0])
         .ok_or(RunError::UnsupportedHelper)?;
-    for (index, value) in bytes.split(|b| *b == 0).enumerate() {
-        if index >= 64 {
-            return Err(RunError::UnsupportedHelper);
-        }
-        if value.is_empty() {
-            result.clear();
-            continue;
-        }
+    let values = bytes.split(|b| *b == 0).collect::<Vec<_>>();
+    if values.len() > 64 {
+        return Err(RunError::UnsupportedHelper);
+    }
+    // Git's empty helper entry discards all earlier entries, including helpers
+    // inherited from another configuration scope. Validate only the helpers
+    // that could actually be invoked by this effective selection.
+    let start = values
+        .iter()
+        .rposition(|value| value.is_empty())
+        .map_or(0, |i| i + 1);
+    for value in &values[start..] {
         let helper = std::str::from_utf8(value).map_err(|_| RunError::UnsupportedHelper)?;
-        if !matches!(helper, "manager" | "manager-core" | "wincred") || result.len() >= 8 {
+        if !admitted_helper(helper) || result.len() >= 8 {
             return Err(RunError::UnsupportedHelper);
         }
         result.push(helper.to_owned());
     }
     Ok(result)
+}
+
+/// The platform's own keychain helper, beside Git Credential Manager.
+pub(super) const NATIVE_HELPER: Option<&str> = if cfg!(windows) {
+    Some("wincred")
+} else if cfg!(target_os = "macos") {
+    Some("osxkeychain")
+} else if cfg!(target_os = "linux") {
+    Some("libsecret")
+} else {
+    None
+};
+
+/// Only non-interactive credential facilities, by exact name. The `cache`
+/// helper starts a daemon in its own session, outside the runner's ownership,
+/// and `store` keeps plaintext secrets; neither is admitted on any platform.
+/// Git Credential Manager's own store setting is not inspected: a manager set
+/// to a cache or plaintext store, or a keychain that raises a graphical unlock
+/// prompt, is bounded only by the request deadline.
+fn admitted_helper(helper: &str) -> bool {
+    matches!(helper, "manager" | "manager-core") || Some(helper) == NATIVE_HELPER
 }
 
 #[cfg(test)]
@@ -318,8 +433,10 @@ mod tests {
     #[test]
     fn task_exchange_url_and_helper_policy_refuse_secrets_shells_and_ambiguity() {
         for url in [
-            "git@github.com:project/repo.git\n",
-            "ssh://host/repo",
+            "ssh://-host/repo",
+            "git@host:path;unexpected",
+            "ext::git upload-pack",
+            "ssh://user:password@host/repo",
             "file:///repo",
             "https://user:token@host/repo",
             "https://host/repo?token=secret",
@@ -344,30 +461,82 @@ mod tests {
         }
         assert_eq!(
             single_url(b"https://example.invalid/repo.git\n").unwrap(),
-            "https://example.invalid/repo.git"
+            ("https://example.invalid/repo.git".into(), Transport::Https)
         );
         assert_eq!(
             single_url(b"https://example.invalid/repo%3Dname.git").unwrap(),
-            "https://example.invalid/repo%3Dname.git"
+            (
+                "https://example.invalid/repo%3Dname.git".into(),
+                Transport::Https
+            )
         );
         assert!(single_url(b"https://host/repo\xff").is_err());
+        for url in [
+            "git@example.invalid:project/repo.git",
+            "ssh://git@example.invalid:2222/repo",
+        ] {
+            assert_eq!(
+                single_url(url.as_bytes()).unwrap(),
+                (url.into(), Transport::Ssh)
+            );
+        }
+        let local = if cfg!(windows) {
+            "C:/task data/remote.git"
+        } else {
+            "/task data/remote.git"
+        };
+        assert_eq!(
+            single_url(local.as_bytes()).unwrap(),
+            (local.into(), Transport::Local)
+        );
         for helper in [
             b"!steal\0".as_slice(),
             b"manager --argument\0",
             b"custom\0",
             b"manager\n",
             b"manager\0!script\0",
+            b"cache\0",
+            b"store\0",
+            b"cache --timeout=1\0",
         ] {
             assert_eq!(helper_names(helper), Err(RunError::UnsupportedHelper));
         }
+        // Another platform's keychain helper is not admitted here.
+        for foreign in ["wincred", "osxkeychain", "libsecret"]
+            .into_iter()
+            .filter(|helper| Some(*helper) != NATIVE_HELPER)
+        {
+            assert_eq!(
+                helper_names(format!("{foreign}\0").as_bytes()),
+                Err(RunError::UnsupportedHelper),
+                "{foreign}"
+            );
+        }
         assert_eq!(helper_names(b"manager\0\0").unwrap(), Vec::<String>::new());
-        assert_eq!(helper_names(b"manager\0\0wincred\0").unwrap(), ["wincred"]);
         assert_eq!(
-            helper_names(b"manager\0manager-core\0wincred\0")
-                .unwrap()
-                .len(),
-            3
+            helper_names(b"osxkeychain\0\0").unwrap(),
+            Vec::<String>::new()
         );
+        assert_eq!(
+            helper_names(b"!ignored-helper\0\0manager\0").unwrap(),
+            ["manager"]
+        );
+        assert_eq!(
+            helper_names(b"\0!active-helper\0"),
+            Err(RunError::UnsupportedHelper)
+        );
+        if let Some(native) = NATIVE_HELPER {
+            assert_eq!(
+                helper_names(format!("manager\0\0{native}\0").as_bytes()).unwrap(),
+                [native]
+            );
+            assert_eq!(
+                helper_names(format!("manager\0manager-core\0{native}\0").as_bytes())
+                    .unwrap()
+                    .len(),
+                3
+            );
+        }
     }
 
     #[test]
