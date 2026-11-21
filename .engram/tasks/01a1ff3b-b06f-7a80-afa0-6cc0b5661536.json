@@ -1,0 +1,25 @@
+{
+  "id": "01a1ff3b-b06f-7a80-afa0-6cc0b5661536",
+  "external_ref": null,
+  "title": "Preserve the input-unverified outcome in oversized launcher completion artifacts",
+  "outcome": "Preserve the input-unverified outcome in oversized launcher completion artifacts",
+  "acceptance": [
+    "A committed-input run that overflows the terminal results artifact bound reports input_unverified in its completion summary and stays ineligible for verification credit.",
+    "The bounded fallback stays within the artifact size limit and the existing committed-input artifact-cap fixture verifies the reported outcome."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
