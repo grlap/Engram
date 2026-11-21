@@ -39,7 +39,8 @@ pub(crate) fn validate_retirement_on(
         root: record.named_root.clone(),
         basis,
     };
-    let history = History::new(connection, &record.project_id, &decision.request)?;
+    let mut history = History::new(connection, &record.project_id, &decision.request)?;
+    history.retiring = true;
     if inspect(&history, &destination, &record.policy, &record.source)?.is_some() {
         return Err(invalid(
             "retiring acceptance original is no longer applicable",
@@ -73,10 +74,16 @@ pub(crate) fn qualify_on(
         || decision.named_root != destination.root
         || decision.governing_fingerprint
             != *crate::CanonicalObject::freeze(&destination.item)?.key()
-        || decision.source != *source
         || decision.refusal.is_some()
     {
         return Err(invalid("imported acceptance destination changed"));
+    }
+    match decision.source.compare(source) {
+        Some(true) => {}
+        Some(false) => return Err(invalid("imported acceptance destination source changed")),
+        None => {
+            return Err(crate::storage::work::task_sync::evidence::PersistenceError::IncomparableSourceIdFormats);
+        }
     }
     let policy = crate::storage::SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
     let history = History::new(connection, &decision.project, &decision.request)?;

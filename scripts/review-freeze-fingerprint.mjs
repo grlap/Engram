@@ -339,6 +339,27 @@ function sourceChanges(changes) {
 // Rebuild only object key order. Array/path order is validated, never repaired.
 // This compares the owner's complete value without introducing another hash.
 function sourceValue(value) {
+  if (fieldsExactly(value, ["commit", "tree", "git_delta"])) {
+    const delta = value.git_delta;
+    if (!sourceOid(value.commit) || !sourceOid(value.tree)
+        || !fieldsExactly(delta, ["sha256", "dirty", "gitlinks"])
+        || typeof delta.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(delta.sha256)
+        || typeof delta.dirty !== "boolean" || !Array.isArray(delta.gitlinks)
+        || (!delta.dirty && delta.gitlinks.length !== 0)) return null;
+    const gitlinks = [];
+    for (const link of delta.gitlinks) {
+      if (!fieldsExactly(link, ["path", "head_pin", "index_pin", "checkout_head"])
+          || !sourcePath(link.path)
+          || [link.head_pin, link.index_pin, link.checkout_head].some((oid) => oid !== null && !sourceOid(oid))
+          || (link.head_pin === null && link.index_pin === null)
+          || (link.index_pin !== null && link.checkout_head === null)
+          || (gitlinks.length && byteOrder(gitlinks.at(-1).path, link.path) >= 0)) return null;
+      gitlinks.push({ path: link.path, head_pin: link.head_pin, index_pin: link.index_pin,
+        checkout_head: link.checkout_head });
+    }
+    return { commit: value.commit, tree: value.tree,
+      git_delta: { sha256: delta.sha256, dirty: delta.dirty, gitlinks } };
+  }
   if (!fieldsExactly(value, ["commit", "tree", "submodules", "changes"])
       || !sourceOid(value.commit) || !sourceOid(value.tree) || !Array.isArray(value.submodules)) return null;
   const changes = sourceChanges(value.changes);
@@ -355,8 +376,13 @@ function sourceValue(value) {
 }
 
 export function sourceIdsEqual(before, after) {
+  return compareSourceIds(before, after) === "matched";
+}
+
+export function compareSourceIds(before, after) {
   const a = sourceValue(before), b = sourceValue(after);
-  return a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b);
+  if (a === null || b === null || Boolean(a.git_delta) !== Boolean(b.git_delta)) return "unknown";
+  return JSON.stringify(a) === JSON.stringify(b) ? "matched" : "mismatch";
 }
 
 export const sourceIdLimitations = () => [
@@ -372,6 +398,17 @@ export function sourceIdDifference(before, after) {
   const add = (text) => { if (lines.length < 12) lines.push(text); };
   if (a.commit !== b.commit) add(`root commit: ${a.commit} -> ${b.commit}`);
   if (a.tree !== b.tree) add(`root tree: ${a.tree} -> ${b.tree}`);
+  if (a.git_delta || b.git_delta) {
+    if (!a.git_delta || !b.git_delta) add("source identity representations differ");
+    else {
+      if (a.git_delta.sha256 !== b.git_delta.sha256) add("Git delta changed");
+      if (a.git_delta.dirty !== b.git_delta.dirty) add("Git dirty status changed");
+      if (JSON.stringify(a.git_delta.gitlinks) !== JSON.stringify(b.git_delta.gitlinks)) {
+        add("selected gitlink state changed");
+      }
+    }
+    return lines.join("\n") + "\nComplete observations: results.json sourceIdBefore/sourceIdAfter";
+  }
   const repositories = [["", a.changes, b.changes]];
   const children = new Map(b.submodules.map((child) => [child.path, child]));
   const label = (path) => JSON.stringify(path.slice(0, 160)) + (path.length > 160 ? "…" : "");
@@ -449,8 +486,10 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
   const sourceId = sourceValue(observation.source_id);
   if (sourceId === null || sourceId.commit !== observation.source.slice("git-commit:".length)
       || sourceId.tree !== observation.tree
-      || (observation.status === "clean" && (sourceId.changes.length
-        || sourceId.submodules.some((child) => child.changes.length)))) {
+      || (sourceId.git_delta
+        ? (observation.status === "clean") === sourceId.git_delta.dirty
+        : observation.status === "clean" && (sourceId.changes.length
+          || sourceId.submodules.some((child) => child.changes.length)))) {
     throw unavailable("owner returned an inconsistent source_id");
   }
   for (const entry of observation.entries) {

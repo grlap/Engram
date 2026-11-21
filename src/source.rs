@@ -45,13 +45,105 @@ pub struct Entry {
 
 /// The complete measured source state. Paths are relative to their repository;
 /// absolute host paths and observation metadata are not comparison inputs.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceId {
     pub commit: String,
     pub tree: String,
     pub submodules: Vec<Submodule>,
     pub changes: Vec<Change>,
+    pub git_delta: Option<GitDelta>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum SourceIdWire {
+    Delta(DeltaSourceId),
+    Legacy(LegacySourceId),
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DeltaSourceId {
+    commit: String,
+    tree: String,
+    git_delta: GitDelta,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LegacySourceId {
+    commit: String,
+    tree: String,
+    submodules: Vec<Submodule>,
+    changes: Vec<Change>,
+}
+
+impl<'de> Deserialize<'de> for SourceId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match SourceIdWire::deserialize(deserializer)? {
+            SourceIdWire::Delta(value) => Self {
+                commit: value.commit,
+                tree: value.tree,
+                submodules: Vec::new(),
+                changes: Vec::new(),
+                git_delta: Some(value.git_delta),
+            },
+            SourceIdWire::Legacy(value) => Self {
+                commit: value.commit,
+                tree: value.tree,
+                submodules: value.submodules,
+                changes: value.changes,
+                git_delta: None,
+            },
+        })
+    }
+}
+
+impl Serialize for SourceId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct as _;
+        let mut object = serializer
+            .serialize_struct("SourceId", if self.git_delta.is_some() { 3 } else { 4 })?;
+        object.serialize_field("commit", &self.commit)?;
+        object.serialize_field("tree", &self.tree)?;
+        if let Some(delta) = &self.git_delta {
+            object.serialize_field("git_delta", delta)?;
+        } else {
+            object.serialize_field("submodules", &self.submodules)?;
+            object.serialize_field("changes", &self.changes)?;
+        }
+        object.end()
+    }
+}
+
+impl schemars::JsonSchema for SourceId {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SourceId".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SourceIdWire::json_schema(generator)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GitDelta {
+    pub sha256: String,
+    pub dirty: bool,
+    pub gitlinks: Vec<Gitlink>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Gitlink {
+    pub path: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub head_pin: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub index_pin: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub checkout_head: Option<String>,
 }
 
 /// Decode a present identity without reflecting malformed caller values in a
@@ -75,11 +167,20 @@ pub struct SourceIdSummary {
     pub tree: String,
     pub changes: usize,
     pub submodules: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_delta_dirty: Option<bool>,
 }
 
 impl SourceIdSummary {
     #[must_use]
     pub fn description(&self) -> String {
+        if let Some(dirty) = self.git_delta_dirty {
+            let state = if dirty { "dirty" } else { "clean" };
+            return format!(
+                "source_id commit {}; tree {}; Git delta {state}; {} selected gitlinks",
+                self.commit, self.tree, self.submodules
+            );
+        }
         format!(
             "source_id commit {}; tree {}; {} changes; {} submodules",
             self.commit, self.tree, self.changes, self.submodules
@@ -88,13 +189,34 @@ impl SourceIdSummary {
 }
 
 impl SourceId {
+    /// Different wire generations cannot establish equality or movement.
+    #[must_use]
+    pub fn compare(&self, other: &Self) -> Option<bool> {
+        (self.git_delta.is_some() == other.git_delta.is_some()).then_some(self == other)
+    }
+
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.git_delta.as_ref().map_or_else(
+            || {
+                self.changes.is_empty()
+                    && self.submodules.iter().all(|child| child.changes.is_empty())
+            },
+            |delta| !delta.dirty,
+        )
+    }
+
     #[must_use]
     pub fn summary(&self) -> SourceIdSummary {
         SourceIdSummary {
             commit: self.commit.clone(),
             tree: self.tree.clone(),
             changes: self.changes.len(),
-            submodules: self.submodules.len(),
+            submodules: self
+                .git_delta
+                .as_ref()
+                .map_or(self.submodules.len(), |delta| delta.gitlinks.len()),
+            git_delta_dirty: self.git_delta.as_ref().map(|delta| delta.dirty),
         }
     }
 }
@@ -284,6 +406,7 @@ mod tests {
             entries: Vec::new(),
             refusal: None,
             source_id: Some(SourceId {
+                git_delta: None,
                 commit: fixture.to_owned(),
                 tree: fixture.to_owned(),
                 submodules: Vec::new(),

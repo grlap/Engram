@@ -603,6 +603,7 @@ fn an_oversized_execution_observe_frame_is_refused_before_decoding() {
 #[test]
 fn observation_frame_holds_all_complete_sources_without_raising_other_operation_limits() {
     let mut source = crate::source::SourceId {
+        git_delta: None,
         commit: "a".repeat(40),
         tree: "b".repeat(40),
         submodules: vec![],

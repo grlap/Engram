@@ -138,6 +138,8 @@ pub(in crate::storage) fn newest_change_repeated_on(
                         OR {})
                    AND ({revision_sql} IS NOT NULL OR {source_id_sql} IS NOT NULL)
                    AND ({revision_sql} IS NOT ?3 OR {source_id_sql} IS NOT ?6)
+                   AND (?6 IS NULL OR {source_id_sql} IS NULL
+                        OR json_type({source_id_sql}, '$.git_delta') IS json_type(?6, '$.git_delta'))
                    AND (?4 IS NULL OR {workspace_sql} = ?4)
              )",
             super::super::feeds::SOURCE_RECORD_SQL

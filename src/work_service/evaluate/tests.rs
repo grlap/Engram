@@ -574,6 +574,7 @@ fn shared_evaluation_keeps_the_complete_record_and_only_projects_an_owner_summar
         vec![verdict(1, "fail", "judgment", &[])],
     );
     let identity = crate::source::SourceId {
+        git_delta: None,
         commit: "a".repeat(40),
         tree: "b".repeat(40),
         submodules: vec![],

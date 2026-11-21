@@ -95,6 +95,17 @@ fn remote_input_disqualification(
     let input = match input {
         RemoteRunInput::SourceId(input) => {
             let Some(source) = input.matching_source_id() else {
+                if input
+                    .source_id_before
+                    .as_ref()
+                    .zip(input.source_id_after.as_ref())
+                    .is_some_and(|(before, after)| before.compare(after).is_none())
+                {
+                    return Some((
+                        Reason::SourceIdMissingOrChanged,
+                        Some("check=source_id_endpoints observed_endpoints_match=incomparable expected=two equal complete source_id objects in the same format; remedy=rerun the check on unchanged input with one source owner and deliver the new run".into()),
+                    ));
+                }
                 return Some((
                     Reason::SourceIdMissingOrChanged,
                     Some(format!(

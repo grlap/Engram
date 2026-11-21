@@ -35,11 +35,11 @@ pub(super) fn inspect(
         return Ok(Some(Refusal::OriginContextDiffers));
     }
     let at_cut = history.source_at(feed, cut, root)?;
-    if at_cut
-        .as_ref()
-        .is_none_or(|basis| !basis.identity.same_source(&declared.identity))
-    {
-        return Ok(Some(Refusal::SourceDiffers));
+    let comparison = at_cut.as_ref().map_or(Some(false), |basis| {
+        basis.identity.compare_source(&declared.identity)
+    });
+    if let Some(refusal) = super::source_refusal(comparison) {
+        return Ok(Some(refusal));
     }
     let live_commit = if let Some(decision) = &record.registered_input_decision {
         validate_input(history, record, root, feed, decision)?;
@@ -48,6 +48,19 @@ pub(super) fn inspect(
         false
     };
     let witnessed_after = super::witness::validate(history, record, root, feed)?;
+    let mut current = history.current_source(feed, root)?;
+    if current
+        .as_ref()
+        .is_some_and(|basis| basis.identity.mixed_source_id_shapes(&declared.identity))
+    {
+        if !history.retiring {
+            return Ok(Some(Refusal::IncomparableSourceIdFormats));
+        }
+        // Retirement relinquishes current credit. Use the compatible source at
+        // the original proof cut, while still walking later origin facts and
+        // checking terminal conflicts.
+        current = at_cut;
+    }
     let mut git_input = live_commit || witnessed_after.is_some();
     for verdict in record
         .verdicts
@@ -73,7 +86,7 @@ pub(super) fn inspect(
             }
         }
     }
-    let exempt = exemptions(history, record, root, feed, live_commit)?;
+    let exempt = exemptions(history, record, root, feed, live_commit, current.as_ref())?;
     let mut state = BasisMoveState::new(
         Some(declared),
         Some(&declared.identity),
@@ -141,18 +154,14 @@ fn exemptions(
     root: &NamedRootBindingEvent,
     feed: &FeedId,
     live_commit: bool,
+    current: Option<&VerificationSourceBasis>,
 ) -> Result<same_turn::ExemptChecks> {
     let mut exempt = same_turn::ExemptChecks::default();
     let declared = record
         .source_basis
         .as_ref()
         .ok_or_else(|| invalid("historical evaluation has no declared source"))?;
-    let current = history.current_source(feed, root)?;
-    if !live_commit
-        && current
-            .as_ref()
-            .is_none_or(|basis| !basis.identity.same_source(&declared.identity))
-    {
+    if !live_commit && current.is_none_or(|basis| !basis.identity.same_source(&declared.identity)) {
         return Ok(exempt);
     }
     if !history.walk_current(feed, |at, id, kind| {
@@ -183,7 +192,6 @@ fn exemptions(
         } else if crate::control::check_verification_applicability(
             check.applicability.as_ref(),
             current
-                .as_ref()
                 .and_then(VerificationSourceBasis::legacy_basis)
                 .as_ref(),
         )

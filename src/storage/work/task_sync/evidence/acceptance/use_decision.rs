@@ -6,7 +6,7 @@ use crate::storage::work::task_sync::evidence::acceptance::{
     object_on, params,
 };
 use crate::storage::work::task_sync::evidence::{
-    ADMISSION_KIND, IMPORTED_ORIGINALS, is_imported_only,
+    ADMISSION_KIND, IMPORTED_ORIGINALS, PersistenceError, is_imported_only,
 };
 use crate::task_sync::evidence::acceptance::AcceptanceUseSummary;
 use crate::{ActorContext, SessionId};
@@ -148,8 +148,10 @@ impl crate::storage::SqliteStore {
                                 != &decision.governing_fingerprint
                         {
                             Some(Refusal::LocalGenerationDiffers)
-                        } else if measured.source != decision.source {
-                            Some(Refusal::SourceDiffers)
+                        } else if let Some(refusal) =
+                            super::source_refusal(measured.source.compare(&decision.source))
+                        {
+                            Some(refusal)
                         } else {
                             inspect(
                                 &History::new(&snapshot, &decision.project, &decision.request)?,
@@ -158,6 +160,9 @@ impl crate::storage::SqliteStore {
                                 &measured.source,
                             )?
                         }
+                    }
+                    Err(PersistenceError::IncomparableSourceIdFormats) => {
+                        Some(Refusal::IncomparableSourceIdFormats)
                     }
                     Err(_) => Some(Refusal::LocalGenerationDiffers),
                 },

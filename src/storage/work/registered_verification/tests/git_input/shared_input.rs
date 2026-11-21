@@ -1,7 +1,7 @@
 //! Shared endpoint identity, with the ordinary run and named-root fences.
 
 use super::*;
-use crate::source::{SourceId, Submodule};
+use crate::source::{Change, Gitlink, Mode, SourceId};
 use std::path::Path;
 
 mod kept_root;
@@ -24,6 +24,41 @@ fn shared_fixture(bound: bool, dirty: bool) -> (std::path::PathBuf, Fixture, Sou
         source_id: source_id.clone(),
     };
     (root, f, source_id)
+}
+
+#[test]
+fn live_currency_reuses_one_capture_for_legacy_and_shared_records() {
+    let (root, mut fixture) = live_currency::live_fixture(false, false);
+    let legacy = fixture.record().unwrap().verifications[0].record_id.clone();
+    let source_id = observed(&root);
+    fixture.request.operation_key = "termal-run:test-mixed-shared".into();
+    fixture.request.registration.host_run_id = "test-mixed-shared".into();
+    fixture.request.registration.request_identity = "request-mixed-shared".into();
+    fixture.request.input = RegisteredVerificationInput::SourceId {
+        source_id: source_id.clone(),
+    };
+    fixture.request.post_run = RegisteredVerificationPostRun::SourceId { source_id };
+    let shared = fixture.record_at(at(13)).unwrap().verifications[0]
+        .record_id
+        .clone();
+
+    let binding = &fixture.request.registration.binding;
+    let reads_before = crate::committed_input::read_count();
+    let currency = crate::storage::work::registered_commit_currency::LiveCurrency::measure(
+        &fixture.store,
+        binding.work_id,
+        binding.run_id,
+    )
+    .unwrap();
+    assert_eq!(crate::committed_input::read_count(), reads_before + 1);
+    for evidence in [legacy, shared] {
+        assert!(
+            currency
+                .check_on(&fixture.store.connection, &evidence)
+                .unwrap()
+        );
+    }
+    assert_eq!(crate::committed_input::read_count(), reads_before + 1);
 }
 
 fn finish(f: &mut Fixture, check: &ObjectId) -> Result<CompletionSeal, StoreError> {
@@ -51,7 +86,7 @@ fn shared_input_equal_clean_and_dirty_complete_without_observations() {
     for bound in [false, true] {
         for dirty in [false, true] {
             let (root, mut f, source_id) = shared_fixture(bound, dirty);
-            assert_eq!(source_id.changes.is_empty(), !dirty);
+            assert_eq!(source_id.is_clean(), !dirty);
             let receipt = f.record().unwrap();
             let check = receipt.verifications[0].record_id.clone();
             let evidence = f.store.load_verification_evidence(&check).unwrap();
@@ -119,7 +154,7 @@ fn shared_evaluation_cites_dirty_checks_and_completion_compares_the_complete_obj
         assert_eq!(f.snapshot(), before);
         let mut wrong = input.clone();
         let mut other = identity.clone();
-        other.changes[0].blob = Some("f".repeat(40));
+        other.git_delta.as_mut().unwrap().sha256 = "f".repeat(64);
         wrong.source_basis.as_mut().unwrap().identity =
             crate::domain::VerificationSourceIdentity::SourceId {
                 source_id: other.clone(),
@@ -231,18 +266,17 @@ fn shared_input_wire_is_closed_and_requires_matching_representation() {
 #[test]
 fn shared_input_admission_compares_every_identity_component() {
     let (_, mut f, before) = shared_fixture(false, true);
-    for field in ["commit", "tree", "blob", "path", "mode", "submodule"] {
+    for field in ["commit", "tree", "digest", "gitlink"] {
         let mut after = before.clone();
         match field {
             "commit" => after.commit = before.tree.clone(),
             "tree" => after.tree = before.commit.clone(),
-            "blob" => after.changes[0].blob = Some(before.tree.clone()),
-            "path" => after.changes[0].path.push_str("-other"),
-            "mode" => after.changes[0].mode = Some(crate::source::Mode::Executable),
-            "submodule" => after.submodules.push(Submodule {
+            "digest" => after.git_delta.as_mut().unwrap().sha256 = "f".repeat(64),
+            "gitlink" => after.git_delta.as_mut().unwrap().gitlinks.push(Gitlink {
                 path: "child".into(),
-                commit: before.commit.clone(),
-                changes: vec![],
+                head_pin: Some(before.commit.clone()),
+                index_pin: Some(before.commit.clone()),
+                checkout_head: Some(before.tree.clone()),
             }),
             _ => unreachable!(),
         }
@@ -258,8 +292,20 @@ fn shared_input_admission_compares_every_identity_component() {
         );
         assert_eq!(f.snapshot(), snapshot);
     }
+    let mut legacy = before.clone();
+    legacy.git_delta = None;
+    f.request.post_run = RegisteredVerificationPostRun::SourceId { source_id: legacy };
+    let snapshot = f.snapshot();
+    assert!(
+        f.record()
+            .unwrap_err()
+            .to_string()
+            .contains("formats are incomparable")
+    );
+    assert_eq!(f.snapshot(), snapshot);
+
     let mut invalid = before.clone();
-    invalid.changes[0].path = "../outside".into();
+    invalid.git_delta.as_mut().unwrap().sha256 = "invalid".into();
     f.request.input = RegisteredVerificationInput::SourceId {
         source_id: invalid.clone(),
     };
@@ -272,6 +318,41 @@ fn shared_input_admission_compares_every_identity_component() {
             .contains("invalid shared source identity")
     );
     assert_eq!(f.snapshot(), snapshot);
+}
+
+#[test]
+fn retained_legacy_source_id_does_not_decide_current_live_currency() {
+    let (_, mut fixture, source_id) = shared_fixture(false, false);
+    let mut legacy = source_id.clone();
+    legacy.git_delta = None;
+    fixture.request.input = RegisteredVerificationInput::SourceId {
+        source_id: legacy.clone(),
+    };
+    fixture.request.post_run = RegisteredVerificationPostRun::SourceId {
+        source_id: legacy.clone(),
+    };
+    let check = fixture.record().unwrap().verifications[0].record_id.clone();
+    let stored = fixture.store.load_verification_evidence(&check).unwrap();
+    assert_eq!(stored.source_basis.source_id(), Some(&legacy));
+    assert_eq!(legacy.compare(&source_id), None);
+    let binding = &fixture.request.registration.binding;
+    let currency = crate::storage::work::registered_commit_currency::LiveCurrency::measure(
+        &fixture.store,
+        binding.work_id,
+        binding.run_id,
+    )
+    .unwrap();
+    let error = currency
+        .check_on(&fixture.store.connection, &check)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("incomparable source_id formats"),
+        "{error}"
+    );
+    assert_eq!(
+        fixture.store.load_verification_evidence(&check).unwrap(),
+        stored
+    );
 }
 
 #[test]
@@ -383,7 +464,7 @@ fn shared_input_completion_checks_both_declarations_for_cited_and_selected_check
         }
         request.source_fingerprint = None;
         let mut other = source_id.clone();
-        other.changes[0].blob = Some("f".repeat(40));
+        other.git_delta.as_mut().unwrap().sha256 = "f".repeat(64);
         request.source_id = Some(other);
         let before = f.snapshot();
         let mismatch = f
@@ -464,7 +545,14 @@ fn shared_input_large_identity_keeps_agent_note_windows_and_details_bounded() {
     let (_, mut f, mut source_id) = shared_fixture(false, true);
     // Display coverage needs a large valid wire object, not hundreds of Git
     // subprocesses. All blob references derive from the actual fixture.
-    let change = source_id.changes[0].clone();
+    source_id.git_delta = None;
+    let change = Change {
+        path: "tracked".to_owned(),
+        status: " M".to_owned(),
+        origin: None,
+        blob: Some(source_id.commit.clone()),
+        mode: Some(Mode::Regular),
+    };
     source_id.changes = (0..180)
         .map(|index| {
             let mut entry = change.clone();

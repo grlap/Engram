@@ -38,6 +38,9 @@ impl SourceQuery {
                   CASE WHEN ?11 IS NULL AND ?12 IS NULL THEN 'judged_basis_unavailable'
                        WHEN NOT COALESCE(({scope}), 0) THEN 'unrelated_or_missing_basis'
                        WHEN {revision} IS NULL AND {source_id} IS NULL THEN 'closing_sighting_unavailable'
+                       WHEN {source_id} IS NOT NULL AND ?12 IS NOT NULL
+                        AND (json_type({source_id}, '$.git_delta') IS NULL)
+                         != (json_type(?12, '$.git_delta') IS NULL) THEN 'incomparable_source_shapes'
                        WHEN (?11 IS NOT NULL AND {revision} = ?11 AND {source_id} IS NULL)
                          OR (?12 IS NOT NULL AND {source_id} = ?12 AND {revision} IS NULL) THEN 'agreement'
                        ELSE 'differs' END AS comparison
@@ -174,6 +177,7 @@ mod tests {
     fn shared_sealed_source_counts_compare_the_complete_canonical_identity() {
         let mut fixture = crate::storage::sealed_source_transport_fixture("missing");
         let source = crate::source::SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             submodules: vec![],

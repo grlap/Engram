@@ -17,6 +17,7 @@ fn refusal_detail(f: &mut Fixture, reason: RemoteVerificationReason) -> String {
 
 fn shared_source() -> SourceId {
     SourceId {
+        git_delta: None,
         commit: tested_commit(),
         tree: tested_tree().as_str().to_owned(),
         submodules: Vec::new(),
@@ -290,6 +291,23 @@ fn remote_receipt_diagnostics_source_endpoints_name_availability_and_change() {
     let detail = refusal_detail(&mut f, RemoteVerificationReason::SourceIdMissingOrChanged);
     assert!(detail.contains(&"a".repeat(64)));
     assert!(detail.contains(&"b".repeat(64)));
+}
+
+#[test]
+fn remote_receipt_diagnostics_distinguish_incomparable_source_formats() {
+    let legacy = shared_source();
+    let mut delta = legacy.clone();
+    delta.git_delta = Some(crate::source::GitDelta {
+        sha256: "a".repeat(64),
+        dirty: false,
+        gitlinks: vec![],
+    });
+    let mut f = fixture();
+    f.request.completion.input = shared(Some(legacy), Some(delta));
+    let detail = refusal_detail(&mut f, RemoteVerificationReason::SourceIdMissingOrChanged);
+    assert!(detail.contains("observed_endpoints_match=incomparable"));
+    assert!(detail.contains("rerun the check on unchanged input"));
+    assert_eq!(f.count("verification_evidence"), 0);
 }
 
 #[test]

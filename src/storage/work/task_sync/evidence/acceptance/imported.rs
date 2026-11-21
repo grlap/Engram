@@ -157,7 +157,8 @@ pub(super) fn acceptance(
     request
         .verification_decisions
         .clone_from(&history.request.verification_decisions);
-    let nested = History::new(history.connection, history.project, &request)?;
+    let mut nested = History::new(history.connection, history.project, &request)?;
+    nested.retiring = history.retiring;
     if let Some(refusal) = super::inspect_at(&nested, destination, policy, source, depth + 1)? {
         return Ok(Some(refusal));
     }

@@ -255,14 +255,21 @@ pub(super) fn validate_stored_request(
         (
             RegisteredVerificationInput::SourceId { source_id: before },
             crate::domain::RegisteredVerificationPostRun::SourceId { source_id: after },
-        ) => {
-            if before != after {
+        ) => match before.compare(after) {
+            Some(true) => {}
+            Some(false) => {
                 return Err(refused(
                     "post_run.source_id",
                     "shared source identity changed during the run",
                 ));
             }
-        }
+            None => {
+                return Err(refused(
+                    "post_run.source_id",
+                    "shared source identity formats are incomparable",
+                ));
+            }
+        },
         (
             RegisteredVerificationInput::Commit { .. }
             | RegisteredVerificationInput::StagedTree { .. },

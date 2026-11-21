@@ -869,14 +869,15 @@ fn verification_value(facts: &crate::storage::VerificationFacts) -> Value {
             // Agent receipts have a smaller budget than the native producer
             // frame. Keep the complete identity in its canonical records;
             // these facts are explicitly a display summary, never an input.
-            value["source_id_summary"] = json!({
-                "commit": source_id.commit,
-                "tree": source_id.tree,
-                "submodules": source_id.submodules.len(),
-                "changes": source_id.changes.len(),
-                "submodule_changes": source_id.submodules.iter()
-                    .map(|child| child.changes.len()).sum::<usize>(),
-            });
+            let mut summary = json!(source_id.summary());
+            summary["submodule_changes"] = json!(
+                source_id
+                    .submodules
+                    .iter()
+                    .map(|child| child.changes.len())
+                    .sum::<usize>()
+            );
+            value["source_id_summary"] = summary;
         }
     }
     // Why an indeterminate verification does not count, in plain words.

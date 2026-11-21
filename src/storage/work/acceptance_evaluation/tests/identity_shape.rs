@@ -114,6 +114,66 @@ fn marked_same_session(project: &str) -> (Fixture, WorkItem, WorkClaim, ObjectId
 }
 
 #[test]
+fn completion_does_not_compare_source_formats_when_freshness_is_optional() {
+    use crate::source::{GitDelta, SourceId};
+
+    let (mut fixture, work, held, note) = marked_same_session("project-shape-optional-source");
+    let store = &mut fixture.store;
+    let legacy = SourceId {
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        submodules: vec![],
+        changes: vec![],
+        git_delta: None,
+    };
+    let mut evaluation = request(
+        &work,
+        cut(store, &work),
+        "runner",
+        Mode::SameSession,
+        pass_judgment(&note),
+        9,
+    );
+    evaluation.source_basis =
+        AcceptanceSourceBasis::from_declaration(None, Some(legacy.clone())).unwrap();
+    let receipt = record(store, &evaluation).unwrap();
+    let record: AcceptanceEvaluation = store.get(&receipt.evaluation).unwrap().unwrap();
+    let current = SourceId {
+        git_delta: Some(GitDelta {
+            sha256: "c".repeat(64),
+            dirty: false,
+            gitlinks: vec![],
+        }),
+        ..legacy
+    };
+    for required in [false, true] {
+        let policy = AcceptanceEvaluationPolicy {
+            allowed_modes: vec![Mode::SameSession],
+            mechanical_basis: MechanicalBasis::Asserted,
+            require_source_freshness: required,
+        };
+        let (reason, context) = super::super::staleness_after_move(
+            &store.connection,
+            &work,
+            held.run_id,
+            &policy,
+            &receipt.evaluation,
+            &record,
+            super::super::SourceCheck::AtSharedCompletion(&current),
+            None,
+            &super::super::LiveCurrency::default(),
+        )
+        .unwrap();
+        assert_eq!(reason, required.then_some(AcceptanceStaleReason::Source));
+        assert_eq!(
+            context.source.map(|source| source.mismatch),
+            required
+                .then_some(crate::domain::AcceptanceSourceMismatch::IncomparableSourceIdFormats),
+        );
+    }
+}
+
+#[test]
 fn a_same_session_record_without_its_evaluator_cannot_complete() {
     let (mut fx, work, held, note) = marked_same_session("project-shape-same-session");
     let store = &mut fx.store;
@@ -772,6 +832,7 @@ mod shared_source {
 
     fn source(blob: char) -> SourceId {
         SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             submodules: vec![],
@@ -1019,6 +1080,55 @@ mod shared_source {
                 "a quiet source sighting is not new qualifying evidence"
             );
         }
+    }
+
+    #[test]
+    fn an_incomparable_quiet_sighting_does_not_erase_a_comparable_move() {
+        use super::super::super::movement::{BasisMove, BasisMoveState};
+
+        let mut f = fixture("shared-quiet-movement");
+        disable_obligation_rules(&mut f.store, 6);
+        let host = HostSession::bind(&mut f.store, &f.work, &f.claim, 10);
+        let judged = declared(source('c'));
+        let mut delta = source('d');
+        delta.changes.clear();
+        delta.git_delta = Some(crate::source::GitDelta {
+            sha256: "d".repeat(64),
+            dirty: true,
+            gitlinks: vec![],
+        });
+        let mut movement = BasisMoveState::new(None, Some(&judged.identity), false, None, false);
+        let mut records = Vec::new();
+        for (position, identity) in [(11, source('d')), (12, delta)] {
+            let record = sighting(
+                &mut f.store,
+                &host,
+                &format!("quiet-{position}"),
+                &host.basis.workspace_id,
+                identity,
+                position,
+            );
+            let observation = source_observation_if_accounted_on(&f.store.connection, &record)
+                .unwrap()
+                .unwrap();
+            assert!(movement.observe(position, observation).is_none());
+            records.push(record);
+        }
+        let Some(BasisMove::Source(11, observation)) = movement.finish() else {
+            panic!("the earlier comparable movement must survive the incomparable sighting");
+        };
+        assert_eq!(observation.record, records[0]);
+        let (_, comparable) =
+            crate::storage::work::feeds::newest_measured_source_basis_with_format_on(
+                &f.store.connection,
+                host.binding.run_id,
+                Some(&host.basis.workspace_id),
+                i64::MAX,
+                Some(false),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(comparable.source_id(), Some(&source('d')));
     }
 
     #[test]

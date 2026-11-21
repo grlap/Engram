@@ -27,12 +27,21 @@ pub(crate) use use_decision::qualify_consumption_on;
 pub(crate) use use_decision::validate_retirement_on;
 pub(super) use use_decision::{create_schema, rebuild, verify};
 
+fn source_refusal(comparison: Option<bool>) -> Option<Refusal> {
+    match comparison {
+        Some(true) => None,
+        Some(false) => Some(Refusal::SourceDiffers),
+        None => Some(Refusal::IncomparableSourceIdFormats),
+    }
+}
+
 /// All originals are resolved in one explicit origin, never by UUID alone.
 struct History<'a> {
     connection: &'a Connection,
     project: &'a ProjectId,
     request: &'a AcceptanceUseRequest,
     cuts: Vec<OriginFeedCut>,
+    retiring: bool,
 }
 
 impl<'a> History<'a> {
@@ -46,6 +55,7 @@ impl<'a> History<'a> {
             project,
             request,
             cuts: Vec::new(),
+            retiring: false,
         };
         let mut feeds = Vec::new();
         for id in &request.origin_cuts {

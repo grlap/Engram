@@ -104,13 +104,13 @@ pub(super) fn inspect(
     }) else {
         return Ok(Some(Refusal::OriginContextUnavailable));
     };
-    if history
+    let comparison = history
         .source_at(&feed, seal.completion_cut.position, &root)?
         .as_ref()
         .and_then(VerificationSourceBasis::source_id)
-        != Some(source)
-    {
-        return Ok(Some(Refusal::SourceDiffers));
+        .map_or(Some(false), |recorded| recorded.compare(source));
+    if let Some(refusal) = super::source_refusal(comparison) {
+        return Ok(Some(refusal));
     }
     let governing = CanonicalObject::freeze(&destination.item)?.key().clone();
     for binding in &destination.item.acceptance_bindings {

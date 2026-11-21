@@ -195,6 +195,15 @@ impl Fixture {
         self.report_source(root, second, false);
     }
     fn report_source(&mut self, root: &std::path::Path, second: i64, changed: bool) {
+        self.report_source_id(source(root), second, changed);
+    }
+
+    fn report_source_id(
+        &mut self,
+        source_id: crate::source::SourceId,
+        second: i64,
+        changed: bool,
+    ) -> ObjectId {
         let current = self
             .store
             .read_named_root(
@@ -243,7 +252,7 @@ impl Fixture {
                                     source_basis: VerificationSourceBasis {
                                         workspace_id: self.workspace.clone(),
                                         identity: VerificationSourceIdentity::SourceId {
-                                            source_id: source(root),
+                                            source_id,
                                         },
                                         source_root_generation: Some(generation),
                                         source_root_state: Some(SourceRootState::Named),
@@ -256,9 +265,7 @@ impl Fixture {
                         ObservedOccurrence::SourceSighting {
                             source_basis: VerificationSourceBasis {
                                 workspace_id: self.workspace.clone(),
-                                identity: VerificationSourceIdentity::SourceId {
-                                    source_id: source(root),
-                                },
+                                identity: VerificationSourceIdentity::SourceId { source_id },
                                 source_root_generation: Some(generation),
                                 source_root_state: Some(SourceRootState::Named),
                             },
@@ -274,7 +281,8 @@ impl Fixture {
                 },
                 at(second),
             )
-            .unwrap();
+            .unwrap()
+            .observation
     }
     fn local_actor(&self) -> crate::ActorContext {
         let mut result = actor("runner");
@@ -634,6 +642,53 @@ fn equivalent_cross_store_results_are_one_execution_and_late_conflict_invalidate
         healthy(&target.store);
         assert_eq!(state(&target.store, &decision), (true, true));
     }
+}
+
+#[test]
+fn imported_legacy_source_id_is_incomparable_with_the_live_delta_format() {
+    let root = repository();
+    let mut producer = Fixture::new(root.path());
+    let mut legacy = source(root.path());
+    legacy.git_delta = None;
+    producer.request.completion.input = RemoteRunInput::SourceId(Box::new(
+        RemoteSourceIdInput::new(Some(legacy.clone()), Some(legacy)),
+    ));
+    let receipt = producer.record(10);
+    let original = &receipt.verifications[0].record_id;
+    let (origin, enrolled) = enrollment();
+    let pack = with_witnesses(
+        &producer,
+        &origin,
+        vec![
+            enrolled,
+            envelope(&producer.store, &origin, receipt.origin.as_ref().unwrap()),
+            envelope(&producer.store, &origin, &receipt.operation),
+            envelope(&producer.store, &origin, original),
+        ],
+    );
+    let mut target = Fixture::new(root.path());
+    target.observe(root.path(), 5);
+    retain(&mut target.store, &pack);
+    let retained = object_on(&target.store.connection, original)
+        .unwrap()
+        .unwrap();
+    let request = intent(&target, original.clone(), origin);
+    let actor = target.local_actor();
+    let id = target
+        .store
+        .associate_imported_verification(&project(), &session(), &actor, &request, at(30))
+        .unwrap();
+    assert!(!state(&target.store, &id).0);
+    let decision = object_on(&target.store.connection, &id).unwrap().unwrap().1;
+    let decision: serde_json::Value = serde_json::from_slice(&decision).unwrap();
+    assert_eq!(decision["refusal"], "incomparable_source_id_formats");
+    assert_eq!(
+        object_on(&target.store.connection, original)
+            .unwrap()
+            .unwrap(),
+        retained
+    );
+    healthy(&target.store);
 }
 
 #[test]

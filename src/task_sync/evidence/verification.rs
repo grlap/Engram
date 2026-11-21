@@ -73,6 +73,7 @@ pub(crate) struct VerificationApplicabilityDecision {
 #[serde(rename_all = "snake_case")]
 pub enum ApplicabilityRefusal {
     SourceDiffers,
+    IncomparableSourceIdFormats,
     TerminalConflict,
     Mismatch(crate::domain::VerificationEvidenceMismatch),
 }

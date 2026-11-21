@@ -19,6 +19,19 @@ pub enum VerificationSourceIdentity {
 }
 
 impl VerificationSourceIdentity {
+    #[must_use]
+    pub fn source_id(&self) -> Option<&SourceId> {
+        match self {
+            Self::SourceId { source_id } => Some(source_id),
+            Self::Legacy { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn mixed_source_id_shapes(&self, other: &Self) -> bool {
+        self.compare_source(other).is_none()
+    }
+
     /// Bounded display text, never a substitute for the retained identity.
     #[must_use]
     pub fn description(&self) -> String {
@@ -34,6 +47,12 @@ impl VerificationSourceIdentity {
     /// compare the complete source object, without a tree or cleanliness proxy.
     #[must_use]
     pub fn same_source(&self, other: &Self) -> bool {
+        self.compare_source(other) == Some(true)
+    }
+
+    /// A comparison with unavailable equality for different shared wire shapes.
+    #[must_use]
+    pub fn compare_source(&self, other: &Self) -> Option<bool> {
         match (self, other) {
             (
                 Self::Legacy {
@@ -44,11 +63,11 @@ impl VerificationSourceIdentity {
                     source_revision: right,
                     ..
                 },
-            ) => left == right,
+            ) => Some(left == right),
             (Self::SourceId { source_id: left }, Self::SourceId { source_id: right }) => {
-                left == right
+                left.compare(right)
             }
-            _ => false,
+            _ => Some(false),
         }
     }
 
@@ -165,10 +184,7 @@ impl VerificationSourceBasis {
 
     #[must_use]
     pub fn source_id(&self) -> Option<&SourceId> {
-        match &self.identity {
-            VerificationSourceIdentity::SourceId { source_id } => Some(source_id),
-            VerificationSourceIdentity::Legacy { .. } => None,
-        }
+        self.identity.source_id()
     }
 
     #[must_use]

@@ -5,11 +5,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { captureCommitInputStatus, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, compareSourceIds, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
 import { createSourceFixture, sourceCases } from "../source-input-fixtures.mjs";
 import { fixtureHome } from "../test-temp.mjs";
 import { commitInputEligible, createRun, encodeRunRecord, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
 import { registerTestRun } from "../test-run-registration.mjs";
+
+const legacySource = ({ commit, tree }) => ({ commit, tree, submodules: [], changes: [] });
 
 export function registerCommitInputTests(support) {
   const { env, git, repository, stage, json, copyLauncher } = support;
@@ -24,6 +26,12 @@ export function registerCommitInputTests(support) {
     const marking = (extra = "") => stage("fixture", `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x');${extra}`);
     await callback({ root, admin, marker, marking });
   });
+  const activateFilter = (root) => {
+    writeFileSync(join(root, ".gitattributes"), "tracked.txt filter=refuse\n");
+    writeFileSync(join(root, "tracked.txt"), "changed under an active filter\n");
+    git(["config", "filter.refuse.clean", "echo ran > filter-ran"], root);
+    return join(root, "filter-ran");
+  };
 
   for (const scenario of sourceCases) test(`launcher owner conformance: ${scenario.id}`, async (t) => {
     if (scenario.skipOn?.includes(process.platform)) return t.skip("fixture requires Unix filename or mode semantics");
@@ -46,7 +54,12 @@ export function registerCommitInputTests(support) {
       assert.equal(captured.status, scenario.status);
       assert.equal(captured.commit, input.commit);
       assert.equal(captured.tree, input.tree);
-      assert.deepEqual(captured.sourceId, input.sourceId);
+      assert.deepEqual(Object.keys(captured.sourceId).sort(), ["commit", "git_delta", "tree"]);
+      assert.equal(captured.sourceId.commit, input.commit);
+      assert.equal(captured.sourceId.tree, input.tree);
+      assert.match(captured.sourceId.git_delta.sha256, /^[a-f0-9]{64}$/u);
+      assert.equal(captured.sourceId.git_delta.dirty, scenario.status === "not_clean");
+      assert.deepEqual(captured.sourceId.git_delta.gitlinks, input.gitlinks);
       assert.equal(selectDefaultInput(root, env), scenario.status === "clean" ? "commit" : undefined);
       const runDir = await createRun({ root, input: "commit", stages }, env);
       const result = await executeRun(runDir, env);
@@ -128,14 +141,35 @@ export function registerCommitInputTests(support) {
           stderr: Buffer.concat([Buffer.from(warning), result.stderr]) }), /committed input unavailable/u);
       }
       assert.throws(() => capture({ ...response(refused, 1), stderr: Buffer.from(warning) }), /refusal carried process stderr/u);
-      const renamed = { ...observation, status: "not_clean", entries: [{ status: "R ", path: "new", origin: "old" }] };
+      const renamed = { ...observation, status: "not_clean", entries: [{ status: "R ", path: "new", origin: "old" }],
+        source_id: { ...observation.source_id,
+          git_delta: { ...observation.source_id.git_delta, sha256: "a".repeat(64), dirty: true } } };
       assert.deepEqual(capture(response(renamed)).entries, renamed.entries);
       assert.throws(() => capture(response({ ...renamed, entries: [{ status: "R ", path: "new" }] })), /malformed changed-path/u);
+      const gitlink = { path: "child", head_pin: measured.commit, index_pin: measured.commit, checkout_head: measured.tree };
+      const deltaWithLinks = (gitlinks) => ({
+        ...renamed.source_id, git_delta: { ...renamed.source_id.git_delta, gitlinks },
+      });
+      const linked = deltaWithLinks([gitlink]);
+      assert.deepEqual(capture(response({ ...renamed, source_id: linked })).sourceId, linked);
+      for (const source_id of [
+        { ...linked, git_delta: { ...linked.git_delta, dirty: false } },
+        deltaWithLinks([gitlink, gitlink]),
+        deltaWithLinks([{ ...gitlink, path: "z" }, gitlink]),
+        deltaWithLinks([{ ...gitlink, checkout_head: null }]),
+        deltaWithLinks([{ ...gitlink, head_pin: null, index_pin: null }]),
+        { ...linked, changes: [], submodules: [] },
+      ]) {
+        assert.throws(() => capture(response({ ...renamed, source_id })), /source_id/u);
+      }
+      assert.throws(() => capture(response({ ...observation, source_id: linked })), /source_id/u);
       const change = { path: "file", status: " M", origin: null, blob: measured.commit, mode: "100644" };
-      const identified = { ...measured.sourceId, changes: [change] };
+      const identified = { ...legacySource(measured.sourceId), changes: [change] };
       assert.ok(sourceIdsEqual(identified, { changes: [{ mode: change.mode, blob: change.blob, origin: null,
         status: change.status, path: change.path }], submodules: [], tree: identified.tree, commit: identified.commit }));
       assert.equal(sourceIdsEqual(identified, measured.sourceId), false);
+      assert.equal(compareSourceIds(identified, measured.sourceId), "unknown");
+      assert.equal(compareSourceIds(measured.sourceId, identified), "unknown");
       const added = { ...change, path: "new.txt", status: "??" };
       assert.equal(sourceIdsEqual(identified, { ...identified, changes: [change, added] }), false);
       const child = { path: "child", commit: measured.commit, changes: [change] };
@@ -154,17 +188,20 @@ export function registerCommitInputTests(support) {
       const detail = sourceIdDifference(identified, { ...identified, changes: [{ ...change, blob: measured.tree }] });
       assert.match(detail, /file.*\[ M\]/u);
       assert.ok(detail.includes(change.blob) && detail.includes(measured.tree));
-      assert.ok(Buffer.byteLength(sourceIdDifference(measured.sourceId, { ...measured.sourceId,
-        changes: [{ ...added, path: "long".repeat(2000) }] })) < 4300);
+      const cleanLegacy = legacySource(measured.sourceId);
+      const longPathDetail = sourceIdDifference(cleanLegacy, { ...cleanLegacy,
+        changes: [{ ...added, path: "long".repeat(2000) }] });
+      assert.match(longPathDetail, /^"long.*"… \[\?\?\]: record added/u);
+      assert.ok(Buffer.byteLength(longPathDetail) < 4300);
       for (const source_id of [null, { ...measured.sourceId, extra: true },
-        { ...measured.sourceId, changes: [{ ...change, status: "! " }] },
-        { ...measured.sourceId, tree: "invalid" }, { ...measured.sourceId, changes: [{ ...change, origin: undefined }] },
-        { ...measured.sourceId, changes: [{ ...change, blob: null }] },
-        { ...measured.sourceId, changes: [{ ...change, path: "../outside" }] },
-        { ...measured.sourceId, changes: [{ ...change, mode: 100644 }] },
-        { ...measured.sourceId, changes: [change, change] },
-        { ...measured.sourceId, changes: [{ ...change, path: "z" }, { ...change, path: "a" }] },
-        { ...measured.sourceId, submodules: [{ path: "child", commit: measured.commit, changes: [], extra: true }] },
+        { ...legacySource(measured.sourceId), changes: [{ ...change, status: "! " }] },
+        { ...measured.sourceId, tree: "invalid" }, { ...legacySource(measured.sourceId), changes: [{ ...change, origin: undefined }] },
+        { ...legacySource(measured.sourceId), changes: [{ ...change, blob: null }] },
+        { ...legacySource(measured.sourceId), changes: [{ ...change, path: "../outside" }] },
+        { ...legacySource(measured.sourceId), changes: [{ ...change, mode: 100644 }] },
+        { ...legacySource(measured.sourceId), changes: [change, change] },
+        { ...legacySource(measured.sourceId), changes: [{ ...change, path: "z" }, { ...change, path: "a" }] },
+        { ...legacySource(measured.sourceId), submodules: [{ path: "child", commit: measured.commit, changes: [], extra: true }] },
       ]) {
         assert.throws(() => capture(response({ ...observation, source_id })), /source_id/u);
         assert.throws(() => capture({ ...response({ ...observation, source_id }),
@@ -231,7 +268,7 @@ export function registerCommitInputTests(support) {
   test("source copies that cannot fit the result artifact refuse before any stage", async () => {
     await fixture(async ({ root, marker, marking }) => {
       const measured = captureCommitInputStatus(root, env);
-      const sourceId = { ...measured.sourceId, changes: [{ path: `p${"界".repeat(200_000)}`,
+      const sourceId = { ...legacySource(measured.sourceId), changes: [{ path: `p${"界".repeat(200_000)}`,
         status: "??", origin: null, blob: measured.commit, mode: "100644" }] };
       assert.equal(sourceIdsEqual(sourceId, sourceId), true);
       assert.ok(Buffer.byteLength(JSON.stringify(sourceId)) < 1024 * 1024);
@@ -256,7 +293,7 @@ export function registerCommitInputTests(support) {
   test("a source-bound request that exceeds the artifact cap leaves a bounded terminal refusal", async () => {
     await fixture(async ({ root, marker }) => {
       const measured = captureCommitInputStatus(root, env);
-      const sourceId = { ...measured.sourceId, changes: [{ path: `p${"界".repeat(340_000)}`,
+      const sourceId = { ...legacySource(measured.sourceId), changes: [{ path: `p${"界".repeat(340_000)}`,
         status: "??", origin: null, blob: measured.commit, mode: "100644" }] };
       const command = stage("fixture", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');`);
       command.args.push("x".repeat(40_000));
@@ -288,7 +325,7 @@ export function registerCommitInputTests(support) {
         "JSON.parse(readFileSync(join(request.root, '.git', 'fixture-source.json'), 'utf8'))"));
       const worker = await import(pathToFileURL(local).href);
       const measured = captureCommitInputStatus(root, env);
-      const identity = (size) => ({ ...measured.sourceId, changes: [{ path: `p${"界".repeat(size)}`,
+      const identity = (size) => ({ ...legacySource(measured.sourceId), changes: [{ path: `p${"界".repeat(size)}`,
         status: "??", origin: null, blob: measured.commit, mode: "100644" }] });
       const before = identity(130_000), after = identity(230_000);
       assert.equal(sourceIdsEqual(before, before), true);
@@ -369,7 +406,7 @@ export function registerCommitInputTests(support) {
       commit(root);
       const measured = captureCommitInputStatus(root, env);
       assert.equal(measured.status, "clean");
-      const before = { ...measured.sourceId, submodules: [{ path: `p${"界".repeat(130_000)}`,
+      const before = { ...legacySource(measured.sourceId), submodules: [{ path: `p${"界".repeat(130_000)}`,
         commit: measured.commit, changes: [] }] };
       const after = { ...before, changes: [{ path: `p${"界".repeat(180_000)}`, status: "??",
         origin: null, blob: measured.commit, mode: "100644" }] };
@@ -409,8 +446,9 @@ export function registerCommitInputTests(support) {
           'throw Object.assign(new Error("fixture diagnostic denied"), { code: "EACCES" });') : source;
       });
       const worker = await import(pathToFileURL(local).href);
-      const measured = captureCommitInputStatus(root, env);
-      const after = { ...measured.sourceId, changes: [...measured.sourceId.changes,
+      const current = captureCommitInputStatus(root, env);
+      const measured = { ...current, sourceId: legacySource(current.sourceId) };
+      const after = { ...legacySource(measured.sourceId), changes: [
         ...Array.from({ length: 12 }, (_, i) => ({
           path: `zz-long-${String(i).padStart(2, "0")}-${"x".repeat(160)}`, status: "??",
           origin: null, blob: measured.commit, mode: "100644" }))]
@@ -509,12 +547,13 @@ export function registerCommitInputTests(support) {
       assert.equal(json(join(runDir, "completion.request.json")).sourceBinary, request.sourceBinary);
       // The executable stays fixed; its observation becomes unavailable only
       // after launch admission, before the worker's own capture.
-      git(["config", "filter.refuse.clean", "must-not-execute"], root);
+      const filterMarker = activateFilter(root);
       const result = await executeRun(runDir, env);
       assert.equal(result.reason, "input-capture-failed");
       assert.match(result.error, /committed input unavailable/u);
       assert.equal(result.stages[0].state, "unrun");
       assert.equal(existsSync(marker), false);
+      assert.equal(existsSync(filterMarker), false);
     });
   });
 
@@ -543,7 +582,7 @@ export function registerCommitInputTests(support) {
         return true;
       });
       assert.equal(json(join(nestedRun, "results.json")).stages[0].state, "unrun");
-      git(["config", "filter.refuse.clean", "must-not-execute"], root);
+      const filterMarker = activateFilter(root);
       let runDir;
       await assert.rejects(() => createRun({ root, selectInput: true, stages: [marking()] }, env), (error) => {
         assert.equal(error.reason, "input-capture-failed");
@@ -557,6 +596,7 @@ export function registerCommitInputTests(support) {
       assert.equal(result.reason, "input-capture-failed");
       assert.equal(result.stages[0].state, "unrun");
       assert.equal(existsSync(marker), false);
+      assert.equal(existsSync(filterMarker), false);
       assert.equal(existsSync(join(runDir, "input.json")), false);
     });
   });
@@ -576,6 +616,25 @@ export function registerCommitInputTests(support) {
       assert.equal(result.state, "passed", result.error);
       assert.equal(result.input, undefined);
       assert.deepEqual(result.sourceIdBefore, result.sourceIdAfter);
+    });
+  });
+
+  test("implicit selection and admission use the same source observation", async () => {
+    await fixture(async ({ root, marking }) => {
+      writeFileSync(join(root, "tracked.txt"), "uncommitted correction\n");
+      const dirty = captureCommitInputStatus(root, env);
+      assert.equal(dirty.status, "not_clean");
+      git(["restore", "tracked.txt"], root);
+      const runDir = await createRun({
+        root,
+        selectInput: true,
+        stages: [marking()],
+        commitInputStatus: () => dirty,
+      }, env);
+      const request = json(join(runDir, "request.json"));
+      assert.equal(request.input, undefined);
+      assert.deepEqual(request.sourceId, dirty.sourceId);
+      assert.deepEqual(json(join(runDir, "input.json")).sourceId, dirty.sourceId);
     });
   });
 
@@ -643,6 +702,10 @@ export function registerCommitInputTests(support) {
       assert.equal(request.input, "commit");
       assert.equal(request.commit, status.commit);
       assert.equal(request.tree, status.tree);
+      // The mutable request's display fields cannot override the admitted source_id.
+      writeFileSync(join(runDir, "request.json"), JSON.stringify({
+        ...request, commit: "a".repeat(40), tree: "b".repeat(40),
+      }));
       const result = await executeRun(runDir, env);
       assert.equal(result.state, "passed", result.error);
       assert.equal(readFileSync(marker, "utf8"), "x");
@@ -786,9 +849,9 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  test("committed-input retains the owner's configured-filter refusal before stages", async () => {
+  test("committed-input retains the owner's active-filter refusal before stages", async () => {
     await fixture(async ({ root, marker, marking }) => {
-      git(["config", "filter.fixture.clean", "unused-filter"], root);
+      const filterMarker = activateFilter(root);
       let runDir;
       await assert.rejects(createRun({ root, input: "commit", stages: [marking()] }, env), (error) => {
         runDir = error.runDir;
@@ -796,6 +859,7 @@ export function registerCommitInputTests(support) {
       });
       assert.match(json(join(runDir, "results.json")).error, /input_unavailable:.*filter/iu);
       assert.equal(existsSync(marker), false);
+      assert.equal(existsSync(filterMarker), false);
     });
   });
 
@@ -960,15 +1024,13 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  for (const kind of ["filter", "gitlink"]) test(`committed-input refuses after-run ${kind} without unsafe capture`, async () => {
+  test("committed-input refuses an active after-run filter without executing it", async () => {
     await fixture(async ({ root, admin }) => {
       const filterMarker = join(admin, "filter-ran");
-      const head = captureCommitInputStatus(root, env).commit;
       const filterScript = join(admin, "filter.cjs");
       writeFileSync(filterScript, `require('node:fs').writeFileSync(${JSON.stringify(filterMarker)}, 'ran');`);
       const filter = `"${process.execPath}" "${filterScript}"`;
-      const args = kind === "filter" ? ["config", "filter.fixture.clean", filter]
-        : ["update-index", "--add", "--cacheinfo", `160000,${head},child`];
+      const args = ["config", "filter.fixture.clean", filter];
       // A real filter attribute makes an unsafe post-run Git capture execute
       // the configured command; the safe branch must leave this marker absent.
       writeFileSync(join(root, ".gitattributes"), "tracked.txt filter=fixture\n");
@@ -979,7 +1041,7 @@ export function registerCommitInputTests(support) {
       const result = await executeRun(runDir, env);
       assert.equal(result.state, "failed");
       assert.equal(result.stages[0].state, "passed");
-      assert.equal(result.input.outcome, "input_changed");
+      assert.equal(result.input.outcome, "input_unverified");
       assert.equal(result.input.eligible, false);
       assert.equal(result.sourceIdAfter, null);
       assert.equal(result.exitCode, 1);
@@ -987,7 +1049,32 @@ export function registerCommitInputTests(support) {
       assert.equal(result.input.after.refusal.code, "input_unavailable");
       assert.ok(result.input.after.refusal.message);
       assert.equal(existsSync(filterMarker), false);
-      assert.match(await summarize(runDir), /reason: input-unverified/u);
+      const summary = await summarize(runDir);
+      assert.match(summary, /reason: input-unverified/u);
+      assert.match(summary, /outcome="input_unverified" eligible=false/u);
+    });
+  });
+
+  test("committed-input refuses an undeclared gitlink staged during execution", async () => {
+    await fixture(async ({ root }) => {
+      const { commit: head } = captureCommitInputStatus(root, env);
+      const args = ["update-index", "--add", "--cacheinfo", `160000,${head},child`];
+      const source = `require('node:child_process').execFileSync('git', ${JSON.stringify(args)});`;
+      const runDir = await createRun({ root, input: "commit", stages: [stage("stage-gitlink", source)] }, env);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "passed");
+      assert.equal(result.input.outcome, "input_changed");
+      assert.equal(result.input.eligible, false);
+      assert.deepEqual(result.input.after.paths.map(({ path }) => path), ["child"]);
+      assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
+      assert.equal(result.sourceIdAfter.git_delta.dirty, true);
+      assert.deepEqual(result.sourceIdAfter.git_delta.gitlinks, []);
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.reason, "input-changed");
+      const summary = await summarize(runDir);
+      assert.match(summary, /reason: input-changed/u);
+      assert.match(summary, /outcome="input_changed" eligible=false/u);
     });
   });
 

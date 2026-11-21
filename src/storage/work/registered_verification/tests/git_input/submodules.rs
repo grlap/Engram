@@ -61,8 +61,7 @@ fn submodule_git_currency_refusals_name_child_at_evaluate_and_done() {
         ("hidden-untracked", "working tree is dirty"),
         ("off-pin", "HEAD differs from its pin"),
         ("uninitialized", "uninitialized"),
-        ("filter", "configured Git filters"),
-        ("missing-mapping", "no submodule mapping found"),
+        ("filter", "clean filter 'fixture' failed"),
     ] {
         let (root, mut f) = live_fixture(true, true);
         let child = add_child(&mut f, &root);
@@ -83,11 +82,9 @@ fn submodule_git_currency_refusals_name_child_at_evaluate_and_done() {
                 git(&root, &["submodule", "deinit", "-f", "--", "child"]);
             }
             "filter" => {
-                git(&child, &["config", "filter.never.clean", "must-not-run"]);
-            }
-            "missing-mapping" => {
-                git(&root, &["rm", ".gitmodules"]);
-                commit(&root);
+                std::fs::write(child.join(".gitattributes"), "tracked filter=fixture\n").unwrap();
+                std::fs::write(child.join("tracked"), "requires the filter\n").unwrap();
+                git(&child, &["config", "filter.fixture.clean", "must-not-run"]);
             }
             _ => unreachable!(),
         }
@@ -105,6 +102,23 @@ fn submodule_git_currency_refusals_name_child_at_evaluate_and_done() {
         assert!(error.to_string().contains("child"), "{scenario}: {error}");
         assert!(error.to_string().contains(reason), "{scenario}: {error}");
     }
+}
+
+#[test]
+fn submodule_git_currency_uses_the_pin_for_an_undeclared_child() {
+    let (root, mut f) = live_fixture(true, true);
+    let child = add_child(&mut f, &root);
+    git(&root, &["rm", ".gitmodules"]);
+    f.request.input = RegisteredVerificationInput::Commit {
+        commit: commit(&root),
+    };
+    let check = f.record().unwrap().verifications[0].record_id.clone();
+    let revision = f.request.input.revision();
+    std::fs::write(child.join("tracked"), "undeclared change\n").unwrap();
+    let input = evaluation(&f, &check, &revision);
+    record_evaluation(&mut f, &input).unwrap();
+    let seal = complete(&mut f, &check, &revision, "undeclared-child-done").unwrap();
+    assert!(seal.acceptance[0].satisfied);
 }
 
 #[test]

@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use std::{
     io::{Read, Write},
     path::Path,
-    process::{Child, ExitStatus, Stdio},
+    process::{Child, ChildStdout, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
 
@@ -229,7 +229,7 @@ pub(super) fn batch_path_metadata(
 }
 
 fn run_command_bounded(
-    mut command: std::process::Command,
+    command: std::process::Command,
     command_name: &str,
     missing: bool,
     input: Option<(&[u8], u64)>,
@@ -237,6 +237,54 @@ fn run_command_bounded(
     stderr_policy: StderrPolicy,
     output_limit: u64,
 ) -> Result<Vec<u8>> {
+    run_command_read_stdout(
+        command,
+        command_name,
+        missing,
+        input,
+        bound,
+        stderr_policy,
+        move |stdout| {
+            let mut bytes = Vec::new();
+            stdout.take(output_limit + 1).read_to_end(&mut bytes)?;
+            if bytes.len() as u64 > output_limit {
+                return Err(Failure::OutputLimit.into());
+            }
+            let empty = bytes.is_empty();
+            Ok((bytes, empty))
+        },
+    )
+}
+
+/// Drain a Git byte stream directly into the caller's bounded-memory consumer.
+/// Process lifetime and stderr retention have the same limits as buffered reads.
+pub(crate) fn stream_command<T: Send + 'static>(
+    command: std::process::Command,
+    command_name: &str,
+    bound: Duration,
+    stderr_policy: StderrPolicy,
+    read: impl FnOnce(ChildStdout) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    run_command_read_stdout(
+        command,
+        command_name,
+        false,
+        None,
+        bound,
+        stderr_policy,
+        |stdout| read(stdout).map(|value| (value, false)),
+    )
+}
+
+fn run_command_read_stdout<T: Send + 'static>(
+    mut command: std::process::Command,
+    command_name: &str,
+    missing: bool,
+    input: Option<(&[u8], u64)>,
+    bound: Duration,
+    stderr_policy: StderrPolicy,
+    read: impl FnOnce(ChildStdout) -> Result<(T, bool)> + Send + 'static,
+) -> Result<T> {
     ensure!(
         !bound.is_zero() && bound <= crate::source::MAX_BUDGET,
         "invalid local Git query deadline"
@@ -290,12 +338,7 @@ fn run_command_bounded(
     let stdout = child.stdout.take().context("missing Git stdout")?;
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result = stdout
-            .take(output_limit + 1)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes);
-        let _ = sender.send(result);
+        let _ = sender.send(read(stdout));
     });
     let status = wait_for_exit(
         &mut child,
@@ -304,12 +347,13 @@ fn run_command_bounded(
         #[cfg(all(test, windows))]
         pending_poll,
     )?;
-    let bytes = receiver.recv_timeout(bound.saturating_sub(start.elapsed()))??;
+    let (output, empty) = match receiver.recv_timeout(bound.saturating_sub(start.elapsed())) {
+        Ok(result) => result?,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return Err(Failure::Deadline.into()),
+        Err(error) => return Err(error).context("Git stdout read did not complete"),
+    };
     if let Some(receiver) = input_result {
         receiver.recv_timeout(bound.saturating_sub(start.elapsed()))??;
-    }
-    if bytes.len() as u64 > output_limit {
-        return Err(Failure::OutputLimit.into());
     }
     let strict_stderr = if stderr_policy == StderrPolicy::RequireEmpty {
         let receiver = stderr_result
@@ -323,7 +367,7 @@ fn run_command_bounded(
     } else {
         None
     };
-    if !(status.success() || (missing && status.code() == Some(1) && bytes.is_empty())) {
+    if !(status.success() || (missing && status.code() == Some(1) && empty)) {
         let error = anyhow::Error::from(Failure::Nonzero {
             command: command_name.into(),
             code: status.code(),
@@ -349,7 +393,7 @@ fn run_command_bounded(
     {
         return Err(stderr_failure(command_name, &stderr).into());
     }
-    Ok(bytes)
+    Ok(output)
 }
 
 fn stderr_failure(command: &str, bytes: &[u8]) -> Failure {

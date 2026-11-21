@@ -158,6 +158,11 @@ fn new_evidence_between(
         if off_named_root(root, &observation) {
             continue;
         }
+        // An accounted unadmitted change already carries a measured transition.
+        // The format of the earlier evaluation does not change that result.
+        if observation.source_changed && !observation.admitted {
+            return Ok(true);
+        }
         let last = if let Some(last) = seen.take() {
             last
         } else {
@@ -175,11 +180,23 @@ fn new_evidence_between(
             .source_basis
             .as_ref()
             .map(|basis| basis.identity.clone());
+        if revision
+            .as_ref()
+            .zip(last.as_ref())
+            .is_some_and(|(current, previous)| current.mixed_source_id_shapes(previous))
+        {
+            // An accounted change is evidence in its own right. The closing
+            // identity's format alone can neither confirm nor erase it.
+            if observation.source_changed {
+                return Ok(true);
+            }
+            seen = Some(revision);
+            continue;
+        }
         if observation.source_changed
-            && (!observation.admitted
-                || revision.as_ref().is_none_or(|identity| {
-                    last.as_ref().is_none_or(|last| !identity.same_source(last))
-                }))
+            && revision
+                .as_ref()
+                .is_none_or(|identity| last.as_ref().is_none_or(|last| !identity.same_source(last)))
         {
             return Ok(true);
         }

@@ -49,6 +49,7 @@ pub enum AcceptanceUseRefusal {
     SupersededEvaluation,
     BlockingVerdict,
     SourceDiffers,
+    IncomparableSourceIdFormats,
     CitationUnavailable,
     CitationIneligible,
     LocalGenerationDiffers,

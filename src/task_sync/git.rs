@@ -26,6 +26,7 @@ pub(crate) use query::StderrPolicy as QueryStderrPolicy;
 pub(crate) use query::run as query;
 pub(crate) use query::run_command as run_query_command;
 pub(crate) use query::run_observed as query_observed;
+pub(crate) use query::stream_command as stream_query_command;
 #[cfg(all(test, windows))]
 pub(crate) use query::test_clock::PendingQuery;
 #[cfg(test)]

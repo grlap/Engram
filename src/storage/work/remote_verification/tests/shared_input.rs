@@ -5,6 +5,7 @@ use crate::source::{Change, Mode, SourceId, Submodule};
 
 fn source(dirty: bool) -> SourceId {
     SourceId {
+        git_delta: None,
         commit: tested_commit(),
         tree: tested_tree().as_str().to_owned(),
         submodules: vec![],

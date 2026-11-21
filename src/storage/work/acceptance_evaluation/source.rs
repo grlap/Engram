@@ -17,8 +17,8 @@ use crate::domain::{
     VerificationSourceBasis, VerificationSourceIdentity,
 };
 use crate::storage::work::feeds::{
-    SOURCE_CHANGED_SQL, SOURCE_RECORD_SQL, latest_source_mutation_on, newest_measured_sighting_on,
-    source_basis_sql, unadmitted_barrier_on,
+    SOURCE_CHANGED_SQL, SOURCE_RECORD_SQL, latest_source_mutation_on,
+    newest_measured_source_basis_with_format_on, source_basis_sql, unadmitted_barrier_on,
 };
 use crate::storage::work::{current_run_feed_cut_on, load_work_run, resolve_work_ref_on};
 
@@ -134,7 +134,7 @@ pub(super) fn revision_seen_through(
         return Ok(named_root_sighting_on(connection, run_id, root, through)?
             .and_then(|(_, observation)| observation.source_basis.map(|basis| basis.identity)));
     }
-    if let Some(measured) = measured_after_unadmitted(connection, run_id, through)? {
+    if let Some(measured) = measured_after_unadmitted(connection, run_id, through, None)? {
         return Ok(Some(measured.identity));
     }
     let revision = source_basis_sql("source_revision");
@@ -1028,6 +1028,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                     producer,
                     ..
                 }) => {
+                    let source_basis = *source_basis;
                     producer_observation = Some(producer.clone());
                     if applicability.is_some() {
                         let confirming = measured_source_at_on(connection, run_id, i64::MAX, root)?;
@@ -1221,7 +1222,8 @@ fn moved_after_check(
         return Ok(Some(Moved::Unrevised));
     }
     if root.is_none()
-        && let Some(measured) = measured_after_unadmitted(connection, run_id, through)?
+        && let Some(measured) =
+            measured_after_unadmitted(connection, run_id, through, Some(checked))?
     {
         return Ok(
             (!measured.identity.same_source(checked)).then_some(Moved::To(measured.identity))
@@ -1236,6 +1238,8 @@ fn moved_after_check(
             AND entry.position > ?2 AND entry.position <= ?3 AND {SOURCE_RECORD_SQL}
             AND ({revision} IS NOT NULL OR {source_id} IS NOT NULL)
             AND (?4 IS NULL OR ({workspace} = ?4 AND {generation} = ?5 AND {state} = 'named'))
+            AND (?6 IS NULL OR {source_id} IS NULL
+                 OR (json_type({source_id}, '$.git_delta') IS 'object') = ?6)
           ORDER BY entry.position DESC LIMIT 1"
             ),
             params![
@@ -1243,7 +1247,8 @@ fn moved_after_check(
                 ran,
                 through,
                 root.map(|root| root.event.workspace_id.as_str()),
-                root.map(|root| root.event.generation)
+                root.map(|root| root.event.generation),
+                checked.source_id().map(|id| id.git_delta.is_some())
             ],
             |row| row.get(0),
         )
@@ -1363,21 +1368,23 @@ pub(super) fn quiet_git_input_conflicts(
                     ) => false,
                     (VerificationSourceIdentity::SourceId { .. }, _) => true,
                 };
-                comparable && !input.same_source(&basis.identity)
+                comparable
+                    && !input.mixed_source_id_shapes(&basis.identity)
+                    && !input.same_source(&basis.identity)
             })
 }
 
 /// When the run's latest change at `through` is an unadmitted record with a
 /// measured sighting: the revision of the newest measured sighting there in
 /// that change's workspace (an admitted observation, environment evidence or
-/// an accounted unadmitted sighting), the selection the obligation matcher
-/// uses; the change itself is one, so there always is one. `None` otherwise,
-/// and the ordinary source-record reading applies. Only for a run without a
-/// named root: under one the root's newest sighting decides.
+/// an accounted unadmitted sighting). If a check was supplied the sighting
+/// must have a comparable format. `None` falls through to the ordinary
+/// source-record selection. Under a named root, that root's sighting decides.
 fn measured_after_unadmitted(
     connection: &Connection,
     run_id: WorkRunId,
     through: i64,
+    checked: Option<&VerificationSourceIdentity>,
 ) -> Result<Option<VerificationSourceBasis>, StoreError> {
     let Some((_, latest)) = latest_source_mutation_on(connection, run_id, through)? else {
         return Ok(None);
@@ -1385,13 +1392,23 @@ fn measured_after_unadmitted(
     let Some(basis) = latest.source_basis.filter(|_| !latest.admitted) else {
         return Ok(None);
     };
-    newest_measured_sighting_on(connection, run_id, &basis.workspace_id, through)?
-        .map(|(_, sighting)| Some(sighting))
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "measured unadmitted change has no measured source in its workspace".into(),
-            )
-        })
+    let measured = newest_measured_source_basis_with_format_on(
+        connection,
+        run_id,
+        Some(&basis.workspace_id),
+        through,
+        checked
+            .and_then(VerificationSourceIdentity::source_id)
+            .map(|id| id.git_delta.is_some()),
+    )?;
+    if measured.is_none()
+        && !checked.is_some_and(|checked| basis.identity.mixed_source_id_shapes(checked))
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "measured unadmitted change has no measured source in its workspace".into(),
+        ));
+    }
+    Ok(measured.map(|(_, sighting)| sighting))
 }
 
 /// Whether a source change left the source at the revision the evaluation

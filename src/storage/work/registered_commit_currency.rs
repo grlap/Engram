@@ -38,7 +38,7 @@ impl Candidate {
     }
 }
 
-struct SharedMeasurement {
+struct Measurement {
     source_id: crate::source::SourceId,
     measured_at: chrono::DateTime<chrono::Utc>,
 }
@@ -47,8 +47,7 @@ struct SharedMeasurement {
 pub(in crate::storage) struct LiveCurrency {
     work: Option<(WorkId, WorkRunId, i64)>,
     candidates: Vec<Candidate>,
-    roots: BTreeMap<String, Result<crate::committed_input::CommittedInput, String>>,
-    shared_roots: BTreeMap<String, Result<SharedMeasurement, String>>,
+    roots: BTreeMap<String, Result<Measurement, String>>,
 }
 
 impl LiveCurrency {
@@ -101,66 +100,53 @@ impl LiveCurrency {
                 work: Some((work, run, item.revision)),
                 candidates,
                 roots: BTreeMap::new(),
-                shared_roots: BTreeMap::new(),
             })
         })?;
         for candidate in result
             .candidates
             .iter()
-            .filter(|candidate| candidate.is_commit() && candidate.root.is_some())
+            .filter(|candidate| candidate.is_live() && candidate.root.is_some())
         {
             let workspace = &candidate.evidence.source_basis.workspace_id;
             result.roots.entry(workspace.clone()).or_insert_with(|| {
-                crate::committed_input::read(std::path::Path::new(workspace))
-                    .map_err(|error| format!("{error:#}"))
+                let observation = crate::source::inspect(
+                    std::path::Path::new(workspace),
+                    crate::source::MAX_BUDGET,
+                );
+                observation
+                    .source_id
+                    .map(|source_id| Measurement {
+                        source_id,
+                        measured_at: chrono::Utc::now(),
+                    })
+                    .ok_or_else(|| {
+                        observation.refusal.map_or_else(
+                            || "source identity unavailable".into(),
+                            |refusal| refusal.message,
+                        )
+                    })
             });
-        }
-        for candidate in result.candidates.iter().filter(|candidate| {
-            candidate.evidence.source_basis.source_id().is_some() && candidate.root.is_some()
-        }) {
-            let workspace = &candidate.evidence.source_basis.workspace_id;
-            result
-                .shared_roots
-                .entry(workspace.clone())
-                .or_insert_with(|| {
-                    let observation = crate::source::inspect(
-                        std::path::Path::new(workspace),
-                        crate::source::MAX_BUDGET,
-                    );
-                    observation
-                        .source_id
-                        .map(|source_id| SharedMeasurement {
-                            source_id,
-                            measured_at: chrono::Utc::now(),
-                        })
-                        .ok_or_else(|| {
-                            observation.refusal.map_or_else(
-                                || "source identity unavailable".into(),
-                                |refusal| refusal.message,
-                            )
-                        })
-                });
         }
         Ok(result)
     }
 
     fn is_current(&self, candidate: &Candidate) -> bool {
         let basis = &candidate.evidence.source_basis;
-        if let Some(source_id) = basis.source_id() {
-            self.shared_roots
-                .get(&basis.workspace_id)
-                .and_then(|result| result.as_ref().ok())
-                .is_some_and(|measured| &measured.source_id == source_id)
-        } else {
-            self.roots
-                .get(&basis.workspace_id)
-                .and_then(|result| result.as_ref().ok())
-                .is_some_and(|measured| {
-                    measured.clean
-                        && basis.legacy_revision()
-                            == Some(format!("git-commit:{}", measured.commit).as_str())
-                })
-        }
+        self.roots
+            .get(&basis.workspace_id)
+            .and_then(|result| result.as_ref().ok())
+            .is_some_and(|measured| {
+                let current = &measured.source_id;
+                if let Some(source_id) = basis.source_id() {
+                    current.compare(source_id) == Some(true)
+                } else {
+                    current.is_clean()
+                        && basis
+                            .legacy_revision()
+                            .and_then(|revision| revision.strip_prefix("git-commit:"))
+                            == Some(current.commit.as_str())
+                }
+            })
     }
 
     /// The sole live commit currency decision. `false` means the record
@@ -233,48 +219,65 @@ impl LiveCurrency {
             ));
         }
         refuse_newer_failed_on(connection, id, &evidence, i64::MAX)?;
-        if let Some(expected) = evidence.source_basis.source_id() {
-            let measured = self
-                .shared_roots
-                .get(&evidence.source_basis.workspace_id)
-                .ok_or_else(|| {
-                    refused("the registered source root was not measured; retry".into())
-                })?
-                .as_ref()
-                .map_err(|reason| {
-                    refused(format!(
-                        "registered source root is unavailable: {reason}; restore access and retry"
-                    ))
-                })?;
-            if expected != &measured.source_id {
-                return Err(refused("the named root's full source_id changed since the registered check; run a check on the current source state".into()));
-            }
-            return Ok(true);
-        }
-        let measured = self
+        let workspace = &evidence.source_basis.workspace_id;
+        let current = &self
             .roots
-            .get(&evidence.source_basis.workspace_id)
-            .ok_or_else(|| refused("the registered root was not measured; retry".into()))?
+            .get(workspace)
+            .ok_or_else(|| refused("the registered source root was not measured; retry".into()))?
             .as_ref()
             .map_err(|reason| {
                 refused(format!(
-                    "registered root {} is unavailable: {reason}; restore access and retry",
-                    evidence.source_basis.workspace_id
+                    "registered root {workspace} is unavailable: {reason}; restore access and retry"
                 ))
-            })?;
-        if !measured.clean {
+            })?
+            .source_id;
+        if let Some(expected) = evidence.source_basis.source_id() {
+            match expected.compare(current) {
+                Some(true) => return Ok(true),
+                Some(false) => return Err(refused("the named root's full source_id changed since the registered check; run a check on the current source state".into())),
+                None => return Err(refused("the named root and registered check use incomparable source_id formats; run a check on the current source state".into())),
+            }
+        }
+        // An existing commit-only check can still be evaluated against the
+        // clean/commit facts from the shared observation.
+        if !current.is_clean() {
+            let child_reason = current
+                .git_delta
+                .as_ref()
+                .and_then(|delta| {
+                    delta
+                        .gitlinks
+                        .iter()
+                        .find(|link| {
+                            link.index_pin != link.checkout_head || link.head_pin != link.index_pin
+                        })
+                        .or_else(|| delta.gitlinks.first())
+                })
+                .map_or_else(String::new, |link| {
+                    let reason = if link.head_pin != link.index_pin {
+                        "index pin differs from the committed pin"
+                    } else if link.index_pin != link.checkout_head {
+                        "HEAD differs from its pin"
+                    } else {
+                        "working tree is dirty"
+                    };
+                    format!(" (submodule {:?}: {reason})", link.path)
+                });
             return Err(refused(format!(
-                "registered root {} is dirty; commit or revert the changes and run a check on the intended commit",
+                "registered root {} is dirty{child_reason}; commit or revert the changes and run a check on the intended commit",
                 evidence.source_basis.workspace_id
             )));
         }
-        if evidence.source_basis.legacy_revision()
-            != Some(format!("git-commit:{}", measured.commit).as_str())
+        if evidence
+            .source_basis
+            .legacy_revision()
+            .and_then(|revision| revision.strip_prefix("git-commit:"))
+            != Some(current.commit.as_str())
         {
             return Err(refused(format!(
                 "registered check ran on {}, but the named root is at git-commit:{}; run a check on the current commit",
                 evidence.source_basis.legacy_revision().unwrap_or_default(),
-                measured.commit
+                current.commit
             )));
         }
         Ok(true)
@@ -433,19 +436,12 @@ impl LiveCurrency {
                     clean: true,
                 }
             },
-            measured_at: if candidate.evidence.source_basis.source_id().is_some() {
-                self.shared_roots
-                    .get(&candidate.evidence.source_basis.workspace_id)
-                    .and_then(|result| result.as_ref().ok())
-                    .expect("checked measurement")
-                    .measured_at
-            } else {
-                self.roots
-                    .get(&candidate.evidence.source_basis.workspace_id)
-                    .and_then(|result| result.as_ref().ok())
-                    .expect("checked measurement")
-                    .measured_at
-            },
+            measured_at: self
+                .roots
+                .get(&candidate.evidence.source_basis.workspace_id)
+                .and_then(|result| result.as_ref().ok())
+                .expect("checked measurement")
+                .measured_at,
         }))
     }
 

@@ -1,386 +1,549 @@
-//! Local deltas from Git's reported paths, without a repository census.
+//! Git-selected staged, unstaged and untracked inputs for the shared identity.
 
-use super::{Child, Query, before_deadline, status_entries, submodule_states};
-use crate::source::{Change, Entry, MAX_JSON_BYTES, Mode, SourceId, Submodule};
+use super::{Query, Repository, before_deadline};
+use crate::source::{Entry, GitDelta, Gitlink};
 use anyhow::{Context, Result, bail, ensure};
-use sha1::{Digest, Sha1};
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::fs::{Dir, OpenOptions};
+use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
-    fs,
+    collections::{BTreeMap, BTreeSet},
+    io::Read as _,
     path::{Component, Path},
-    time::{Instant, SystemTime},
+    time::Instant,
 };
+
+#[path = "submodules.rs"]
+mod submodules;
 
 const STATUS: &[&str] = &[
     "status",
-    "--porcelain=v1",
-    "--untracked-files=all",
-    "--ignore-submodules=none",
+    "--porcelain=v2",
+    "--branch",
+    "--no-ahead-behind",
     "-z",
+    "--untracked-files=all",
+    "--renames",
+    "--ignore-submodules=dirty",
+];
+const STAGED: &[&str] = &[
+    "diff",
+    "--cached",
+    "--raw",
+    "-z",
+    "--no-abbrev",
+    "--no-renames",
+    "--ita-invisible-in-index",
+    "--no-relative",
+    "--ignore-submodules=dirty",
+    "-O/dev/null",
+];
+const UNSTAGED: &[&str] = &[
+    "diff",
+    "--raw",
+    "-z",
+    "--no-abbrev",
+    "--patch",
+    "--binary",
+    "--full-index",
+    "--no-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-color",
+    "--no-relative",
+    "--no-indent-heuristic",
+    "--diff-algorithm=myers",
+    "--unified=3",
+    "--inter-hunk-context=0",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--output-indicator-new=+",
+    "--output-indicator-old=-",
+    "--output-indicator-context= ",
+    "--ita-invisible-in-index",
+    "--ignore-submodules=dirty",
+    "--submodule=short",
+    "-O/dev/null",
+    "--",
 ];
 
 pub(super) fn capture(
     query: &Query<'_>,
-    root: &Path,
-    commit: &str,
-    tree: &str,
-    status: &[u8],
-    children: &[Child],
-) -> Result<SourceId> {
-    let deadline = query.deadline;
-    let mut children = children.to_vec();
-    children.sort_by(|a, b| a.path.cmp(&b.path));
-    ensure!(
-        children.windows(2).all(|pair| pair[0].path != pair[1].path),
-        "Git returned duplicate submodule paths"
-    );
-    let mut observations = BTreeMap::new();
-    observations.insert(String::new(), status_entries(status)?);
-    let mut submodules = Vec::new();
-    let mut snapshots = Vec::new();
-    for child in &children {
-        before_deadline(deadline, Ok(()))?;
-        validate_path(&child.path)?;
-        let parent = children
-            .iter()
-            .filter(|parent| {
-                child
-                    .path
-                    .strip_prefix(&parent.path)
-                    .is_some_and(|tail| tail.starts_with('/'))
-            })
-            .max_by_key(|parent| parent.path.len())
-            .map_or("", |parent| parent.path.as_str());
-        let relative = relative_child(parent, &child.path);
-        let dirty = observations.get(parent).is_some_and(|entries| {
-            entries
-                .iter()
-                .any(|entry| entry.path == relative || entry.origin.as_deref() == Some(relative))
-        });
-        let changes = if dirty || child.off_pin {
-            let child_root = root.join(&child.path);
-            ensure!(
-                fs::symlink_metadata(&child_root)?.file_type().is_dir(),
-                "submodule '{}': unavailable directory association",
-                child.path
-            );
-            let entries = status_entries(&query.run(&child_root, STATUS, None)?)?;
-            let local = changes(query, &child_root, &child.path, &entries, &children)?;
-            snapshots.push((child_root, local.paths));
-            observations.insert(child.path.clone(), entries);
-            local.changes
-        } else {
-            Vec::new()
-        };
-        submodules.push(Submodule {
-            path: child.path.clone(),
-            commit: child.commit.clone(),
-            changes,
-        });
-    }
-    let root_entries = observations.get("").context("missing root status")?;
-    let root_delta = changes(query, root, "", root_entries, &children)?;
-    snapshots.push((root.to_owned(), root_delta.paths));
-    // A second status detects paths appearing/disappearing during dirty capture.
-    // This remains endpoint evidence, not a claim of transient continuity.
-    if !status.is_empty() || children.iter().any(|child| child.off_pin) {
-        for (path, before) in &observations {
-            let after = status_entries(&query.run(&root.join(path), STATUS, None)?)?;
-            ensure!(
-                &after == before,
-                "source status changed during capture in '{path}'"
-            );
-        }
-        let mut after = submodule_states(
-            &query.run(root, &["submodule", "status", "--recursive"], None)?,
-            true,
-        )?;
-        after.sort_by(|a, b| a.path.cmp(&b.path));
-        ensure!(
-            after == children,
-            "submodule HEAD or association changed during capture"
-        );
-    }
-    for (repository, paths) in &snapshots {
-        unchanged(repository, paths, deadline)?;
-    }
-    before_deadline(
-        deadline,
-        Ok(SourceId {
-            commit: commit.to_owned(),
-            tree: tree.to_owned(),
-            submodules,
-            changes: root_delta.changes,
-        }),
-    )
-}
-
-fn relative_child<'a>(parent: &str, child: &'a str) -> &'a str {
-    if parent.is_empty() {
-        child
-    } else {
-        &child[parent.len() + 1..]
-    }
-}
-
-fn validate_path(path: &str) -> Result<()> {
-    ensure!(
-        !path.is_empty()
-            && !path.contains(['\n', '\r'])
-            && Path::new(path)
-                .components()
-                .all(|part| matches!(part, Component::Normal(_))),
-        "changed path is unavailable for line-based Git hashing: {path:?}"
-    );
-    Ok(())
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct Stamp {
-    len: u64,
-    modified: SystemTime,
-    created: Option<SystemTime>,
-    mode: Mode,
-    link: Option<Vec<u8>>,
-    #[cfg(unix)]
-    inode: (u64, u64, i64, i64),
-}
-
-fn stamp(path: &Path) -> Result<Option<Stamp>> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).context("cannot read changed path metadata"),
+    root: &Repository<'_, '_>,
+) -> Result<(String, GitDelta, Vec<Entry>)> {
+    let mut hash = DeltaHash {
+        hash: Sha256::new(),
+        deadline: query.deadline,
     };
-    let (mode, link) = if metadata.file_type().is_symlink() {
-        let target = fs::read_link(path)?;
-        #[cfg(unix)]
-        let bytes = {
-            use std::os::unix::ffi::OsStrExt;
-            target.as_os_str().as_bytes().to_vec()
-        };
-        #[cfg(not(unix))]
-        let bytes = target
-            .to_str()
-            .context("symlink text is not UTF-8")?
-            .as_bytes()
-            .to_vec();
-        ensure!(
-            bytes.len() <= MAX_JSON_BYTES,
-            "symlink text exceeds source bound"
-        );
-        (Mode::Symlink, Some(bytes))
-    } else if metadata.is_file() {
-        #[cfg(unix)]
-        let mode = {
-            use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o111 == 0 {
-                Mode::Regular
-            } else {
-                Mode::Executable
-            }
-        };
-        #[cfg(not(unix))]
-        let mode = Mode::Regular;
-        (mode, None)
-    } else {
-        bail!(
-            "changed path has an unsupported filesystem type: {}",
-            path.display()
-        );
-    };
-    Ok(Some(Stamp {
-        len: metadata.len(),
-        modified: metadata.modified()?,
-        created: metadata.created().ok(),
-        mode,
-        link,
-        #[cfg(unix)]
-        inode: {
-            use std::os::unix::fs::MetadataExt;
-            (
-                metadata.dev(),
-                metadata.ino(),
-                metadata.ctime(),
-                metadata.ctime_nsec(),
-            )
+    hash.frame(b"engram source Git delta 1")?;
+    let mut gitlinks = BTreeMap::new();
+    let (commit, entries) = repository(query, root, "", &mut hash, &mut gitlinks)?;
+    Ok((
+        commit,
+        GitDelta {
+            sha256: format!("{:x}", hash.hash.finalize()),
+            dirty: !entries.is_empty() || !gitlinks.is_empty(),
+            gitlinks: gitlinks.into_values().collect(),
         },
-    }))
+        entries,
+    ))
 }
 
-fn link_blob(bytes: &[u8]) -> String {
-    let mut hash = Sha1::new();
-    hash.update(format!("blob {}\0", bytes.len()).as_bytes());
-    hash.update(bytes);
-    format!("{:x}", hash.finalize())
-}
-
-struct LocalDelta {
-    changes: Vec<Change>,
-    paths: BTreeMap<String, Option<Stamp>>,
-}
-
-fn unchanged(
-    root: &Path,
-    paths: &BTreeMap<String, Option<Stamp>>,
+struct DeltaHash {
+    hash: Sha256,
     deadline: Instant,
-) -> Result<()> {
-    for (path, before) in paths {
-        before_deadline(deadline, Ok(()))?;
-        ensure!(
-            &stamp(&root.join(path))? == before,
-            "changed path drifted during capture: {path}"
-        );
-    }
-    Ok(())
 }
 
-fn changes(
-    query: &Query<'_>,
-    root: &Path,
-    repository: &str,
-    entries: &[Entry],
-    children: &[Child],
-) -> Result<LocalDelta> {
-    let deadline = query.deadline;
-    let mut paths = BTreeMap::new();
-    let mut records = Vec::new();
-    for entry in entries {
-        before_deadline(deadline, Ok(()))?;
-        validate_path(&entry.path)?;
-        if let Some(origin) = &entry.origin {
-            validate_path(origin)?;
+impl DeltaHash {
+    fn frame(&mut self, bytes: &[u8]) -> Result<()> {
+        before_deadline(self.deadline, Ok(()))?;
+        self.hash.update((bytes.len() as u64).to_be_bytes());
+        self.hash.update(bytes);
+        Ok(())
+    }
+
+    fn file(&mut self, mut file: std::fs::File, expected: u64) -> Result<()> {
+        self.hash.update(expected.to_be_bytes());
+        let mut buffer = [0; 8192];
+        let mut total = 0;
+        loop {
+            before_deadline(self.deadline, Ok(()))?;
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                ensure!(
+                    total == expected,
+                    "untracked file length changed during its read"
+                );
+                return Ok(());
+            }
+            total += count as u64;
+            ensure!(total <= expected, "untracked file grew during its read");
+            self.hash.update(&buffer[..count]);
         }
-        let full = if repository.is_empty() {
-            entry.path.clone()
-        } else {
-            format!("{repository}/{}", entry.path)
+    }
+
+    fn unstaged_patch(&mut self, config: &Repository<'_, '_>) -> Result<()> {
+        let mut hashed = Self {
+            hash: std::mem::take(&mut self.hash),
+            deadline: self.deadline,
         };
-        if children.iter().any(|child| child.path == full) {
+        self.hash = config.stream(UNSTAGED, move |mut stdout| {
+            // Fixed-length chunks make framing independent of how the pipe
+            // splits reads. An empty frame terminates the patch.
+            const PATCH_CHUNK: u16 = 16 * 1024;
+            let mut bytes = Vec::with_capacity(usize::from(PATCH_CHUNK));
+            loop {
+                before_deadline(hashed.deadline, Ok(()))?;
+                bytes.clear();
+                (&mut stdout)
+                    .take(u64::from(PATCH_CHUNK))
+                    .read_to_end(&mut bytes)?;
+                hashed.frame(&bytes)?;
+                if bytes.is_empty() {
+                    return Ok(hashed.hash);
+                }
+            }
+        })?;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct Selection {
+    entries: Vec<Entry>,
+    staged: BTreeSet<String>,
+    unstaged: BTreeSet<String>,
+    untracked: BTreeSet<String>,
+    gitlinks: BTreeMap<String, GitlinkPins>,
+}
+
+struct GitlinkPins {
+    head: Option<String>,
+    index: Option<String>,
+}
+
+impl GitlinkPins {
+    fn from_fields(
+        head_mode: &[u8],
+        head_oid: &[u8],
+        index_mode: &[u8],
+        index_oid: &[u8],
+    ) -> Result<Option<Self>> {
+        let pin = |mode: &[u8], oid: &[u8]| -> Result<Option<String>> {
+            if mode != b"160000" {
+                return Ok(None);
+            }
+            let oid = std::str::from_utf8(oid)?;
+            ensure!(
+                super::valid_oid(oid) && oid.bytes().any(|byte| byte != b'0'),
+                "invalid Gitlink pin"
+            );
+            Ok(Some(oid.to_owned()))
+        };
+        let head = pin(head_mode, head_oid)?;
+        let index = pin(index_mode, index_oid)?;
+        Ok((head.is_some() || index.is_some()).then_some(Self { head, index }))
+    }
+}
+
+fn repository(
+    query: &Query<'_>,
+    config: &Repository<'_, '_>,
+    prefix: &str,
+    hash: &mut DeltaHash,
+    gitlinks: &mut BTreeMap<String, Gitlink>,
+) -> Result<(String, Vec<Entry>)> {
+    let root = config.root;
+    let (commit, mut status) = selection(&config.run(STATUS)?)?;
+
+    // Gitlinks may be staged out of the index; the raw stage still names them.
+    let mut staged_args = STAGED.to_vec();
+    staged_args.extend([commit.as_str(), "--"]);
+    let staged = if status.staged.is_empty() {
+        Vec::new()
+    } else {
+        config.run(&staged_args)?
+    };
+    let staged_paths = staged_paths(&staged)?;
+    let declarations = submodules::declared_paths(
+        config,
+        &commit,
+        staged_paths.modules,
+        status.unstaged.contains(".gitmodules") || status.untracked.contains(".gitmodules"),
+    )?;
+    let mut pins = std::mem::take(&mut status.gitlinks);
+    pins.extend(staged_paths.gitlinks);
+    // Git's status and diffs carry pointer changes for undeclared gitlinks.
+    // Only declared children contribute a separate checkout observation.
+    pins.retain(|path, _| declarations.contains(path));
+    submodules::append_unchanged_pins(config, &commit, &declarations, &mut pins)?;
+
+    let mut former_checkouts = BTreeMap::new();
+    for (path, pins) in &pins {
+        if pins.index.is_none()
+            && status.untracked.contains(path)
+            && let Some(child) = initialized_child(root, path)?
+        {
+            // Observe a staged-out checkout only if parent Git reports it as untracked.
+            former_checkouts.insert(path.clone(), child);
+            status.untracked.remove(path);
+            status.entries.retain(|entry| {
+                entry.status != "??" || entry.path.trim_end_matches('/') != path.as_str()
+            });
+        }
+    }
+    let untracked = &status.untracked;
+    let unstaged = !status.unstaged.is_empty();
+    if prefix.is_empty() || !staged.is_empty() || unstaged || !untracked.is_empty() {
+        hash.frame(b"repository")?;
+        hash.frame(prefix.as_bytes())?;
+        hash.frame(b"staged")?;
+        hash.frame(&staged)?;
+        hash.frame(b"unstaged")?;
+        if unstaged {
+            // Git selects the changed endpoints, including ordinary files
+            // that replace gitlinks. Path count never affects argv length.
+            hash.unstaged_patch(config)?;
+        } else {
+            hash.frame(b"")?;
+        }
+        hash.frame(b"untracked")?;
+        if !untracked.is_empty() {
+            let directory = Dir::open_ambient_dir(root, cap_std::ambient_authority())?;
+            for path in untracked {
+                add_untracked(&directory, path, hash)?;
+            }
+        }
+        hash.frame(b"")?;
+    }
+
+    for (
+        path,
+        GitlinkPins {
+            head: head_pin,
+            index: index_pin,
+        },
+    ) in pins
+    {
+        let name = if prefix.is_empty() {
+            path.clone()
+        } else {
+            format!("{prefix}/{path}")
+        };
+        let child = if index_pin.is_some() {
+            initialized_child(root, &path)?
+        } else {
+            former_checkouts.remove(&path)
+        };
+        let (checkout_head, child_dirty) = if let Some(child) = child {
+            let child_config = query.for_repository(&child);
+            super::check_toplevel(&child_config, &child)?;
+            let child_filters = child_config.filter_overrides()?;
+            let child_config = Repository {
+                filter_overrides: &child_filters,
+                ..child_config
+            };
+            let (head, entries) = repository(query, &child_config, &name, hash, gitlinks)
+                .with_context(|| format!("submodule '{name}'"))?;
+            (Some(head), !entries.is_empty())
+        } else {
+            ensure!(index_pin.is_none(), "submodule '{name}': uninitialized");
+            (None, false)
+        };
+        let differs = head_pin != index_pin || index_pin != checkout_head || child_dirty;
+        if differs {
+            if !status.entries.iter().any(|entry| entry.path == path) {
+                status.entries.push(Entry {
+                    path: path.clone(),
+                    status: " M".to_owned(),
+                    origin: None,
+                });
+            }
+            gitlinks.insert(
+                name.clone(),
+                Gitlink {
+                    path: name,
+                    head_pin,
+                    index_pin,
+                    checkout_head,
+                },
+            );
+        } else {
+            status.entries.retain(|entry| entry.path != path);
+        }
+    }
+
+    Ok((commit, status.entries))
+}
+
+fn initialized_child(root: &Path, path: &str) -> Result<Option<std::path::PathBuf>> {
+    let child = root.join(path);
+    match child.symlink_metadata() {
+        Ok(metadata) if metadata.file_type().is_dir() && child.join(".git").try_exists()? => {
+            ensure!(
+                child.symlink_metadata()?.file_type().is_dir()
+                    && child.canonicalize()?.starts_with(root),
+                "unavailable gitlink worktree association"
+            );
+            Ok(Some(child))
+        }
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn records(bytes: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
+    ensure!(
+        bytes.is_empty() || bytes.last() == Some(&0),
+        "truncated Git records"
+    );
+    Ok(bytes
+        .split_inclusive(|byte| *byte == 0)
+        .map(|row| &row[..row.len() - 1]))
+}
+
+fn selection(bytes: &[u8]) -> Result<(String, Selection)> {
+    let mut selected = Selection::default();
+    let mut commit = None;
+    let mut rows = records(bytes)?;
+    while let Some(row) = rows.next() {
+        if let Some(oid) = row.strip_prefix(b"# branch.oid ") {
+            let oid = std::str::from_utf8(oid)?;
+            ensure!(
+                super::valid_oid(oid),
+                "Git status did not report a HEAD commit"
+            );
+            ensure!(
+                commit.replace(oid.to_owned()).is_none(),
+                "duplicate Git status HEAD commit"
+            );
             continue;
         }
-        if !paths.contains_key(&entry.path) {
-            paths.insert(entry.path.clone(), stamp(&root.join(&entry.path))?);
+        if row.starts_with(b"# ") {
+            continue;
         }
-        if paths[&entry.path].is_none() {
-            ensure!(
-                entry.status.contains('D'),
-                "changed path disappeared during capture: {}",
-                entry.path
-            );
+        if let Some(path) = row.strip_prefix(b"? ") {
+            let path = validate_path(path)?;
+            let canonical = path.trim_end_matches('/');
+            selected.untracked.insert(canonical.to_owned());
+            selected.entries.push(Entry {
+                path: path.to_owned(),
+                status: "??".to_owned(),
+                origin: None,
+            });
+            continue;
         }
-        records.push(entry);
-    }
-    let mut input = Vec::new();
-    let mut names = Vec::new();
-    let mut blobs = BTreeMap::new();
-    for (path, before) in &paths {
-        before_deadline(deadline, Ok(()))?;
-        if let Some(before) = before {
-            if let Some(link) = &before.link {
-                blobs.insert(path.clone(), link_blob(link));
-            } else {
-                // Leading '.' prevents Git's leading-quote pathname decoder.
-                input.extend_from_slice(b"./");
-                input.extend_from_slice(path.as_bytes());
-                input.push(b'\n');
-                if input.len() > MAX_JSON_BYTES {
-                    return Err(crate::task_sync::git::QueryFailure::OutputLimit.into());
-                }
-                names.push(path);
-            }
-        }
-    }
-    if !names.is_empty() {
-        let bytes = query.run(root, &["hash-object", "--stdin-paths"], Some(&input))?;
-        let text = std::str::from_utf8(&bytes).context("Git returned non-UTF-8 blob ids")?;
-        let ids: Vec<_> = text.lines().collect();
+        let (row, renamed) = match (row.strip_prefix(b"1 "), row.strip_prefix(b"2 ")) {
+            (Some(row), _) => (row, false),
+            (_, Some(row)) => (row, true),
+            _ => bail!("unsupported or unmerged porcelain record"),
+        };
+        let mut fields = row.splitn(if renamed { 9 } else { 8 }, |byte| *byte == b' ');
+        let xy = fields.next().context("missing porcelain status")?;
+        let sub = fields.next().context("missing porcelain submodule state")?;
         ensure!(
-            ids.len() == names.len(),
-            "Git returned an incomplete blob-id batch"
+            xy.len() == 2
+                && xy.iter().all(|c| b".MADTRC".contains(c))
+                && xy != b".."
+                && renamed == xy.iter().any(|c| b"RC".contains(c)),
+            "invalid porcelain status"
         );
-        for (name, id) in names.into_iter().zip(ids) {
-            ensure!(
-                id.len() == 40
-                    && id
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
-                "Git returned a malformed blob id"
-            );
-            blobs.insert(name.clone(), id.to_owned());
+        ensure!(
+            sub == b"N..."
+                || (sub.len() == 4
+                    && sub[0] == b'S'
+                    && b".C".contains(&sub[1])
+                    && b".M".contains(&sub[2])
+                    && b".U".contains(&sub[3])),
+            "invalid porcelain submodule state"
+        );
+        let head_mode = fields.next().context("missing porcelain HEAD mode")?;
+        let index_mode = fields.next().context("missing porcelain index mode")?;
+        fields.next().context("missing porcelain worktree mode")?;
+        let head_oid = fields.next().context("missing porcelain HEAD object")?;
+        let index_oid = fields.next().context("missing porcelain index object")?;
+        let origin = if renamed {
+            fields
+                .next()
+                .context("missing porcelain rename similarity")?;
+            Some(validate_path(rows.next().context("missing porcelain rename origin")?)?.to_owned())
+        } else {
+            None
+        };
+        let path = validate_path(fields.next().context("missing porcelain path")?)?.to_owned();
+        // The staged raw leg supplies both path endpoints of a staged
+        // rename. An unstaged-only row contains this path's pins directly.
+        if xy[0] == b'.'
+            && let Some(pins) =
+                GitlinkPins::from_fields(head_mode, head_oid, index_mode, index_oid)?
+        {
+            selected.gitlinks.insert(path.clone(), pins);
         }
+        if xy[0] != b'.' {
+            selected.staged.insert(path.clone());
+        }
+        // The patch carries checkout pointer changes even for Gitlinks
+        // whose child worktrees are outside the declaration walk.
+        if xy[1] != b'.' {
+            selected.unstaged.insert(path.clone());
+            selected.unstaged.extend(origin.iter().cloned());
+        }
+        selected.entries.push(Entry {
+            path,
+            status: xy
+                .iter()
+                .map(|&b| char::from(if b == b'.' { b' ' } else { b }))
+                .collect(),
+            origin,
+        });
     }
-    unchanged(root, &paths, deadline)?;
-    let mut result: Vec<_> = records
-        .into_iter()
-        .map(|entry| Change {
-            path: entry.path.clone(),
-            status: entry.status.clone(),
-            origin: entry.origin.clone(),
-            blob: blobs.get(&entry.path).cloned(),
-            mode: paths[&entry.path].as_ref().map(|stamp| stamp.mode),
-        })
-        .collect();
-    result.sort_by(|a, b| (&a.path, &a.status, &a.origin).cmp(&(&b.path, &b.status, &b.origin)));
-    before_deadline(
-        deadline,
-        Ok(LocalDelta {
-            changes: result,
-            paths,
-        }),
-    )
+    Ok((commit.context("missing Git status HEAD commit")?, selected))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Default)]
+struct StagedPaths<'a> {
+    gitlinks: BTreeMap<String, GitlinkPins>,
+    modules: Option<submodules::ModuleBlobs<'a>>,
+}
 
-    #[test]
-    fn changed_path_metadata_and_expired_capture_refuse_without_partial_state() {
-        let scratch = crate::test_support::temp_home().unwrap();
-        let root = scratch.path();
-        let path = root.join("changed");
-        fs::write(&path, "before").unwrap();
-        let before = BTreeMap::from([("changed".to_owned(), stamp(&path).unwrap())]);
-        let deadline = Instant::now() + crate::source::MAX_BUDGET;
-        unchanged(root, &before, deadline).unwrap();
-        fs::write(&path, "different content and size").unwrap();
-        assert!(
-            unchanged(root, &before, deadline)
-                .unwrap_err()
-                .to_string()
-                .contains("drifted")
+fn staged_paths(bytes: &[u8]) -> Result<StagedPaths<'_>> {
+    let mut selected = StagedPaths::default();
+    let mut rows = records(bytes)?;
+    while let Some(raw) = rows.next() {
+        let mut fields = raw.split(|byte| *byte == b' ');
+        let old = fields
+            .next()
+            .and_then(|mode| mode.strip_prefix(b":"))
+            .context("missing staged source mode")?;
+        let new = fields.next().context("missing staged destination mode")?;
+        let old_oid = fields.next().context("missing staged source object")?;
+        let new_oid = fields.next().context("missing staged destination object")?;
+        ensure!(
+            fields.next().is_some() && fields.next().is_none(),
+            "malformed staged raw record"
         );
-        let expired = Instant::now()
-            .checked_sub(std::time::Duration::from_millis(1))
-            .unwrap();
-        assert_eq!(
-            super::super::refusal_code(&unchanged(root, &before, expired).unwrap_err()),
-            crate::source::RefusalCode::Deadline
-        );
-        fs::remove_file(&path).unwrap();
-        assert!(stamp(&path).unwrap().is_none());
-        assert!(unchanged(root, &before, deadline).is_err());
-    }
-
-    #[test]
-    fn link_text_oid_matches_git_without_reading_the_target() {
-        let scratch = crate::test_support::temp_home().unwrap();
-        let root = scratch.path();
-        let git = super::super::resolve_git(root).unwrap();
-        for text in [
-            b"missing target".as_slice(),
-            b"../ignored/file",
-            b"unicode \xe2\x98\x83",
-        ] {
-            let bytes = Query {
-                git: &git,
-                global: None,
-                deadline: Instant::now() + crate::source::MAX_BUDGET,
-            }
-            .run(root, &["hash-object", "--stdin"], Some(text))
-            .unwrap();
-            assert_eq!(link_blob(text), std::str::from_utf8(&bytes).unwrap().trim());
+        let path = validate_path(rows.next().context("missing staged path")?)?;
+        if path == ".gitmodules" {
+            selected.modules = Some(submodules::ModuleBlobs {
+                head: submodules::config_blob(old, old_oid)?,
+                index: submodules::config_blob(new, new_oid)?,
+            });
+        }
+        if let Some(pins) = GitlinkPins::from_fields(old, old_oid, new, new_oid)? {
+            ensure!(
+                selected.gitlinks.insert(path.to_owned(), pins).is_none(),
+                "duplicate staged Gitlink"
+            );
         }
     }
+    Ok(selected)
+}
+
+fn validate_path(path: &[u8]) -> Result<&str> {
+    let text = std::str::from_utf8(path).context("Git path is not UTF-8")?;
+    ensure!(
+        !text.is_empty()
+            && !text.contains(['\0', '\r', '\n'])
+            && !text
+                .trim_end_matches('/')
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+            && Path::new(text)
+                .components()
+                .all(|part| matches!(part, Component::Normal(_))),
+        "unsafe or unsupported Git path"
+    );
+    Ok(text)
+}
+
+fn add_untracked(root: &Dir, path: &str, hash: &mut DeltaHash) -> Result<()> {
+    let metadata = root.symlink_metadata(path)?;
+    hash.frame(path.as_bytes())?;
+    if metadata.is_symlink() {
+        let link = root.read_link_contents(path)?;
+        hash.frame(b"120000")?;
+        #[cfg(unix)]
+        return {
+            use std::os::unix::ffi::OsStrExt as _;
+            hash.frame(link.as_os_str().as_bytes())
+        };
+        #[cfg(not(unix))]
+        return hash.frame(link.to_str().context("non-UTF-8 link target")?.as_bytes());
+    }
+    ensure!(metadata.is_file(), "unsupported untracked filesystem entry");
+    let (file, metadata) = open_regular(root, path)?;
+    #[cfg(unix)]
+    let mode: &[u8] =
+        if std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()) & 0o100 != 0 {
+            b"100755"
+        } else {
+            b"100644"
+        };
+    #[cfg(not(unix))]
+    let mode = b"100644";
+    hash.frame(mode)?;
+    hash.file(file, metadata.len())
+}
+
+fn open_regular(root: &Dir, path: &str) -> Result<(std::fs::File, std::fs::Metadata)> {
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    #[cfg(unix)]
+    {
+        use cap_fs_ext::OpenOptionsSyncExt;
+        options.nonblock(true);
+    }
+    let file = root.open_with(path, &options)?.into_std();
+    let metadata = file.metadata()?;
+    ensure!(metadata.is_file(), "unsupported opened filesystem entry");
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        ensure!(
+            metadata.file_attributes() & 0x400 == 0,
+            "unsupported filesystem reparse point"
+        );
+    }
+    Ok((file, metadata))
 }

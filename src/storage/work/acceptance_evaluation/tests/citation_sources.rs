@@ -1622,6 +1622,31 @@ pub(super) fn unadmitted_change(
     key: &str,
     second: i64,
 ) -> crate::domain::ExecutionObservationReceipt {
+    let legacy = |revision: &str| crate::domain::VerificationSourceIdentity::Legacy {
+        source_revision: revision.into(),
+        git_tree: None,
+    };
+    measured_unadmitted_change(
+        store,
+        host,
+        claim,
+        (legacy("revision-before"), legacy(revision)),
+        key,
+        second,
+    )
+}
+
+pub(super) fn measured_unadmitted_change(
+    store: &mut SqliteStore,
+    host: &HostSession,
+    claim: &WorkClaim,
+    (before, after): (
+        crate::domain::VerificationSourceIdentity,
+        crate::domain::VerificationSourceIdentity,
+    ),
+    key: &str,
+    second: i64,
+) -> crate::domain::ExecutionObservationReceipt {
     use crate::domain::{
         ExecutionObserveInput, MeasuredBaseline, MeasuredSighting, NamedRootState,
         ObservationCausality, ObservationPolicyBasis, ObservationRootBasis, ObservedInterval,
@@ -1656,21 +1681,16 @@ pub(super) fn unadmitted_change(
                 workspace_id: workspace.clone(),
                 baseline: MeasuredBaseline {
                     workspace_id: workspace.clone(),
-                    identity: crate::domain::VerificationSourceIdentity::Legacy {
-                        source_revision: "revision-before".into(),
-                        git_tree: None,
-                    },
+                    identity: before,
                     observed_at: at(second - 2),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: (ExecutionSourceBasis {
-                        git_tree: None,
+                    source_basis: crate::domain::VerificationSourceBasis {
                         workspace_id: workspace,
-                        source_revision: revision.into(),
+                        identity: after,
                         source_root_generation: None,
                         source_root_state: None,
-                    })
-                    .into(),
+                    },
                     observed_at: at(second - 1),
                 },
             },

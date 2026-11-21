@@ -1240,6 +1240,7 @@ fn a_shared_quiet_sighting_preserves_the_historical_staged_tree_witness() {
         workspace_id: f.request.registration.root.workspace_id.clone(),
         identity: crate::domain::VerificationSourceIdentity::SourceId {
             source_id: crate::source::SourceId {
+                git_delta: None,
                 commit: "a".repeat(40),
                 tree: "b".repeat(40),
                 changes: vec![],

@@ -61,6 +61,7 @@ mod tests {
     #[test]
     fn bounded_decode_preserves_identity_and_never_echoes_invalid_values() {
         let source = SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             changes: vec![],
@@ -83,6 +84,7 @@ mod tests {
         let directory = crate::test_support::temp_home().unwrap();
         let path = directory.path().join("private-source-path.json");
         let source = SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             changes: vec![],

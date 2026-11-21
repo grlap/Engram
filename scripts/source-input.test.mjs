@@ -47,6 +47,11 @@ for (const scenario of sourceCases) {
     assert.equal(observation.version, 1);
     assert.equal(observation.status, scenario.status, result.stdout);
     if (scenario.id === "root-autocrlf-clean") assert.equal(result.stderr, "");
+    if (scenario.id === "root-autocrlf-dirty") {
+      const repeat = run(["--root", fixture.root, "--json"]);
+      assert.equal(repeat.status, 0, repeat.stderr || repeat.stdout);
+      assert.deepEqual(JSON.parse(repeat.stdout).source_id, observation.source_id);
+    }
     assert.equal(observation.root.startsWith("\\\\?\\"), false, "wire root must use the plain form");
     assert.equal(normalized(observation.root), normalized(fixture.root));
     if (observation.status === "unavailable") {
@@ -59,11 +64,20 @@ for (const scenario of sourceCases) {
       assert.ok(observation.refusal.message);
       if (scenario.id === "child-uninitialized") assert.match(observation.refusal.message,
         /submodule 'c': uninitialized/u);
+      if (fixture.filterMarker) {
+        assert.match(observation.refusal.message, /clean filter 'fixture' failed/u);
+        assert.equal(existsSync(fixture.filterMarker), false);
+      }
     } else {
       assert.equal(observation.source, `git-commit:${fixture.commit}`);
       assert.equal(observation.tree, fixture.tree);
       assert.equal(observation.refusal, null);
-      assert.deepEqual(observation.source_id, fixture.sourceId);
+      assert.deepEqual(Object.keys(observation.source_id).sort(), ["commit", "git_delta", "tree"]);
+      assert.equal(observation.source_id.commit, fixture.commit);
+      assert.equal(observation.source_id.tree, fixture.tree);
+      assert.match(observation.source_id.git_delta.sha256, /^[a-f0-9]{64}$/u);
+      assert.equal(observation.source_id.git_delta.dirty, observation.status === "not_clean");
+      assert.deepEqual(observation.source_id.git_delta.gitlinks, fixture.gitlinks);
       assert.equal(observation.entries.length === 0, observation.status === "clean");
       if (scenario.id === "rename") assert.deepEqual(observation.entries,
         [{ status: "R ", path: "renamed file.txt", origin: "tracked file.txt" }]);
@@ -85,8 +99,8 @@ for (const scenario of machineEolCases) {
     if (scenario.id === "root-false-child-global-true") assert.deepEqual(fixture.checkoutBytes, ["original\n", "original\r\n"]);
     if (scenario.id === "root-global-true-child-false") assert.deepEqual(fixture.checkoutBytes, ["original\r\n", "original\n"]);
     if (scenario.id === "root-global-false-child-true") assert.deepEqual(fixture.checkoutBytes, ["original\n", "original\r\n"]);
-    if (scenario.mismatch) assert.deepEqual(fixture.contextualFallback, { root: "true", child: "false" },
-      "ordinary Git must prove the conditional machine fallback differs before testing the owner refusal");
+    if (scenario.conditional) assert.deepEqual(fixture.checkoutBytes, ["original\r\n", "original\n"]);
+    if (scenario.globalAttributes) assert.equal(fixture.checkoutBytes[0], "original\r\n");
     if (scenario.eol) {
       const effectiveEol = scenario.eol.toLowerCase();
       const crlf = effectiveEol === "crlf" || (effectiveEol === "native" && process.platform === "win32");
@@ -103,19 +117,21 @@ for (const scenario of machineEolCases) {
     if (scenario.status === "unavailable") {
       assert.equal(observation.source_id, null);
       assert.equal(observation.refusal.code, "input_unavailable");
-      if (scenario.mismatch) assert.match(observation.refusal.message, /submodule 'c s': contextual machine line-ending fallback differs/u);
-      if (scenario.insideScratch) assert.match(observation.refusal.message, /source EOL scratch is inside the inspected tree/u);
     } else {
       assert.equal(observation.source, `git-commit:${observation.source_id.commit}`);
       assert.equal(observation.tree, observation.source_id.tree);
-      if (scenario.dirty) {
-        const changes = scenario.dirty === "root" ? observation.source_id.changes
-          : observation.source_id.submodules.find((child) => child.path === fixture.childName).changes;
-        assert.equal(changes.find((change) => change.path === fixture.dirtyPath).blob, fixture.expectedDirtyBlob,
-          "dirty blob hashing must preserve the same effective machine EOL policy as status");
+      assert.match(observation.source_id.git_delta.sha256, /^[a-f0-9]{64}$/u);
+      assert.equal(observation.source_id.git_delta.dirty, observation.status === "not_clean");
+      if (scenario.globalExcludes) {
+        assert.deepEqual(observation.entries, []);
+        assert.equal(existsSync(join(fixture.root, "fsmonitor-ran")), false);
+      }
+      if (scenario.inactiveFilter) assert.equal(existsSync(join(fixture.root, "filter-ran")), false);
+      if (scenario.dirty === "child" || scenario.dirty === "long-child") {
+        assert.ok(observation.source_id.git_delta.gitlinks.some((link) => link.path === fixture.childName));
       }
     }
-    assert.deepEqual(fixture.scratchEntries(), [], "owner-private EOL scratch must be removed after success or refusal");
+    assert.deepEqual(fixture.scratchEntries(), [], "source capture must leave the scratch directory empty");
   });
 }
 test("source dirty identity compares the complete delta at one unchanged commit", (t) => {
@@ -143,7 +159,7 @@ test("source symlink identity hashes link text and excludes ignored target conte
     return JSON.parse(result.stdout).source_id;
   };
   const before = observe();
-  assert.deepEqual(before, fixture.sourceId);
+  assert.equal(before.git_delta.dirty, true);
   writeFileSync(join(fixture.root, "ignored", "result.txt"), "different target bytes\n");
   assert.deepEqual(observe(), before);
 });
@@ -196,6 +212,8 @@ test("source refuses non-UTF-8 changed paths without loss", {
   assert.equal(result.status, 1, result.stdout || result.stderr);
   const observation = JSON.parse(result.stdout);
   assert.equal(observation.status, "unavailable");
-  assert.match(observation.refusal.message, /non-UTF-8/u);
+  assert.equal(observation.refusal.code, "input_unavailable");
+  assert.match(observation.refusal.message, /not UTF-8/u);
   assert.equal(observation.source, null);
+  assert.equal(observation.source_id, null);
 });

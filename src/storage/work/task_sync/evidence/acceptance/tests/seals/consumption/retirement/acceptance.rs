@@ -110,6 +110,33 @@ fn implicit_acceptance_retirement_preserves_terminal_and_provenance_refusals() {
 }
 
 #[test]
+fn an_incomparable_origin_sighting_does_not_prevent_retirement() {
+    let root = repository();
+    let mut fixture = Fixture::new(root.path());
+    let request = prepare(&mut fixture, root.path(), false);
+    let actor = fixture.local_actor();
+    fixture
+        .store
+        .associate_imported_acceptance(&project(), &session(), &actor, &request, at(22))
+        .unwrap();
+    let used = consume(&mut fixture, &request.decision, true);
+
+    let mut mixed = source(root.path());
+    mixed.git_delta = None;
+    let sighting = fixture.report_source_id(mixed, 24, false);
+    let evidence = envelope(&fixture.store, &request.origin, &sighting);
+    let pack = with_witnesses(&fixture, &request.origin, vec![evidence]);
+    retain(&mut fixture.store, &pack);
+    let record: crate::task_sync::evidence::consumption::ImportedEvidenceConsumption =
+        fixture.store.get(&used.consumption).unwrap().unwrap();
+    crate::storage::work::task_sync::evidence::acceptance::validate_retirement_on(
+        &fixture.store.connection,
+        &record,
+    )
+    .unwrap();
+}
+
+#[test]
 fn retired_acceptance_cannot_carry_a_native_check_across_a_later_source_change() {
     let mut data = selected(false);
     consume(&mut data.target, &data.acceptance.decision, true);

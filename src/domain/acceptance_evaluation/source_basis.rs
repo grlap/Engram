@@ -160,6 +160,7 @@ mod tests {
 
     fn source() -> SourceId {
         SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             changes: vec![],

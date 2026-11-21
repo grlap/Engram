@@ -14,6 +14,39 @@ impl SourceId {
             oid(&self.commit) && oid(&self.tree),
             "invalid source commit or tree"
         );
+        if let Some(delta) = &self.git_delta {
+            ensure!(
+                self.changes.is_empty()
+                    && self.submodules.is_empty()
+                    && delta.sha256.len() == 64
+                    && delta
+                        .sha256
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    && (delta.dirty || delta.gitlinks.is_empty()),
+                "invalid source Git delta"
+            );
+            for link in &delta.gitlinks {
+                ensure!(
+                    path(&link.path)
+                        && (link.head_pin.is_some() || link.index_pin.is_some())
+                        && (link.index_pin.is_none() || link.checkout_head.is_some())
+                        && [&link.head_pin, &link.index_pin, &link.checkout_head]
+                            .into_iter()
+                            .flatten()
+                            .all(|commit| oid(commit)),
+                    "invalid source gitlink"
+                );
+            }
+            ensure!(
+                delta
+                    .gitlinks
+                    .windows(2)
+                    .all(|pair| pair[0].path < pair[1].path),
+                "source gitlinks must be unique and UTF-8 byte ordered"
+            );
+            return Ok(());
+        }
         changes(&self.changes)?;
         for child in &self.submodules {
             ensure!(
@@ -97,7 +130,63 @@ fn change_key(value: &Change) -> (&str, &str, Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::Mode;
+    use crate::source::{GitDelta, Gitlink, Mode};
+
+    #[test]
+    fn git_delta_requires_an_ordered_link_set_and_consistent_pins() {
+        let commit = "1".repeat(40);
+        let link = Gitlink {
+            path: "child".to_owned(),
+            head_pin: Some(commit.clone()),
+            index_pin: Some(commit.clone()),
+            checkout_head: Some("2".repeat(40)),
+        };
+        let delta = GitDelta {
+            sha256: "a".repeat(64),
+            dirty: true,
+            gitlinks: vec![link.clone()],
+        };
+        let mut source = SourceId {
+            commit,
+            tree: "3".repeat(40),
+            git_delta: Some(delta.clone()),
+            submodules: Vec::new(),
+            changes: Vec::new(),
+        };
+        assert!(source.validate().is_ok());
+        let mut hybrid = serde_json::to_value(&source).unwrap();
+        hybrid["submodules"] = serde_json::json!([]);
+        hybrid["changes"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<SourceId>(hybrid).is_err());
+
+        source.git_delta.as_mut().unwrap().dirty = false;
+        assert!(source.validate().is_err());
+        for gitlinks in [
+            vec![link.clone(), link.clone()],
+            vec![
+                Gitlink {
+                    path: "z".to_owned(),
+                    ..link.clone()
+                },
+                link.clone(),
+            ],
+            vec![Gitlink {
+                checkout_head: None,
+                ..link.clone()
+            }],
+            vec![Gitlink {
+                head_pin: None,
+                index_pin: None,
+                ..link
+            }],
+        ] {
+            source.git_delta = Some(GitDelta {
+                gitlinks,
+                ..delta.clone()
+            });
+            assert!(source.validate().is_err());
+        }
+    }
 
     #[test]
     fn new_identity_validation_checks_values_and_preserves_distinct_same_path_records() {
@@ -111,6 +200,7 @@ mod tests {
             mode: Some(Mode::Regular),
         };
         let mut value = SourceId {
+            git_delta: None,
             commit: oid.clone(),
             tree: oid,
             submodules: Vec::new(),

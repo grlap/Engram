@@ -81,7 +81,10 @@ at exactly the registered check's commit. Accounted reports remain history;
 reverted edits can pass, while dirty, missing and different-commit roots refuse.
 New immutable decisions retain provenance for historical validation without
 filesystem reads. Existing records and staged-tree or bound-copy lanes retain
-their interpretation. See [registered Git input](features/acceptance-evaluation.md#registered-git-input-evidence). The live reader admits clean initialized submodules, including nested ones, at their pins through recursive submodule status and one root dirt check. It reads no complete file or index list; edits hidden by assume-unchanged or skip-worktree flags can be missed.
+their interpretation. The live reader admits clean initialized submodules,
+including nested ones, at their pins. It uses the Git status of each declared
+checkout. Edits hidden by assume-unchanged or skip-worktree flags can be missed.
+See [registered Git input](features/acceptance-evaluation.md#registered-git-input-evidence).
 Every live process needs the new build before the next evaluation window: older
 permissive readers may ignore the optional decision, and schema readiness does
 not detect mixed process builds. No DDL or canonical conversion is introduced.
@@ -92,7 +95,8 @@ The store-independent `engram source --root <absolute-worktree> --json`
 command exposes that same committed-input reader as bounded JSON v1, with
 clean/not-clean/unavailable status, canonical root, source/tree metadata,
 changed porcelain entries, and a complete `source_id` object containing root
-commit/tree, actual submodule HEADs and local deltas with Git blob ids and modes.
+commit/tree, one digest of the staged, unstaged and untracked Git delta, and
+pins and checkout commits of dirty or off-pin gitlinks.
 Dirty and off-pin children are described; uninitialized/conflicted children
 refuse. It opens no store and grants no execution credit. The launcher records
 and compares the full object, including unchanged dirty plain runs, through a bounded adapter;

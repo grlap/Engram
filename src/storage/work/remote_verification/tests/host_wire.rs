@@ -136,6 +136,7 @@ fn remote_verification_wire_accepts_two_shared_endpoints_and_refuses_partial_inp
 
 fn shared_input_source() -> crate::source::SourceId {
     crate::source::SourceId {
+        git_delta: None,
         commit: tested_commit(),
         tree: tested_tree().as_str().into(),
         submodules: vec![],

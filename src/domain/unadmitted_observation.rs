@@ -1066,9 +1066,13 @@ fn validate_source_change(
             )?;
             if std::mem::discriminant(&baseline.identity)
                 != std::mem::discriminant(&sighting.source_basis.identity)
+                || baseline
+                    .identity
+                    .mixed_source_id_shapes(&sighting.source_basis.identity)
             {
                 return Err(
-                    "content_comparison cannot compare a legacy revision with a source_id".into(),
+                    "content_comparison cannot compare different source identity representations"
+                        .into(),
                 );
             }
             if baseline.workspace_id != workspace_id

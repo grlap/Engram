@@ -475,11 +475,15 @@ fn record_on(
         crate::control::check_verification_result(&evidence, &producer, &request.requirement)
             .err()
             .map(Refusal::Mismatch);
-    if !evidence.source_basis.identity.same_source(&basis.identity) {
-        refusal = Some(Refusal::SourceDiffers);
-    }
-    if producer.matches_registered_source(&evidence, &basis.identity) != Some(true) {
-        refusal = Some(Refusal::SourceDiffers);
+    match evidence
+        .source_basis
+        .identity
+        .compare_source(&basis.identity)
+    {
+        None => refusal = Some(Refusal::IncomparableSourceIdFormats),
+        Some(true)
+            if producer.matches_registered_source(&evidence, &basis.identity) == Some(true) => {}
+        Some(_) => refusal = Some(Refusal::SourceDiffers),
     }
     if let Err(mismatch) = crate::control::check_verification_applicability(
         evidence.applicability.as_ref(),
@@ -690,8 +694,13 @@ pub(crate) fn binding_destination_on(
         .source_basis
         .as_ref()
         .ok_or_else(|| invalid("destination source sighting lacks its basis"))?;
-    if basis.source_id() != Some(&measured.source) {
-        return Err(invalid("destination source moved since its sighting"));
+    match basis
+        .source_id()
+        .map(|sighting| sighting.compare(&measured.source))
+    {
+        Some(Some(true)) => {}
+        Some(None) => return Err(super::super::PersistenceError::IncomparableSourceIdFormats),
+        _ => return Err(invalid("destination source moved since its sighting")),
     }
     Ok(Destination {
         item,

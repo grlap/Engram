@@ -678,6 +678,79 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
     }
 }
 
+#[test]
+fn a_measured_delta_change_unlocks_reroll_after_a_legacy_evaluation() {
+    use crate::domain::{ObservationAccounting, VerificationSourceIdentity};
+    use crate::source::{GitDelta, SourceId};
+
+    let mut fixture = fixture("project-reroll-source-format");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, claim, note) = (fixture.work, fixture.claim, fixture.evidence);
+    let host = HostSession::bind(store, &work, &claim, 10);
+    let legacy = SourceId {
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        submodules: vec![],
+        changes: vec![],
+        git_delta: None,
+    };
+    let mut blocked = judged(
+        &work,
+        AcceptanceVerdict::Fail,
+        &[],
+        cut(store, &work),
+        "legacy-failure",
+        20,
+    );
+    blocked.source_basis =
+        AcceptanceSourceBasis::from_declaration(None, Some(legacy.clone())).unwrap();
+    record(store, &blocked).expect("legacy-shaped blocking evaluation");
+
+    let delta = |digit: &str| VerificationSourceIdentity::SourceId {
+        source_id: SourceId {
+            git_delta: Some(GitDelta {
+                sha256: digit.repeat(64),
+                dirty: true,
+                gitlinks: vec![],
+            }),
+            ..legacy.clone()
+        },
+    };
+    let changed = super::citation_sources::measured_unadmitted_change(
+        store,
+        &host,
+        &claim,
+        (delta("c"), delta("d")),
+        "new-format-measured-change",
+        30,
+    );
+    assert!(matches!(
+        changed.accounting,
+        ObservationAccounting::SourceChange { .. }
+    ));
+    record(
+        store,
+        &judged(
+            &work,
+            AcceptanceVerdict::Pass,
+            &[note],
+            cut(store, &work),
+            "after-measured-change",
+            40,
+        ),
+    )
+    .expect("an accounted same-format transition is new evidence");
+}
+
 // The status shows a standing blocking evaluation with the refusal's own
 // fields before any evaluator starts. A release and a re-claim keep the run,
 // so the evaluation still stands for the new claim, as the record transaction

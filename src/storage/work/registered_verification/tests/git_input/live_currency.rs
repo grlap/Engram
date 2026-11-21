@@ -1093,7 +1093,11 @@ fn live_git_currency_service_prose_completion_does_not_read_git() {
     attach_root(&mut f);
     f.record().unwrap();
     let root = PathBuf::from(&f.request.registration.root.workspace_id);
-    assert!(crate::committed_input::read(&root).is_ok());
+    assert!(
+        crate::source::inspect(&root, crate::source::MAX_BUDGET)
+            .source_id
+            .is_some()
+    );
     let work = f
         .store
         .get_work_item(f.request.registration.binding.work_id)

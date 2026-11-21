@@ -20,7 +20,7 @@ pub(super) enum Citation {
         kind: crate::domain::VerificationKind,
         check_fingerprint: ObjectId,
         /// The source the check ran on.
-        source_basis: crate::domain::VerificationSourceBasis,
+        source_basis: Box<crate::domain::VerificationSourceBasis>,
         /// The execution observation that ran the check.
         producer: ObjectId,
     },
@@ -268,7 +268,7 @@ pub(super) fn classify_citation(
                     applicability: evidence.applicability,
                     kind: evidence.check_kind,
                     check_fingerprint: evidence.check_fingerprint,
-                    source_basis: evidence.source_basis,
+                    source_basis: Box::new(evidence.source_basis),
                     producer: evidence.producer_observation,
                 }
             } else {

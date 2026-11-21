@@ -51,58 +51,45 @@ This project tracks its work in Engram — the fourteen agent words, documented 
 ## Read-only committed-input command
 
 `engram source --root <absolute-worktree> --json` observes the shared
-source state without selecting a project, opening a store or
-creating a session. It uses the root commit, recursive submodule HEADs,
-root/child filter guards and root Git status. It neither lists the whole
-index nor fetches, initializes or repairs repositories.
+source state without selecting a project, opening a store or creating a
+session. It reads Git's root HEAD, status and selected deltas. It neither lists
+the whole index nor fetches, initializes or repairs repositories.
 
 The JSON v1 envelope contains `version`, `status`, `root`, `source`, `tree`,
-`entries`, `refusal` and `source_id`. Status is `clean`, `not_clean` or `unavailable`.
-Completed supported measurements contain the canonical root, one
-`git-commit:<full-SHA-1>` source and that commit's tree. On Windows, `root`
-uses the plain drive or UNC form (`C:\...` or `\\server\share\...`), without
-the internal verbatim prefix, matching readiness's path formatter. Entries come from the
-same NUL-delimited porcelain status and contain `status`, `path` and, for a
-rename or copy, `origin`. They are changed entries, not a complete file list.
-An unavailable measurement has no usable source/tree, empty entries and a
-bounded refusal with `code` and `message`; its root is present when resolved.
-The `source` string is commit provenance. The complete comparison value is
-`source_id`: `{commit, tree, submodules, changes}`. Every key is required.
-Each child is `{path, commit, changes}`, with its actual HEAD and a root-relative
-path; expected pins are implied by the committed parent trees. Dirty and
-off-pin children are described, including nested children. Uninitialized or
-conflicted children are unavailable. A failed capture has `source_id: null`,
-with no partial child or file identity.
+`entries`, `refusal` and `source_id`. Status is `clean`, `not_clean` or
+`unavailable`. The plain absolute root and `git-commit:<full-SHA-1>` identify
+the worktree and its commit. The entries project observed changed paths and
+rename origins. Unavailable results have null `source_id`, no usable
+source/tree, empty entries and a bounded refusal.
 
-Each change is `{path, status, origin, blob, mode}`, with all keys required.
-Paths are relative to the owning repository. `origin` is a rename/copy origin,
-otherwise null. Present regular files use a non-writing
-`git hash-object --stdin-paths` batch over only the reported changed paths in
-that repository, with Git's clean/EOL normalization. Deleted paths have null
-blob and mode. A staged deletion whose file still exists hashes that current
-file, retaining its deletion status; distinct porcelain records for one path
-are preserved. A rename is one record for the new path and origin. Ignored
-files are excluded. Gitlinks are represented by child HEADs and child deltas,
-rather than ordinary root file records.
+New `source_id` objects contain `commit`, `tree` and `git_delta`. The nested
+object contains `sha256`, `dirty` and a path-ordered `gitlinks` array. A link
+records `path`, `head_pin`, `index_pin` and `checkout_head` independently.
+Absent pins are null for additions or removals. A checkout that differs from its
+pin makes the identity dirty. A clean on-pin child's commit is bound by its
+parent tree. Parent queries skip dirt inside child checkouts. Engram uses the
+committed and changed staged or worktree versions of `.gitmodules` to select
+declared checkouts. Each initialized declared child gets its own Git status
+and filter safeguards. Only dirty or off-pin declared children contribute a
+gitlink entry. A missing or uninitialized declared checkout with an index pin
+makes the observation unavailable.
 
-Mode is a string: `100644` for regular files, `100755` for an executable on Unix,
-or `120000` for a symlink. Windows regular files use `100644`; equality is measured
-on the same host. Symlinks use the Git blob id of their link text, computed in
-memory without following the target. Newline, carriage-return and non-UTF-8
-changed paths are unavailable. Each regular hash input is prefixed with `./`
-so a leading quote cannot select Git's quoted-path decoder.
-An untracked nested repository that is not a registered submodule is also
-unavailable: Git reports its directory as one untracked path, which has no
-supported file or symlink blob. Register it as a submodule or keep it outside
-the inspected input through the repository's ignore policy. The reader never
-traverses that directory or hashes its `.git`. Since every launcher run requires
-a usable source observation, this refusal applies to focused and plain runs too.
+The digest uses a version marker and unsigned 64-bit big-endian length frames.
+The commit in each observation comes from the same Git status that reports its
+changed paths. That commit anchors the staged diff and the root tree lookup.
+Within a repository's path domain the digest includes the staged raw diff from
+HEAD to index, the binary-capable unstaged diff from index to worktree, and the path,
+mode and bytes of each Git-reported non-ignored untracked addition. Symlink
+additions include link text. Git supplies tracked modes, object identities and
+normalization. The patch is streamed in fixed 16 KiB frames with an empty frame
+at its end. Relative paths are UTF-8. Unmerged entries, untracked embedded
+repositories and unsupported file types make the observation unavailable.
+The producer does not hash unchanged
+files, write Git objects or configuration, or capture a second endpoint.
 
-Children are ordered by path UTF-8 bytes. Changes are ordered by path, status
-and origin UTF-8 bytes (null origin precedes a string). The object includes clean
-children with empty changes, while extra status calls recurse only into dirty
-or off-pin children. Status, HEAD and changed-path metadata checks refuse
-detected drift during capture. They do not establish an atomic snapshot.
+Historical `{commit, tree, submodules, changes}` objects remain readable as
+stored. Different representations are incomparable, with no new verification
+credit. Existing evidence keeps its recorded identity.
 
 The closed v1 refusal-code set is `input_unavailable`, `deadline`,
 `output_limit`. The bounded message names the root, child, configured filter,
@@ -112,8 +99,9 @@ explicitly agreed additive rule. Consumers fail closed on unknown codes.
 
 Clean and not-clean measurements exit 0; unavailable exits 1; invalid invocation
 exits 2. Consumers validate version, status and canonical root identity: exit 0
-alone is never credit. The reader has a sixty-second budget and one-MiB
-Git output bound. `--timeout-ms` still accepts `1..60000`, but a shorter value
+alone is never credit. The reader has a sixty-second budget and a one-MiB
+bound on Git metadata output and diagnostics. Patch bytes go directly to the
+digest within the same deadline. `--timeout-ms` still accepts `1..60000`, but a shorter value
 is raised to sixty seconds: no public override may end the read sooner. JSON
 expansion beyond one MiB refuses rather than truncating usable entries; the bound excludes
 the final newline. The same absolute deadline is checked after Git queries,
@@ -124,22 +112,26 @@ malformed path records refuse without lossy conversion. Git resolves to an
 absolute executable outside the inspected tree, with inherited Git redirection
 removed and the existing isolated settings retained.
 On Windows every reader query sets `core.longpaths=true` for that invocation,
-including inherited submodule helpers. This fixes refusal of otherwise clean
+including queries issued for child worktrees. This fixes refusal of otherwise clean
 deep worktrees such as Phoenix's Roslyn child, without writing user or repository
 configuration.
-Every reader query requires complete, empty stderr even when Git exits 0;
-diagnostic or partial stderr refuses with a bounded named cause rather than
-yielding usable input. The existing byte and deadline refusals remain distinct.
-Per-command `core.safecrlf=false` suppresses conversion warnings without
-changing conversion or Git's clean/dirty comparison; diagnostics are never
-accepted through a warning-text whitelist.
+The reader requires Git's output to parse and refuses stderr diagnostics,
+including an unreadable directory reported with a successful exit. Setting
+`core.safecrlf=false` for source queries suppresses conversion diagnostics while
+keeping Git's effective line-ending normalization. Failed queries retain a
+bounded diagnostic, and the byte and deadline refusals remain distinct.
+Source queries use the default stat comparison, trust ctime, disable
+`core.ignoreStat`, and bypass Git's untracked-file cache. Git's effective
+line-ending, attribute, and ignore settings still apply.
 
-This is endpoint evidence, not a byte inventory or execution attestation.
-Git-ignored output and changes hidden by index flags can be missed; captures
-can miss transient change-and-restore. Existing execution, authority and
-before/after rules remain the consumer's responsibility. Launcher committed-input
-admission calls this command through the bounded adapter described below;
-the automatic run-input check uses only that complete shared value.
+This captures source state at an endpoint. Git-ignored output and changes hidden
+by index flags can be missed, as can transient change-and-restore. For a gitlink
+without a declaration, the parent commit and its Git diffs describe the pointer.
+The contents and initialization of the separate checkout are outside that
+observation. The launcher uses the complete shared value at each execution
+boundary. Evaluation and completion each use a single live source observation
+per bound root. Checks already recorded with a commit-only basis use the clean
+status and commit ID from that same observation.
 
 The shared real-Git constructor and expected table are
 `scripts/source-input-fixtures.mjs`; `scripts/source-input.test.mjs` exercises
@@ -323,13 +315,13 @@ node scripts/test-launcher.mjs focused -- cargo test --lib control_runtime
 To select the ordinary committed-input lane explicitly, use
 `node scripts/test-launcher.mjs focused --input commit -- COMMAND ARGS...`
 or `node scripts/test-launcher.mjs full --input commit`. The request names
-`input: "commit"`; request and result records include the tested commit and
-tree. Registration still precedes input capture, and the host obtains any
-work binding from its current claim and named root. The launcher supplies no
-claim or credit itself. Without the flag, the CLI selects once before registration:
-a positively clean supported root uses commit input and a positively dirty root
-uses a plain run. Unavailable or unsupported capture refuses instead of silently
-downgrading. The saved selection is immutable through worker execution and retry.
+`input: "commit"`. Request and result records display the commit and tree from
+the shared source observation. The host obtains any work binding from its current
+claim and named root. Without the flag, the CLI selects the input mode before
+registration using the same observation it saves for admission. A clean supported
+root uses commit input, and a dirty root uses a plain run. An unavailable or
+unsupported capture refuses the request. The saved selection is immutable
+through worker execution and retry.
 Programmatic callers omitting `input` retain the plain request shape.
 
 This lane requires a clean Git checkout before capture and worker execution.
@@ -337,12 +329,10 @@ Its input checks call `engram source --root ABS --json`, using the same reader
 as evaluate and done. The launcher validates the JSON v1 envelope, canonical
 root, status and exit-code pairing; it has no fallback Git predicate. Initialized,
 clean submodules at their pins are supported, including nested submodules.
-Recursive submodule status supplies pin and initialization checks; root and child
-filter configuration is checked before the single root dirt check. The predicate
-reads no complete file or index list. Edits hidden by assume-unchanged or
-skip-worktree flags can be missed by Git status. Repository ignores and local
-excludes apply; global ignore and attribute files and inherited Git redirection
-do not. The automatic run-input check uses only the complete shared `source_id`.
+Each declared, initialized child runs its own Git status with its own filter
+safeguards. Git can miss edits hidden by assume-unchanged or skip-worktree flags.
+Git's effective ignore and attribute settings apply. The automatic run-input
+check uses only the complete shared `source_id`.
 Every run also records the complete owner value in `request.sourceId` and the
 frozen completion request, with `results.sourceIdBefore` and `sourceIdAfter`.
 The adapter validates the closed additive v1 shape and compares the entire
@@ -369,46 +359,33 @@ installed binary. A standalone focused Node test therefore needs a prior
 already builds that executable before the Node suites. Questly and Phoenix use
 TermAl's launcher; their switch to this owner is validated separately.
 
-The shared Rust reader preserves machine line-ending defaults without importing
-other machine policy. It snapshots only effective system/global `core.autocrlf`
-and `core.eol`, including both XDG and home Git configuration and conditional
-includes. The root and each initialized recursive child must resolve the same
-normalized fallback pair; a contextual difference or unsupported value returns
-`input_unavailable`. Repository-local and worktree values still override that
-fallback independently in every child. EOL defaults are never passed as `-c`
-overrides. Windows long-path handling and `core.safecrlf=false` remain explicit
-per-invocation settings.
+Git applies each repository's effective line-ending, attribute and ignore
+configuration, including global settings, when it reports changed paths and
+emits patches. The reader creates no scratch or configuration files. It
+disables configured filesystem monitor commands for source queries.
+The reader neutralizes clean, smudge and process drivers it discovers before
+a repository's status and patch reads. A filter needed for a path makes
+capture return `input_unavailable` and name the driver. Inactive drivers leave
+the source identity available. Git queries share the caller's deadline and
+the existing metadata and stderr limits.
 
-When a fallback value exists, the reader gives Git a fresh owner-private global
-file containing only those validated EOL values, outside the inspected tree and
-Engram home. No inspected or machine configuration is changed. The file and its
-unique directory are removed on success and refusal; deletion is best-effort and
-does not change the verdict or emit diagnostics. With no fallback values, no
-file is created. A configured process temp folder inside the inspected tree or
-Engram home refuses as `input_unavailable` when a fallback is needed; configure
-temp outside those locations for the production reader. Unix directories use
-0700 permissions; on Windows they inherit the temp folder's ACL, so that folder
-must be private to the user. Configuration discovery and every Git query share the existing
-thirty-second deadline, output bound and empty-stderr requirement. The EOL policy adds no JSON field or refusal code. Shared real-Git fixtures exercise actual
-CRLF checkouts with forced stat rechecks, local overrides, system/global/XDG
-precedence and changed-content controls; adapters consume the owner's verdict.
-Unit-test readers inject isolated null machine scopes and scratch under `target/`;
-CLI conformance and control-dogfood native processes use explicit homes,
-configuration and temp there. They
-exercise production discovery without consulting or writing the developer's
-machine configuration or system temp folder.
+Compare dirty identities within the same checkout on the same host, where
+Git's effective configuration governs what it sees as a change. Cross-host
+equality is defined for clean committed input. The CLI conformance fixtures
+exercise actual checkouts with CRLF, local overrides and conditional includes
+using isolated Git configuration under `target/`.
 
 After execution, the commit lane's `results.input` keeps stage outcome separate
-from input eligibility: `clean` or `input_changed`. Only complete source identity
+from input eligibility. The outcome is `clean`, `input_changed` or
+`input_unverified`. Only complete source identity
 equality and passing stages set `eligible: true`; unavailable post-run input
 never does. An ineligible run exits nonzero and its machine record says
 `overall=failed`, even when every stage passed. The reason is `input-changed`,
 or `input-unverified` when capture was unavailable. A newly created non-ignored
 untracked file is an ordinary source identity mismatch. The automatic check has
-no separate debris disposition and reads no `.git/info` rule images, staged or
-unstaged diff fingerprint, ignored-path inventory or complete file/index list.
-Before/after identities remain complete in `results.json`, with a bounded
-changed-path/child summary in the mismatch diagnostic.
+no separate debris disposition. Before/after identities remain complete in
+`results.json`. For the new format, a digest mismatch is reported as a Git delta
+change.
 
 Eligibility is not host verification or landing approval.
 The host reads the shared committed-input shape; the additional tree field
@@ -569,7 +546,8 @@ The snapshot checks are boundary checks, not proof against transient edits.
 The explicit review-freeze CLI retains its separate schema-1 algorithm and
 coverage warnings. Automatic runs report the source owner's ordinary Git
 normalization and ignored-path limits. Line-ending-only changes erased by Git
-normalization can be invisible; configured filters are refused. Known intervening
+normalization can be invisible. A filter that Git needs to apply makes the
+source observation unavailable. Known intervening
 edits still invalidate a run. Neither comparison proves raw filesystem bytes. Artifacts use
 owner-only POSIX modes (0700 run directory, 0600 files); Windows uses its ACLs.
 Long launcher errors keep a bounded excerpt in the result and attempt to retain
@@ -650,7 +628,9 @@ prints this after execution admission and before running stages, so the parent
 can retain recovery details while using its host's process-completion wait.
 
 Under TermAl, both full and focused runs register through the host's existing
-test-run endpoint before capturing the input `source_id`. The initiating session
+test-run endpoint before publishing the admitted input. Implicit input selection
+reuses the same capture for admission. The worker checks it again before running
+stages. The initiating session
 owns the registration; a different `--notify` recipient does not change its
 project. Registration and a detached worker's confirmation share an eight-second
 budget. For foreground and different-session notification runs, outside TermAl

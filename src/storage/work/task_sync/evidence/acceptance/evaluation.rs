@@ -48,13 +48,13 @@ pub(super) fn inspect(
     if !record.all_pass() {
         return Ok(Some(Refusal::BlockingVerdict));
     }
-    if record
+    let comparison = record
         .source_basis
         .as_ref()
         .and_then(AcceptanceSourceBasis::source_id)
-        != Some(source)
-    {
-        return Ok(Some(Refusal::SourceDiffers));
+        .map_or(Some(false), |recorded| recorded.compare(source));
+    if let Some(refusal) = super::source_refusal(comparison) {
+        return Ok(Some(refusal));
     }
     let Some(named_root) = &record.named_root_binding else {
         return Ok(Some(Refusal::OriginContextUnavailable));

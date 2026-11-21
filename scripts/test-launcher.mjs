@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureCommitInputStatus, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, compareSourceIds, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
@@ -772,8 +772,12 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   try { sourceBinary = sourceBinaryPath(env); }
   catch (error) { selectionError = error; }
   const sourceEnv = sourceBinary ? { ...env, ENGRAM_SOURCE_BINARY: sourceBinary } : env;
-  if (selectInput) {
-    try { if (!selectionError) runInput = selectDefaultInput(root, sourceEnv); }
+  let selectedSource;
+  if (selectInput && !selectionError) {
+    try {
+      selectedSource = await commitInputStatus(root, sourceEnv);
+      runInput = selectDefaultInput(root, sourceEnv, selectedSource);
+    }
     catch (error) {
       selectionError = error;
     }
@@ -804,8 +808,8 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     heartbeat: { at: request.started, everyMs }, limitations: sourceIdLimitations(),
     stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) };
   save(join(runDir, "results.json"), initial);
-  // The host stamps registration before this launcher reads its input. Its
-  // carried-check watcher ordering depends on that boundary, not wall time.
+  // Register before publishing the admitted input. Implicit selection reuses
+  // its existing capture, and the worker checks it again before stages run.
   const registrationHeartbeat = startHeartbeat(join(runDir, "results.json"), initial, everyMs);
   try {
     save(join(runDir, "request.json"), request);
@@ -823,15 +827,14 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   }
   try {
     if (selectionError) throw selectionError;
-    const sourceBefore = await commitInputStatus(root, sourceEnv);
-    let committed;
-    if (request.input === "commit") {
-      committed = sourceBefore;
-      if (!commitInputStatusClean(committed)) {
+    const sourceBefore = selectedSource ?? await commitInputStatus(root, sourceEnv);
+    const committed = request.input === "commit";
+    if (committed) {
+      if (!commitInputStatusClean(sourceBefore)) {
         const result = readJson(join(runDir, "results.json"));
         Object.assign(result, { state: "failed", exitCode: 1, reason: "input-not-clean", ended: new Date().toISOString(),
-          error: `committed-input run refused: checkout is not clean (${commitInputNotCleanReason(committed)}); no stage ran`,
-          input: { kind: "commit", cleanBefore: false, dirtyPaths: committed.entries } });
+          error: `committed-input run refused: checkout is not clean (${commitInputNotCleanReason(sourceBefore)}); no stage ran`,
+          input: { kind: "commit", cleanBefore: false, dirtyPaths: sourceBefore.entries } });
         save(join(runDir, "results.json"), result);
         publishLaunchRequest(runDir, request);
         return runDir;
@@ -839,9 +842,11 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     }
     request.sourceId = sourceBefore.sourceId;
     if (committed) {
-      Object.assign(request, { commit: committed.commit, tree: committed.tree });
+      // Keep the established artifact fields as projections of the admitted source_id.
+      const { commit, tree } = request.sourceId;
+      Object.assign(request, { commit, tree });
       const result = readJson(join(runDir, "results.json"));
-      result.input = { kind: "commit", commit: committed.commit, tree: committed.tree, cleanBefore: true };
+      result.input = { kind: "commit", commit, tree, cleanBefore: true };
       save(join(runDir, "results.json"), result);
     }
     encodeRunRecord(request, "request.json");
@@ -1145,16 +1150,21 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     try { sourceBefore = captureCommitInputStatus(request.root, childEnv); }
     catch (error) { throw because("input-capture-failed", error); }
     result.sourceIdBefore = sourceBefore.sourceId;
-    if (!sourceIdsEqual(request.sourceId, result.sourceIdBefore)) {
+    const comparisonBefore = compareSourceIds(request.sourceId, result.sourceIdBefore);
+    if (comparisonBefore === "unknown") {
+      throw because("input-unverified", new Error("source_id formats are incomparable before execution; no stages run"));
+    }
+    if (comparisonBefore === "mismatch") {
       throw because("input-changed", new Error("source_id changed before execution; no stages run\n"
         + sourceIdDifference(request.sourceId, sourceBefore.sourceId)));
     }
     if (request.input === "commit") {
-      if (!commitInputStatusClean(sourceBefore) || sourceBefore.commit !== request.commit || sourceBefore.tree !== request.tree
-          || result.input?.kind !== "commit" || result.input.cleanBefore !== true
-          || result.input.commit !== sourceBefore.commit || result.input.tree !== sourceBefore.tree) {
+      if (!commitInputStatusClean(sourceBefore)
+          || result.input?.kind !== "commit" || result.input.cleanBefore !== true) {
         throw because("input-changed", new Error("committed-input worker has no matching clean commit; no stages run"));
       }
+      const { commit, tree } = result.sourceIdBefore;
+      result.input = { kind: "commit", commit, tree, cleanBefore: true };
     }
     // The capture blocked the timer; beat with this save.
     result.heartbeat.at = new Date().toISOString();
@@ -1199,14 +1209,18 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       sourceRefusal = error.refusal ?? { code: "input_unavailable", message: error.message.slice(0, 4096) };
     }
     result.sourceIdAfter = sourceRefusal ? null : status.sourceId;
+    const comparisonAfter = compareSourceIds(result.sourceIdBefore, result.sourceIdAfter);
     if (request.input === "commit") {
       result.input.after = sourceRefusal ? { clean: false, refusal: sourceRefusal }
-        : { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries };
-      result.input.outcome = sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter) ? "clean" : "input_changed";
+        : { commit: status.sourceId.commit, tree: status.sourceId.tree,
+          clean: commitInputStatusClean(status), paths: status.entries };
+      result.input.outcome = comparisonAfter === "matched" ? "clean"
+        : comparisonAfter === "mismatch" ? "input_changed" : "input_unverified";
     }
-    if (!sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)) {
-      throw because(sourceRefusal ? "input-unverified" : "input-changed",
+    if (comparisonAfter !== "matched") {
+      throw because(comparisonAfter === "unknown" ? "input-unverified" : "input-changed",
         new Error(sourceRefusal ? `source_id unavailable after execution: ${sourceRefusal.message}`
+          : comparisonAfter === "unknown" ? "source_id formats are incomparable after execution; stage outcomes are retained"
           : "source_id changed during execution; stage results do not validate the current source\n"
             + sourceIdDifference(result.sourceIdBefore, result.sourceIdAfter)));
     }
@@ -1312,9 +1326,10 @@ function stateCounts(entries, state) {
 }
 function completionInput(request, result) {
   const values = [request.sourceId, result.sourceIdBefore, result.sourceIdAfter];
+  const comparisons = values.map((value) => compareSourceIds(request.sourceId, value));
   const comparison = result.reason === "input-changed" ? "mismatch"
-    : !values.every((value) => sourceIdsEqual(value, value)) ? "unknown"
-      : values.every((value) => sourceIdsEqual(request.sourceId, value)) ? "matched" : "mismatch";
+    : comparisons.includes("unknown") ? "unknown"
+      : comparisons.includes("mismatch") ? "mismatch" : "matched";
   return { comparison };
 }
 
@@ -1391,7 +1406,7 @@ function renderCompletion(runDir, request, result, now) {
   if (request.input === "commit") {
     const input = result.input;
     const objectId = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value) ? value : "unknown";
-    const outcome = ["clean", "input_changed"].includes(input?.outcome) ? input.outcome
+    const outcome = ["clean", "input_changed", "input_unverified"].includes(input?.outcome) ? input.outcome
       : input?.cleanBefore === false ? "refused-not-clean" : "unknown";
     lines.push(`committed-input: commit=${quote(objectId(input?.commit))} tree=${quote(objectId(input?.tree))} outcome=${quote(outcome)} eligible=${input?.eligible === true}`);
   }
@@ -1816,8 +1831,7 @@ async function main(args) {
 
 // Select once before immutable request creation. A failed capture must not
 // turn an unavailable repository into a plain run; only known dirt does.
-export function selectDefaultInput(root, env = process.env) {
-  const status = captureCommitInputStatus(root, env);
+export function selectDefaultInput(root, env = process.env, status = captureCommitInputStatus(root, env)) {
   return commitInputStatusClean(status) ? "commit" : undefined;
 }
 

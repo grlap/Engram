@@ -644,9 +644,9 @@ test("source drift before execution refuses to run the captured input", async ()
     assert.equal(result.stages[0].state, "unrun");
     assert.equal(result.reason, "input-changed");
     assert.notDeepEqual(result.sourceIdBefore, admitted);
-    assert.ok(result.sourceIdBefore.changes.some(({ path, status }) => path === "tracked.txt" && status === " M"));
+    assert.equal(result.sourceIdBefore.git_delta.dirty, true);
     assert.match(result.error, /^source_id changed before execution; no stages run\n/u);
-    assert.match(result.error, /tracked\.txt.*\[ M\]/u);
+    assert.match(result.error, /Git delta changed/u);
   });
 });
 
@@ -659,7 +659,7 @@ test("source drift during execution cannot be reported as a passing run", async 
     assert.notEqual(result.exitCode, 0);
     assert.equal(result.reason, "input-changed");
     assert.match(result.error, /^source_id changed during execution; stage results do not validate the current source\n/u);
-    assert.match(result.error, /tracked\.txt.*\[ M\]/u);
+    assert.match(result.error, /Git delta changed/u);
     assert.equal(result.stages[0].state, "passed");
     assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
   });
@@ -693,8 +693,8 @@ describe("an input that changed only by new untracked paths after every stage pa
       assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
       assert.deepEqual(result.stages.map(({ state, code }) => [state, code]), [["passed", 0]]);
       assert.equal(result.inputCheck, undefined);
-      assert.deepEqual(result.sourceIdBefore.changes, []);
-      assert.deepEqual(result.sourceIdAfter.changes.map(({ path }) => path), ["debris-a.log", "debris-b.log"]);
+      assert.equal(result.sourceIdBefore.git_delta.dirty, false);
+      assert.equal(result.sourceIdAfter.git_delta.dirty, true);
       const summary = await summarize(runDir);
       assert.match(summary, /^FAIL .* exit=1$/mu);
       assert.match(summary, /^reason: input-changed$/mu);
@@ -707,15 +707,14 @@ describe("an input that changed only by new untracked paths after every stage pa
     });
   });
 
-  test("the complete source identity retains all changed paths within its aggregate bound", async () => {
+  test("many untracked additions still produce a bounded complete Git delta", async () => {
     await repository(async (root) => {
       const source = "for (let i = 0; i < 201; i += 1) require('node:fs').writeFileSync('debris-' + String(i).padStart(3, '0') + '.log', 'x');";
       const { runDir, result } = await run(root, source);
       assert.equal(result.reason, "input-changed");
       assert.equal(result.inputCheck, undefined);
-      assert.deepEqual(result.sourceIdAfter.changes.length, 201);
-      assert.deepEqual(result.sourceIdAfter.changes[0].path, "debris-000.log");
-      assert.deepEqual(result.sourceIdAfter.changes.at(-1).path, "debris-200.log");
+      assert.equal(result.sourceIdAfter.git_delta.dirty, true);
+      assert.match(result.sourceIdAfter.git_delta.sha256, /^[a-f0-9]{64}$/u);
       assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
       assert.match(await summarize(runDir), /^reason: input-changed$/mu);
     });
@@ -782,7 +781,7 @@ describe("an input that changed only by new untracked paths after every stage pa
       + " fs.writeFileSync('debris.log', 'x\\n'); });";
     await repository(async (root) => {
       const { runDir, result } = await run(root, source);
-      assert.equal(json(join(runDir, "input.json")).sourceId.changes.length, 1, "the stage replaced the saved capture");
+      assert.equal(json(join(runDir, "input.json")).sourceId.git_delta.dirty, true, "the stage replaced the saved capture");
       assert.equal(result.reason, "input-changed");
       assert.equal(result.inputCheck, undefined);
     });

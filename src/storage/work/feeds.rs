@@ -913,6 +913,18 @@ pub(super) fn newest_measured_source_basis_on(
     workspace: Option<&str>,
     through: i64,
 ) -> Result<Option<(i64, crate::domain::VerificationSourceBasis)>, StoreError> {
+    newest_measured_source_basis_with_format_on(connection, run_id, workspace, through, None)
+}
+
+/// Exclude sightings in the other shared wire format before applying LIMIT.
+/// Historical revision-only sightings retain their original comparison rules.
+pub(super) fn newest_measured_source_basis_with_format_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    workspace: Option<&str>,
+    through: i64,
+    git_delta: Option<bool>,
+) -> Result<Option<(i64, crate::domain::VerificationSourceBasis)>, StoreError> {
     let (workspace_sql, revision_sql, source_id_sql) = (
         source_basis_sql("workspace_id"),
         source_basis_sql("source_revision"),
@@ -929,9 +941,11 @@ pub(super) fn newest_measured_source_basis_on(
                    AND (entry.object_kind = 'environment_evidence' OR {SOURCE_RECORD_SQL})
                    AND (?3 IS NULL OR {workspace_sql} = ?3)
                    AND ({revision_sql} IS NOT NULL OR {source_id_sql} IS NOT NULL)
+                   AND (?4 IS NULL OR {source_id_sql} IS NULL
+                        OR (json_type({source_id_sql}, '$.git_delta') IS 'object') = ?4)
                  ORDER BY entry.position DESC LIMIT 1"
             ),
-            params![run_id.0.to_string(), through, workspace],
+            params![run_id.0.to_string(), through, workspace, git_delta],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,

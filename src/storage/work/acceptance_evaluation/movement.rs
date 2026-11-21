@@ -67,6 +67,7 @@ impl<'a> BasisMoveState<'a> {
                 return None;
             }
             if let (Some(judged), Some(sighting)) = (self.judged, observation.source_basis.as_ref())
+                && !sighting.identity.mixed_source_id_shapes(judged)
             {
                 self.quiet_move =
                     (!sighting.identity.same_source(judged)).then_some((at, observation));

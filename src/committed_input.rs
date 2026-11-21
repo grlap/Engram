@@ -2,10 +2,10 @@
 //! evidence, never a durable identity or a historical seal validator.
 
 use anyhow::{Context, Result, bail, ensure};
-mod eol;
 use std::{
+    collections::BTreeSet,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{ChildStdout, Command, Stdio},
     time::{Duration, Instant},
 };
 
@@ -21,33 +21,9 @@ pub(crate) fn read_count() -> usize {
     READS.get()
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CommittedInput {
-    pub(crate) root: PathBuf,
-    pub(crate) commit: String,
-    pub(crate) clean: bool,
-    pub(crate) measured_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// Read the live registered input without consulting turn reports. Unlike
-/// Engram's Node launcher, this reader admits eligible pinned submodules.
-/// An unsupported repository is unavailable, never implicitly clean.
-pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
-    let _warning = crate::operation_time::Warning::start("registered committed input read");
-    capture(
-        root,
-        crate::operation_time::now() + crate::source::MAX_BUDGET,
-        false,
-        &mut None,
-    )
-    .map(|value| value.input)
-}
-
 struct Capture {
-    input: CommittedInput,
-    tree: Option<String>,
     entries: Vec<crate::source::Entry>,
-    source_id: Option<crate::source::SourceId>,
+    source_id: crate::source::SourceId,
 }
 
 // The source API owns the warning through observation and final result processing.
@@ -65,20 +41,20 @@ pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observati
     }
     let deadline = crate::operation_time::now() + budget;
     let mut known_root = None;
-    let mut observed = match capture(root, deadline, true, &mut known_root) {
+    let mut observed = match capture(root, deadline, &mut known_root) {
         Ok(value) => Observation {
             version: 1,
-            status: if value.input.clean {
+            status: if value.source_id.is_clean() {
                 Status::Clean
             } else {
                 Status::NotClean
             },
-            root: known_root.clone(),
-            source: Some(format!("git-commit:{}", value.input.commit)),
-            tree: value.tree,
+            root: known_root,
+            source: Some(format!("git-commit:{}", value.source_id.commit)),
+            tree: Some(value.source_id.tree.clone()),
             entries: value.entries,
             refusal: None,
-            source_id: value.source_id,
+            source_id: Some(value.source_id),
             deadline: Some(deadline),
         },
         Err(error) => {
@@ -110,12 +86,8 @@ fn before_deadline<T>(deadline: Instant, result: Result<T>) -> Result<T> {
     result
 }
 
-fn capture(
-    root: &Path,
-    deadline: Instant,
-    details: bool,
-    known_root: &mut Option<String>,
-) -> Result<Capture> {
+fn capture(root: &Path, deadline: Instant, known_root: &mut Option<String>) -> Result<Capture> {
+    use crate::source::SourceId;
     #[cfg(test)]
     READS.set(READS.get() + 1);
     ensure!(
@@ -125,241 +97,64 @@ fn capture(
     let root = root
         .canonicalize()
         .context("the registered root is unavailable")?;
-    if details {
-        root.to_str().context("the registered root is not UTF-8")?;
-        let text = crate::storage::store_path_text(&root);
-        ensure!(
-            Path::new(&text).is_absolute(),
-            "the registered root has no plain absolute path"
-        );
-        *known_root = Some(text);
-    }
+    let text = crate::storage::store_path_text(&root);
+    ensure!(
+        root.to_str().is_some() && Path::new(&text).is_absolute(),
+        "unsupported worktree path"
+    );
+    *known_root = Some(text);
     let git = resolve_git(&root)?;
-    let environment = eol::Environment::for_read();
-    let policy = eol::Policy::read(&git, &root, deadline, &environment)?;
-    let fallback = policy.materialize(&root, deadline, &environment)?;
-    let global = fallback.as_ref().map(|value| value.file.as_path());
-    let run = |args: &[&str], missing| query(&git, &root, args, missing, deadline, global);
-    let top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?;
-    ensure!(
-        top.canonicalize()? == root,
-        "the registered root is not this Git worktree's top level"
-    );
-    let admin = path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
-    let head = || -> Result<String> {
-        let bytes = run(&["rev-parse", "--verify", "HEAD^{commit}"], false)?;
-        let value = std::str::from_utf8(&bytes)?.trim();
-        ensure!(
-            value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "registered committed input requires a SHA-1 commit; SHA-256 repositories are unsupported"
-        );
-        Ok(value.to_owned())
-    };
-    let commit = head()?;
-    let tree = if details {
-        let bytes = run(
-            &["rev-parse", "--verify", &format!("{commit}^{{tree}}")],
-            false,
-        )?;
-        let value = std::str::from_utf8(&bytes)?.trim();
-        ensure!(
-            value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "Git returned a malformed committed tree"
-        );
-        Some(value.to_owned())
-    } else {
-        None
-    };
-    let filters = run(
-        &[
-            "config",
-            "--null",
-            "--get-regexp",
-            "^filter\\..*\\.(clean|smudge|process)$",
-        ],
-        true,
-    )?;
-    ensure!(
-        filters.is_empty(),
-        "configured Git filters are unsupported for committed input"
-    );
-    let modules = run(&["submodule", "status", "--recursive"], false)
-        .context("cannot read recursive submodule status")?;
-    let child_states = submodule_states(&modules, details)?;
-    let children: Vec<_> = child_states
-        .iter()
-        .map(|child| child.path.clone())
-        .collect();
-    // Read filter configuration before root status can invoke child filters.
-    guard_child_filters(
-        &git,
-        &root,
-        &children,
+    let query = Query {
+        git: &git,
         deadline,
-        &policy,
-        global,
-        &environment,
-    )?;
-    let status = run(
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-            "-z",
-        ],
-        false,
-    )?;
-    let source_id = if details {
-        Some(delta::capture(
-            &Query {
-                git: &git,
-                global,
-                deadline,
-            },
-            &root,
-            &commit,
-            tree.as_deref().context("missing captured tree")?,
-            &status,
-            &child_states,
-        )?)
-    } else {
-        guard_child_dirt(&children, &status)?;
-        None
     };
-    ensure!(
-        head()? == commit,
-        "HEAD moved during the committed-input read"
-    );
-    let end_top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?.canonicalize()?;
-    let end_admin =
-        path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
-    ensure!(
-        end_top == root && end_admin == admin,
-        "the registered Git worktree changed during the read"
-    );
-    let entries = if details {
-        status_entries(&status)?
-    } else {
-        Vec::new()
+    let repository = query.for_repository(&root);
+    check_toplevel(&repository, &root)?;
+    let filters = repository.filter_overrides()?;
+    let repository = Repository {
+        filter_overrides: &filters,
+        ..repository
     };
+    let (commit, delta, entries) = delta::capture(&query, &repository)?;
+    let tree = commit_id(&repository, &format!("{commit}^{{tree}}"))?;
     before_deadline(
         deadline,
         Ok(Capture {
-            input: CommittedInput {
-                root,
-                commit,
-                clean: status.is_empty(),
-                measured_at: chrono::Utc::now(),
-            },
-            tree,
             entries,
-            source_id,
+            source_id: SourceId {
+                commit,
+                tree,
+                submodules: Vec::new(),
+                changes: Vec::new(),
+                git_delta: Some(delta),
+            },
         }),
     )
 }
 
-fn guard_child_filters(
-    git: &Path,
-    root: &Path,
-    children: &[String],
-    deadline: Instant,
-    policy: &eol::Policy,
-    global: Option<&Path>,
-    environment: &eol::Environment,
-) -> Result<()> {
-    for name in children {
-        ensure!(
-            eol::Policy::read(git, &root.join(name), deadline, environment).with_context(
-                || format!("submodule '{name}': cannot read machine line-ending policy")
-            )? == *policy,
-            "submodule '{name}': contextual machine line-ending fallback differs from the root"
-        );
-        let filters = query(
-            git,
-            &root.join(name),
-            &[
-                "config",
-                "--null",
-                "--get-regexp",
-                "^filter\\..*\\.(clean|smudge|process)$",
-            ],
-            true,
-            deadline,
-            global,
-        )
-        .with_context(|| format!("submodule '{name}': cannot read filter configuration"))?;
-        ensure!(
-            filters.is_empty(),
-            "submodule '{name}': configured Git filters are unsupported"
-        );
-    }
-    Ok(())
-}
-
-fn guard_child_dirt(children: &[String], status: &[u8]) -> Result<()> {
-    for name in children {
-        ensure!(
-            !status.split(|byte| *byte == 0).any(|entry| {
-                entry.get(3..).is_some_and(|path| {
-                    path == name.as_bytes() || path.starts_with(format!("{name}/").as_bytes())
-                })
-            }),
-            "submodule '{name}': working tree is dirty"
-        );
-    }
-    Ok(())
-}
-
-fn status_entries(bytes: &[u8]) -> Result<Vec<crate::source::Entry>> {
-    use crate::source::Entry;
+fn check_toplevel(repository: &Repository<'_, '_>, expected: &Path) -> Result<()> {
+    let top = path_output(repository.run(&["rev-parse", "--show-toplevel"])?)?;
     ensure!(
-        bytes.is_empty() || bytes.last() == Some(&0),
-        "Git returned truncated porcelain"
+        top.canonicalize()? == expected.canonicalize()?,
+        "unavailable Git worktree association"
     );
-    let mut records = bytes
-        .strip_suffix(&[0])
-        .unwrap_or(bytes)
-        .split(|byte| *byte == 0);
-    let mut entries = Vec::new();
-    if bytes.is_empty() {
-        return Ok(entries);
-    }
-    while let Some(record) = records.next() {
-        ensure!(
-            record.len() >= 4 && record[2] == b' ',
-            "Git returned malformed porcelain"
-        );
-        let status = std::str::from_utf8(&record[..2])?;
-        ensure!(
-            status.bytes().all(|byte| b" MADRCUT?!".contains(&byte)) && status != "  ",
-            "Git returned malformed porcelain status"
-        );
-        let path =
-            std::str::from_utf8(&record[3..]).context("Git returned a non-UTF-8 changed path")?;
-        ensure!(!path.is_empty(), "Git returned an empty changed path");
-        let origin = if status.bytes().any(|byte| matches!(byte, b'R' | b'C')) {
-            let value = records
-                .next()
-                .context("Git rename/copy has no origin path")?;
-            let value =
-                std::str::from_utf8(value).context("Git returned a non-UTF-8 origin path")?;
-            ensure!(!value.is_empty(), "Git returned an empty origin path");
-            Some(value.to_owned())
-        } else {
-            None
-        };
-        entries.push(Entry {
-            status: status.to_owned(),
-            path: path.to_owned(),
-            origin,
-        });
-    }
-    Ok(entries)
+    Ok(())
 }
 
-// Resolve before setting Git's cwd. In particular, Windows must never search
-// an inspected checkout for git.exe. Relative PATH entries confer no trust.
+fn valid_oid(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn commit_id(repository: &Repository<'_, '_>, reference: &str) -> Result<String> {
+    let bytes = repository.run(&["rev-parse", "--verify", reference])?;
+    let value = std::str::from_utf8(&bytes)?.trim();
+    ensure!(valid_oid(value), "invalid Git SHA-1 object identity");
+    Ok(value.to_owned())
+}
+
 fn resolve_git(root: &Path) -> Result<PathBuf> {
     let name = if cfg!(windows) { "git.exe" } else { "git" };
     for directory in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
@@ -384,65 +179,6 @@ fn resolve_git(root: &Path) -> Result<PathBuf> {
     bail!("a trusted absolute Git executable outside the inspected root is unavailable")
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Child {
-    path: String,
-    commit: String,
-    off_pin: bool,
-}
-
-#[cfg(test)]
-fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
-    submodule_states(bytes, false)
-        .map(|children| children.into_iter().map(|child| child.path).collect())
-}
-
-fn submodule_states(bytes: &[u8], allow_off_pin: bool) -> Result<Vec<Child>> {
-    let text = std::str::from_utf8(bytes).context("Git returned non-UTF-8 submodule status")?;
-    let mut children = Vec::new();
-    for line in text.lines() {
-        let prefix = *line
-            .as_bytes()
-            .first()
-            .context("empty submodule status row")?;
-        let row = line.get(1..).context("malformed submodule status")?;
-        let (pin, path) = row
-            .split_once(' ')
-            .context("malformed submodule status row")?;
-        let name = if matches!(prefix, b' ' | b'+') && path.ends_with(')') {
-            path.rsplit_once(" (").map_or(path, |(name, _)| name)
-        } else {
-            path
-        };
-        ensure!(
-            !name.is_empty()
-                && Path::new(name)
-                    .components()
-                    .all(|part| matches!(part, std::path::Component::Normal(_)))
-                && pin.len() == 40
-                && pin.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "submodule '{name}': malformed path or commit"
-        );
-        match prefix {
-            b' ' => children.push(Child {
-                path: name.to_owned(),
-                commit: pin.to_owned(),
-                off_pin: false,
-            }),
-            b'-' => bail!("submodule '{name}': uninitialized"),
-            b'+' if allow_off_pin => children.push(Child {
-                path: name.to_owned(),
-                commit: pin.to_owned(),
-                off_pin: true,
-            }),
-            b'+' => bail!("submodule '{name}': HEAD differs from its pin"),
-            b'U' => bail!("submodule '{name}': conflicted gitlink"),
-            _ => bail!("submodule '{name}': malformed status"),
-        }
-    }
-    Ok(children)
-}
-
 fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
     let text = String::from_utf8(bytes).context("Git returned a non-UTF-8 root path")?;
     let text = text.trim_end_matches(['\r', '\n']);
@@ -450,83 +186,134 @@ fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
     Ok(PathBuf::from(text))
 }
 
-fn query(
-    git: &Path,
-    root: &Path,
-    args: &[&str],
-    missing: bool,
-    deadline: Instant,
-    global: Option<&Path>,
-) -> Result<Vec<u8>> {
-    query_with_input(git, root, args, missing, deadline, global, None)
-}
-
 struct Query<'a> {
     git: &'a Path,
-    global: Option<&'a Path>,
     deadline: Instant,
 }
 
-impl Query<'_> {
-    fn run(&self, root: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
-        query_with_input(
-            self.git,
+impl<'a> Query<'a> {
+    fn for_repository<'r>(&self, root: &'r Path) -> Repository<'a, 'r> {
+        Repository {
+            git: self.git,
             root,
-            args,
-            false,
-            self.deadline,
-            self.global,
-            input,
-        )
+            deadline: self.deadline,
+            filter_overrides: &[],
+        }
     }
 }
 
-fn query_with_input(
-    git: &Path,
-    root: &Path,
-    args: &[&str],
-    missing: bool,
+struct Repository<'a, 'r> {
+    git: &'a Path,
+    root: &'r Path,
     deadline: Instant,
-    global: Option<&Path>,
-    input: Option<&[u8]>,
-) -> Result<Vec<u8>> {
-    let mut command = git_command(git, root);
-    if let Some(global) = global {
-        // Git's config reader needs the plain Windows spelling, while Rust
-        // keeps the canonical native path for file ownership and cleanup.
-        command.env("GIT_CONFIG_GLOBAL", crate::storage::store_path_text(global));
+    filter_overrides: &'r [String],
+}
+
+impl Repository<'_, '_> {
+    fn filter_overrides(&self) -> Result<Vec<String>> {
+        // Discover the configured driver names before Git reads the worktree.
+        let mut command = git_command(self.git, self.root);
+        command.args([
+            "config",
+            "--null",
+            "--includes",
+            "--name-only",
+            "--get-regexp",
+            "^filter\\..+\\.(clean|smudge|process|required)$",
+        ]);
+        let bytes = run_query(command, "config", true, self.deadline, None)?;
+        let keys = std::str::from_utf8(&bytes).context("non-UTF-8 Git filter configuration")?;
+        ensure!(
+            keys.is_empty() || keys.ends_with('\0'),
+            "truncated Git filter keys"
+        );
+        let mut drivers = BTreeSet::new();
+        for key in keys.split_terminator('\0') {
+            let (name, _) = key
+                .strip_prefix("filter.")
+                .and_then(|key| key.rsplit_once('.'))
+                .context("invalid Git filter key")?;
+            ensure!(
+                !name.is_empty() && !name.contains(['=', '\r', '\n']),
+                "unsupported Git filter driver name {name:?}"
+            );
+            drivers.insert(name);
+        }
+        Ok(drivers
+            .iter()
+            .flat_map(|name| {
+                ["clean=", "smudge=", "process=", "required=true"]
+                    .map(|setting| format!("filter.{name}.{setting}"))
+            })
+            .collect())
     }
-    command.args(args);
-    run_query_with_input(command, args[0], missing, deadline, input)
+
+    fn run(&self, args: &[&str]) -> Result<Vec<u8>> {
+        self.run_with_input(args, false, None)
+    }
+
+    fn run_with_input(
+        &self,
+        args: &[&str],
+        missing: bool,
+        input: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        run_query(self.command(args), args[0], missing, self.deadline, input)
+    }
+
+    fn stream<T: Send + 'static>(
+        &self,
+        args: &[&str],
+        read: impl FnOnce(ChildStdout) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let remaining = query_budget(self.deadline)?;
+        let result = crate::task_sync::git::stream_query_command(
+            self.command(args),
+            args[0],
+            remaining,
+            crate::task_sync::git::QueryStderrPolicy::RequireEmpty,
+            read,
+        );
+        before_deadline(self.deadline, result)
+    }
+
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = git_command(self.git, self.root);
+        for setting in self.filter_overrides {
+            command.args(["-c", setting]);
+        }
+        command.args(args);
+        command
+    }
 }
 
 fn git_command(git: &Path, root: &Path) -> Command {
-    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
     let mut command = Command::new(git);
-    command
-        .current_dir(root)
-        .args(["--no-pager", "--no-optional-locks", "--no-replace-objects"]);
-    // Command-scoped configuration also reaches Git's submodule helpers.
-    // Deep checked-out children must not depend on user or repository config.
+    command.current_dir(root).args([
+        "--no-pager",
+        "--no-optional-locks",
+        "--no-replace-objects",
+        "--literal-pathspecs",
+    ]);
+    // Apply the same controls to each checkout while leaving its line-ending
+    // configuration to Git.
     #[cfg(windows)]
     command.args(["-c", "core.longpaths=true"]);
-    for setting in [
-        "core.fsmonitor=false",
-        "core.checkStat=default",
-        "core.trustctime=true",
-        "core.ignoreStat=false",
-        "core.untrackedCache=false",
-        "core.safecrlf=false",
-        "status.showUntrackedFiles=all",
-        "diff.ignoreSubmodules=none",
-    ] {
-        command.args(["-c", setting]);
-    }
     command.args([
         "-c",
-        &format!("core.excludesFile={null}"),
+        "core.fsmonitor=false",
         "-c",
-        &format!("core.attributesFile={null}"),
+        "core.checkStat=default",
+        "-c",
+        "core.trustctime=true",
+        "-c",
+        "core.ignoreStat=false",
+        "-c",
+        "core.untrackedCache=false",
+        "-c",
+        "core.safecrlf=false",
+        "-c",
+        "diff.ignoreSubmodules=none",
     ]);
     command.stdin(Stdio::null());
     for (name, _) in std::env::vars_os() {
@@ -539,29 +326,48 @@ fn git_command(git: &Path, root: &Path) -> Command {
         }
     }
     command
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", null)
-        .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_NO_LAZY_FETCH", "1");
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_TRACE2", "0")
+        .env("GIT_TRACE2_EVENT", "0")
+        .env("GIT_TRACE2_PERF", "0");
+    #[cfg(test)]
+    isolate_fixture_git_config(&mut command, root);
+    #[cfg(not(test))]
+    {
+        // Preserve Git's normal config scopes without inheriting invocation
+        // overrides, repository selectors or tracing from the caller.
+        for name in [
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CONFIG_SYSTEM",
+            "GIT_CONFIG_GLOBAL",
+        ] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+    }
     command
 }
 
-fn run_query(command: Command, name: &str, missing: bool, deadline: Instant) -> Result<Vec<u8>> {
-    run_query_with_input(command, name, missing, deadline, None)
+#[cfg(test)]
+fn isolate_fixture_git_config(command: &mut Command, root: &Path) {
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", null)
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("XDG_CONFIG_HOME", root.join(".git").join("engram-fixture"));
 }
 
-fn run_query_with_input(
+fn run_query(
     command: Command,
     name: &str,
     missing: bool,
     deadline: Instant,
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
-    let remaining = deadline.saturating_duration_since(crate::operation_time::now());
-    if remaining.is_zero() {
-        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
-    }
+    let remaining = query_budget(deadline)?;
     let result = crate::task_sync::git::run_query_command(
         command,
         name,
@@ -573,9 +379,50 @@ fn run_query_with_input(
     before_deadline(deadline, result)
 }
 
+fn query_budget(deadline: Instant) -> Result<Duration> {
+    let remaining = deadline.saturating_duration_since(crate::operation_time::now());
+    if remaining.is_zero() {
+        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
+    }
+    Ok(remaining)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_query_rejects_partial_output_even_when_git_exits_successfully() {
+        const FIXTURE: &str = "ENGRAM_SOURCE_QUERY_WARNING_FIXTURE";
+        if std::env::var_os(FIXTURE).is_some() {
+            println!("fixture output");
+            if std::env::var_os(FIXTURE).as_deref() == Some(std::ffi::OsStr::new("partial")) {
+                eprintln!("warning: could not open directory 'hidden/': Permission denied");
+            }
+            return;
+        }
+        let run = |mode| {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "committed_input::tests::git_query_rejects_partial_output_even_when_git_exits_successfully",
+                    "--nocapture",
+                ])
+                .env(FIXTURE, mode);
+            run_query(
+                command,
+                "status",
+                false,
+                Instant::now() + Duration::from_secs(10),
+                None,
+            )
+        };
+        let bytes = run("complete").unwrap();
+        assert!(String::from_utf8(bytes).unwrap().contains("fixture output"));
+        let error = run("partial").unwrap_err();
+        assert!(error.to_string().contains("could not open directory"));
+    }
 
     #[test]
     fn late_query_or_postprocessing_result_refuses_and_typed_failures_survive_context() {
@@ -599,23 +446,6 @@ mod tests {
         .context("registered input");
         assert_eq!(refusal_code(&error), RefusalCode::InputUnavailable);
         assert!(format!("{error:#}").contains("Filename too long"));
-    }
-
-    #[test]
-    fn porcelain_preserves_rename_origins_and_refuses_incomplete_or_lossy_paths() {
-        let entries = status_entries(b"R  new name\0old name\0?? added\0").unwrap();
-        assert_eq!(entries[0].status, "R ");
-        assert_eq!(entries[0].path, "new name");
-        assert_eq!(entries[0].origin.as_deref(), Some("old name"));
-        assert_eq!(entries[1].status, "??");
-        for bytes in [
-            b"?? missing terminator".as_slice(),
-            b"R  new\0",
-            b"?? \xff\0",
-            b"zz path\0",
-        ] {
-            assert!(status_entries(bytes).is_err(), "{bytes:?}");
-        }
     }
 
     #[test]
@@ -669,23 +499,302 @@ mod tests {
             }
         }
         // Checkouts and restores must use the same config scope as the reader.
-        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
-        let output = command
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", null)
-            .env("GIT_ATTR_NOSYSTEM", "1")
-            .args(["-c", &format!("core.attributesFile={null}")])
-            .args(["-c", &format!("core.excludesFile={null}")])
-            .current_dir(root)
-            .args(args)
-            .output()
-            .unwrap();
+        isolate_fixture_git_config(&mut command, root);
+        let output = command.current_dir(root).args(args).output().unwrap();
         assert!(
             output.status.success(),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
         output.stdout
+    }
+
+    fn source_id(root: &Path) -> crate::source::SourceId {
+        let observation = observe(root, crate::source::MAX_BUDGET);
+        observation
+            .source_id
+            .unwrap_or_else(|| panic!("{:?}", observation.refusal))
+    }
+
+    fn commit_file(root: &Path, content: &str) {
+        std::fs::write(root.join("tracked"), content).unwrap();
+        git(root, &["add", "tracked"]);
+        git(
+            root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+        );
+    }
+
+    #[test]
+    fn source_git_delta_compares_staged_worktree_and_untracked_changes() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        commit_file(root, "base\n");
+        let clean = source_id(root);
+        assert!(clean.is_clean());
+        assert_eq!(source_id(root), clean);
+
+        std::fs::write(root.join("tracked"), "stage A\n").unwrap();
+        git(root, &["add", "tracked"]);
+        std::fs::write(root.join("tracked"), "same worktree\n").unwrap();
+        let first = source_id(root);
+        assert!(!first.is_clean());
+        std::fs::write(root.join("tracked"), "stage B\n").unwrap();
+        git(root, &["add", "tracked"]);
+        std::fs::write(root.join("tracked"), "same worktree\n").unwrap();
+        let second = source_id(root);
+        assert_eq!(first.commit, second.commit);
+        assert_ne!(first, second);
+
+        std::fs::write(root.join("tracked"), "other worktree\n").unwrap();
+        let worktree = source_id(root);
+        assert_ne!(second, worktree);
+        std::fs::write(root.join("untracked"), "addition\n").unwrap();
+        assert_ne!(worktree, source_id(root));
+    }
+
+    #[test]
+    fn source_binds_head_and_tree_to_the_status_observation() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        commit_file(root, "old checkout\n");
+        let old = source_id(root);
+        commit_file(root, "new checkout\n");
+        let new = source_id(root);
+        git(root, &["checkout", "--detach", "-q", &old.commit]);
+
+        let switched_root = root.to_path_buf();
+        let switched_commit = new.commit.clone();
+        crate::task_sync::git::BEFORE_QUERY.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |query| {
+                if query == "status" {
+                    git(
+                        &switched_root,
+                        &["checkout", "--detach", "-q", &switched_commit],
+                    );
+                }
+            }));
+        });
+        let observed = observe(root, crate::source::MAX_BUDGET);
+        crate::task_sync::git::BEFORE_QUERY.with(|hook| *hook.borrow_mut() = None);
+
+        assert_ne!(new, old);
+        assert_eq!(observed.source_id, Some(new));
+    }
+
+    #[test]
+    fn source_hashes_an_unstaged_patch_larger_than_the_metadata_bound() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        commit_file(root, "base\n");
+        let clean = source_id(root);
+
+        let mut replacement = "long replacement line\n".repeat(70_000);
+        std::fs::write(root.join("tracked"), &replacement).unwrap();
+        let dirty = source_id(root);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty.commit, clean.commit);
+        assert_eq!(dirty, source_id(root));
+
+        replacement.push_str("different ending\n");
+        std::fs::write(root.join("tracked"), replacement).unwrap();
+        assert_ne!(dirty, source_id(root));
+    }
+
+    #[test]
+    fn source_refuses_an_unmerged_index_without_a_partial_identity() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        commit_file(root, "base\n");
+        let base = source_id(root).commit;
+        commit_file(root, "first side\n");
+        let first = source_id(root).commit;
+        git(root, &["checkout", "--detach", "-q", &base]);
+        commit_file(root, "second side\n");
+        let second = source_id(root).commit;
+        git(root, &["read-tree", "--empty"]);
+        git(root, &["read-tree", "-i", "-m", &base, &first, &second]);
+        let status = git(root, &["status", "--porcelain=v2", "--untracked-files=no"]);
+        assert!(
+            status.starts_with(b"u UU "),
+            "fixture must have an unmerged index"
+        );
+
+        let observed = observe(root, crate::source::MAX_BUDGET);
+        assert_eq!(observed.status, crate::source::Status::Unavailable);
+        assert!(observed.source_id.is_none());
+        assert!(observed.refusal.unwrap().message.contains("unmerged"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn source_accepts_more_unstaged_paths_than_fit_on_one_windows_command_line() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        let paths: Vec<_> = (0..400)
+            .map(|index| root.join(format!("{}-{index}.txt", "path".repeat(25))))
+            .collect();
+        for path in &paths {
+            std::fs::write(path, "old\n").unwrap();
+        }
+        git(root, &["add", "."]);
+        commit_file(root, "base\n");
+        for path in &paths {
+            std::fs::write(path, "new bytes\n").unwrap();
+        }
+
+        let dirty = source_id(root);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty, source_id(root));
+    }
+
+    #[test]
+    fn source_git_delta_keeps_index_and_checkout_gitlink_changes_separate() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let origin = fixture.path().join("origin");
+        let root = fixture.path().join("root");
+        std::fs::create_dir(&origin).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        git(&origin, &["init", "-q"]);
+        commit_file(&origin, "a\n");
+        let a = String::from_utf8(git(&origin, &["rev-parse", "HEAD"])).unwrap();
+        commit_file(&origin, "b\n");
+        let b = String::from_utf8(git(&origin, &["rev-parse", "HEAD"])).unwrap();
+        git(&root, &["init", "-q"]);
+        commit_file(&root, "parent\n");
+        git(
+            &root,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                origin.to_str().unwrap(),
+                "child",
+            ],
+        );
+        let child = root.join("child");
+        git(&child, &["checkout", "--detach", "-q", a.trim()]);
+        git(&root, &["add", ".gitmodules", "child"]);
+        let new_link = source_id(&root).git_delta.unwrap().gitlinks.remove(0);
+        assert_eq!(new_link.head_pin, None);
+        assert_eq!(new_link.index_pin.as_deref(), Some(a.trim()));
+        assert_eq!(new_link.checkout_head, new_link.index_pin);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "initial gitlink",
+            ],
+        );
+        let clean = source_id(&root);
+        assert!(clean.is_clean());
+        assert_eq!(
+            clean.git_delta.unwrap().gitlinks,
+            [] as [crate::source::Gitlink; 0]
+        );
+
+        git(
+            &root,
+            &[
+                "update-index",
+                "--cacheinfo",
+                &format!("160000,{},child", b.trim()),
+            ],
+        );
+        let staged = source_id(&root);
+        assert!(!staged.is_clean());
+        let link = &staged.git_delta.as_ref().unwrap().gitlinks[0];
+        assert_eq!(link.head_pin.as_deref(), Some(a.trim()));
+        assert_eq!(link.index_pin.as_deref(), Some(b.trim()));
+        assert_eq!(link.checkout_head.as_deref(), Some(a.trim()));
+
+        git(&child, &["checkout", "--detach", "-q", b.trim()]);
+        let checked_out = source_id(&root);
+        assert_ne!(checked_out, staged);
+        let link = &checked_out.git_delta.as_ref().unwrap().gitlinks[0];
+        assert_eq!(link.head_pin.as_deref(), Some(a.trim()));
+        assert_eq!(link.index_pin.as_deref(), Some(b.trim()));
+        assert_eq!(link.checkout_head.as_deref(), Some(b.trim()));
+
+        git(&root, &["rm", "--cached", "--", "child"]);
+        let removed = source_id(&root).git_delta.unwrap().gitlinks.remove(0);
+        assert_eq!(removed.head_pin.as_deref(), Some(a.trim()));
+        assert_eq!(removed.index_pin, None);
+        assert_eq!(removed.checkout_head.as_deref(), Some(b.trim()));
+        std::fs::rename(&child, fixture.path().join("saved-child")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            std::fs::create_dir(root.join("ordinary-a")).unwrap();
+            std::fs::create_dir(root.join("ordinary-b")).unwrap();
+            symlink("ordinary-a", &child).unwrap();
+            let first = source_id(&root);
+            std::fs::remove_file(&child).unwrap();
+            symlink("ordinary-b", &child).unwrap();
+            let second = source_id(&root);
+            assert_eq!(
+                first.git_delta.as_ref().unwrap().gitlinks,
+                second.git_delta.as_ref().unwrap().gitlinks
+            );
+            assert_ne!(first, second);
+            std::fs::remove_file(&child).unwrap();
+        }
+        std::fs::write(&child, "ordinary staged endpoint\n").unwrap();
+        git(&root, &["add", "--", "child"]);
+        std::fs::write(&child, "first ordinary worktree endpoint\n").unwrap();
+        let first = source_id(&root);
+        std::fs::write(&child, "second ordinary worktree endpoint\n").unwrap();
+        assert_ne!(first, source_id(&root));
+    }
+
+    #[test]
+    fn source_does_not_read_dirt_or_run_filters_inside_an_undeclared_gitlink() {
+        let fixture = crate::test_support::temp_home().unwrap();
+        let root = fixture.path();
+        git(root, &["init", "-q"]);
+        let child = root.join("child");
+        std::fs::create_dir(&child).unwrap();
+        git(&child, &["init", "-q"]);
+        commit_file(&child, "child\n");
+        git(root, &["add", "--", "child"]);
+        commit_file(root, "parent\n");
+        let clean = source_id(root);
+        assert!(clean.is_clean());
+
+        git(
+            &child,
+            &["config", "filter.fixture.clean", "echo ran > filter-ran"],
+        );
+        std::fs::write(child.join(".gitattributes"), "tracked filter=fixture\n").unwrap();
+        std::fs::write(child.join("tracked"), "changed inside the child\n").unwrap();
+        std::fs::write(child.join("new-file"), "added inside the child\n").unwrap();
+        assert_eq!(source_id(root), clean);
+        assert!(!child.join("filter-ran").exists());
+
+        std::fs::rename(&child, root.join(".git/saved-child")).unwrap();
+        std::fs::create_dir(&child).unwrap();
+        assert_eq!(source_id(root), clean);
     }
 
     #[test]
@@ -712,114 +821,95 @@ mod tests {
             )
         };
         commit();
-        let checked = read(root).unwrap();
-        assert!(checked.clean);
+        let checked = source_id(root);
+        assert!(checked.is_clean());
         std::fs::write(root.join("tracked"), "edited\n").unwrap();
-        assert!(!read(root).unwrap().clean);
+        assert!(!source_id(root).is_clean());
         git(root, &["restore", "tracked"]);
-        let reverted = read(root).unwrap();
+        let reverted = source_id(root);
         assert_eq!(reverted.commit, checked.commit);
-        assert!(reverted.clean);
+        assert!(reverted.is_clean());
         let tree = git(root, &["rev-parse", "HEAD^{tree}"]);
         commit();
         assert_eq!(git(root, &["rev-parse", "HEAD^{tree}"]), tree);
-        assert_ne!(read(root).unwrap().commit, checked.commit);
-        assert!(read(&root.join("missing")).is_err());
+        assert_ne!(source_id(root).commit, checked.commit);
+        assert!(
+            observe(&root.join("missing"), crate::source::MAX_BUDGET)
+                .refusal
+                .is_some()
+        );
         std::fs::create_dir(root.join("child")).unwrap();
-        assert!(read(&root.join("child")).is_err());
+        assert!(
+            observe(&root.join("child"), crate::source::MAX_BUDGET)
+                .refusal
+                .is_some()
+        );
     }
 
     #[test]
-    fn configured_filters_are_unavailable_before_comparison() {
+    fn active_filter_is_unavailable_without_running_the_configured_command() {
         let scratch = crate::test_support::temp_home().unwrap();
         let root = scratch.path();
         git(root, &["init", "-q"]);
-        std::fs::write(root.join("tracked"), "checked\n").unwrap();
-        git(root, &["add", "tracked"]);
+        commit_file(root, "checked\n");
+        std::fs::write(root.join(".gitattributes"), "tracked filter=fixture\n").unwrap();
+        std::fs::write(
+            root.join("tracked"),
+            "changed since the committed version\n",
+        )
+        .unwrap();
+        git(
+            root,
+            &["config", "filter.fixture.clean", "echo ran > filter-ran"],
+        );
+        let observation = observe(root, crate::source::MAX_BUDGET);
+        assert!(observation.source_id.is_none());
+        let refusal = observation.refusal.unwrap();
+        assert_eq!(refusal.code, crate::source::RefusalCode::InputUnavailable);
+        assert!(refusal.message.contains("clean filter 'fixture' failed"));
+        assert!(!root.join("filter-ran").exists());
+    }
+
+    #[test]
+    fn staged_gitlink_is_in_the_delta_before_its_checkout_is_declared() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let root = scratch.path();
+        git(root, &["init", "-q"]);
+        commit_file(root, "parent\n");
+        let path = "child (vendor)";
+        let child = root.join(path);
+        std::fs::create_dir(&child).unwrap();
+        git(&child, &["init", "-q"]);
+        commit_file(&child, "child\n");
+        let child_head = String::from_utf8(git(&child, &["rev-parse", "HEAD"])).unwrap();
         git(
             root,
             &[
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.invalid",
-                "commit",
-                "--no-gpg-sign",
-                "-qm",
-                "fixture",
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{},{path}", child_head.trim()),
             ],
         );
-        git(root, &["config", "filter.test.clean", "must-not-run"]);
-        assert!(read(root).unwrap_err().to_string().contains("filters"));
-    }
-
-    #[test]
-    fn recursive_submodule_status_names_refusals() {
-        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
-        let pin = &pin[..40];
-        assert_eq!(
-            submodules(
-                format!(" {pin} child (heads/main)\n {pin} child/nested (heads/main)\n").as_bytes()
-            )
-            .unwrap(),
-            ["child", "child/nested"]
+        let undeclared = source_id(root);
+        assert!(!undeclared.is_clean());
+        assert!(
+            undeclared
+                .git_delta
+                .as_ref()
+                .is_some_and(|delta| delta.gitlinks.is_empty())
         );
-        for (prefix, reason) in [
-            ('?', "malformed"),
-            ('-', "uninitialized"),
-            ('+', "HEAD differs"),
-            ('U', "conflicted"),
-        ] {
-            let error = submodules(format!("{prefix}{pin} child\n").as_bytes())
-                .unwrap_err()
-                .to_string();
-            assert!(error.contains("child") && error.contains(reason), "{error}");
-        }
-    }
 
-    #[test]
-    fn uninitialized_submodule_paths_keep_parenthesized_text() {
-        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
-        let pin = &pin[..40];
-        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
-            assert_eq!(
-                submodules(format!("-{pin} {name}\n").as_bytes())
-                    .unwrap_err()
-                    .to_string(),
-                format!("submodule '{name}': uninitialized")
-            );
-        }
-    }
-
-    #[test]
-    fn conflicted_submodule_paths_keep_parenthesized_text() {
-        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
-        let pin = &pin[..40];
-        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
-            assert_eq!(
-                submodules(format!("U{pin} {name}\n").as_bytes())
-                    .unwrap_err()
-                    .to_string(),
-                format!("submodule '{name}': conflicted gitlink")
-            );
-        }
-    }
-
-    #[test]
-    fn initialized_submodule_paths_remove_only_revision_annotation() {
-        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
-        let pin = &pin[..40];
-        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
-            assert_eq!(
-                submodules(format!(" {pin} {name} (heads/main)\n").as_bytes()).unwrap(),
-                [name]
-            );
-            assert_eq!(
-                submodules(format!("+{pin} {name} (heads/main)\n").as_bytes())
-                    .unwrap_err()
-                    .to_string(),
-                format!("submodule '{name}': HEAD differs from its pin")
-            );
-        }
+        std::fs::write(
+            root.join(".gitmodules"),
+            format!("[submodule \"vendor\"]\npath = {path}\nurl = ../vendor\n"),
+        )
+        .unwrap();
+        let mut delta = source_id(root).git_delta.unwrap();
+        let link = delta.gitlinks.remove(0);
+        assert_eq!(link.path, path);
+        assert_eq!(link.head_pin, None);
+        assert_eq!(link.index_pin.as_deref(), Some(child_head.trim()));
+        assert_eq!(link.checkout_head, link.index_pin);
     }
 }

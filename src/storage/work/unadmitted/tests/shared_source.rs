@@ -13,6 +13,7 @@ fn observe(
 
 pub(super) fn source(blob: char) -> SourceId {
     SourceId {
+        git_delta: None,
         commit: "a".repeat(40),
         tree: "b".repeat(40),
         submodules: Vec::new(),
@@ -33,6 +34,33 @@ fn basis(source_id: SourceId) -> VerificationSourceBasis {
         source_root_generation: None,
         source_root_state: None,
     }
+}
+
+#[test]
+fn mixed_format_quiet_sighting_does_not_break_a_repeat() {
+    let mut f = fixture();
+    let first = change(&f, "older-change", source('c'), source('d'));
+    assert!(accounting::self_anchored(
+        &observe(&mut f, first, 8).unwrap()
+    ));
+    let mut delta = source('d');
+    delta.changes.clear();
+    delta.git_delta = Some(crate::source::GitDelta {
+        sha256: "e".repeat(64),
+        dirty: true,
+        gitlinks: vec![],
+    });
+    let mut quiet = change(&f, "new-format-sighting", source('c'), source('d'));
+    quiet.occurrence = ObservedOccurrence::SourceSighting {
+        source_basis: basis(delta),
+        observed_at: at(5),
+    };
+    observe(&mut f, quiet, 9).unwrap();
+    let repeat = change(&f, "older-repeat", source('c'), source('d'));
+    assert!(matches!(
+        observe(&mut f, repeat, 10).unwrap().accounting,
+        ObservationAccounting::Repeat { .. }
+    ));
 }
 
 fn check_scope() -> crate::domain::ObservedCheckSourceBasis {

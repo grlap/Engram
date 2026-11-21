@@ -2,6 +2,7 @@ use super::*;
 
 fn source_at_limit() -> crate::source::SourceId {
     let mut source = crate::source::SourceId {
+        git_delta: None,
         commit: "a".repeat(40),
         tree: "b".repeat(40),
         submodules: vec![],

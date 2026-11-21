@@ -11,6 +11,7 @@ pub enum AcceptanceSourceMismatch {
     UnconfirmedEvaluatedRevision,
     CompletionMeasurementMissing,
     CompletionFingerprintMismatch,
+    IncomparableSourceIdFormats,
     EvaluationSourceBasisMissing,
 }
 

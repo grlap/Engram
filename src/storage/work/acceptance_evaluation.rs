@@ -2181,6 +2181,19 @@ fn staleness_after_move(
         ));
     }
     let presented = source.identity();
+    if (live_commit || policy.require_source_freshness || git_input)
+        && presented
+            .as_ref()
+            .zip(record.source_basis.as_ref())
+            .is_some_and(|(presented, recorded)| {
+                recorded.identity.mixed_source_id_shapes(presented)
+            })
+    {
+        source_context.mismatch =
+            crate::domain::AcceptanceSourceMismatch::IncomparableSourceIdFormats;
+        source_context.remedy = crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource;
+        return Ok(refused_source(source_context));
+    }
     if live_commit
         && let Some(presented) = presented.as_ref()
         && record

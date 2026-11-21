@@ -148,16 +148,6 @@ fn final_json_still_refuses_the_original_spent_deadline() {
 }
 
 #[test]
-fn registered_committed_input_read_has_one_aggregate_warning() {
-    let scratch = fixture();
-    let clock = Rc::new(Probe::install());
-    let (_queries, seen) = Queries::advance(Rc::clone(&clock), 8, 3);
-    assert!(crate::committed_input::read(scratch.path()).unwrap().clean);
-    assert!(seen.get() >= 3);
-    one_warning(&clock, "registered committed input read");
-}
-
-#[test]
 fn refusal_and_callback_unwind_leave_no_pending_warning() {
     let scratch = fixture();
     let clock = Probe::install();

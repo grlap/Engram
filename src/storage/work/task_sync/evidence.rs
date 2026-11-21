@@ -42,6 +42,8 @@ pub enum PersistenceError {
     Evidence(#[from] EvidenceError),
     #[error(transparent)]
     Storage(#[from] StoreError),
+    #[error("destination source_id formats are incomparable")]
+    IncomparableSourceIdFormats,
 }
 
 impl From<rusqlite::Error> for PersistenceError {
@@ -62,6 +64,9 @@ pub(crate) fn store_error(error: PersistenceError) -> StoreError {
     match error {
         PersistenceError::Storage(error) => error,
         PersistenceError::Evidence(error) => StoreError::InvalidWorkProjection(error.to_string()),
+        PersistenceError::IncomparableSourceIdFormats => {
+            StoreError::InvalidWorkProjection(error.to_string())
+        }
     }
 }
 

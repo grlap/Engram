@@ -106,6 +106,7 @@ pub(crate) fn source_recovery_transport_fixture(
             workspace_id: None,
             identity: crate::domain::VerificationSourceIdentity::SourceId {
                 source_id: crate::source::SourceId {
+                    git_delta: None,
                     commit: "a".repeat(40),
                     tree: "b".repeat(40),
                     changes: vec![],

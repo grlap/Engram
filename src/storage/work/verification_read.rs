@@ -767,6 +767,7 @@ mod tests {
     #[test]
     fn shared_candidates_keep_complete_owner_sized_identities_across_pages() {
         let mut source = crate::source::SourceId {
+            git_delta: None,
             commit: "a".repeat(40),
             tree: "b".repeat(40),
             submodules: vec![],
