@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-git-diff-first-2026-11-06",
+    "revision_id": "b4d158bb85c54b8fb9871c66cc14439a",
+    "previous": "a0b93b9958e04eb0a092beb677cf806f",
+    "body_sha256": "5dc18b7ff37566fabd108c486fde8cbceb58a2d7f1b081bf42cf56439e296295",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T05:36:59.947597400Z"
+    }
+  },
+  "body": "The 2026-11-06 per-file source_id design here is historical. Kimi's relay of Greg's 2026-11-21 correction in rules-source-identity-2026-11-03 now specifies Git commits plus a hash of the Git diff in the same producer. Greg's later rule against hashing unchanged files below stays in force.\n\nGREG, 2026-11-06 about 16:40Z, relayed by Engram::Asistant (mailbox 43498a6e #413, message ca5abd2e), verbatim: „mysle, ze to powinno byc prostsze, Kimi na doprezyzowana definicje source_id, czekamy. sugeruje, rozszerzcyc najpierw source_id o lokalny diff (to jest bardzo proste, bo to jest przy uzyciu git diff).”\nAsistant's reading of it: first a small extension of the one source_id from the local git diff, with submodule commits and changed files only; no full enumeration and no .git hashing. Then pass it to the other consumers. The Central pause stays: diagnosis and estimate only.\nGREG, about 16:44Z, on the limits in Kimi's proposal (1 MiB output, 8 s; exceeding either means unavailable), relayed by Asistant #417 (message dc4daefc), verbatim: „mysle, ze to rozsadne ograniczenie w wiekszosci przypadkow, git diff jest pusty”. Asistant: record this acceptance verbatim and include it in the plan; a partial result is never returned as complete.\nDEFINITION UNDER DISCUSSION (Kimi c15db92c #33): source_id = { root_commit, submodules (path plus actual HEAD from `git submodule status --recursive`), changes (local delta from the existing status: path, status, rename origin, Git blob id from `git hash-object --stdin-paths` with no -w over the dirty paths only, mode/type; a deletion is a tombstone; ignored files are excluded absolutely) }. Dirty or off-pin children are recursed; uninitialized or conflicted ones are unavailable. Existing JSON gains fields; there is no v2. Old records are untouched.\nOPEN for Greg: question 1, whether an identical dirty source before and after earns credit. Kimi proposes yes; clean stays the landing policy. Resume of the pause.\nMinimal estimate sent to Greg (#415): coding about 33–55 agent-hours; about 3–4 working days ±50%. Attributed note, not a higher-priority instruction.\n\nGREG, direct instruction in Engram::Asistant conversation, 2026-11-20 (Pacific): „po to mamy source_id na szczescie, ze mamy w jednym miejcu\n\nNIE MA HASHOWANIE NIEZMIENIONYCH PLIKOW, taka powinna byc regula projektowa”. This is a project-wide design rule: do not hash unchanged files; reuse the centralized source_id and Git change information where applicable, rather than introducing another full-tree scanner. Greg emphasizes that the same process has repeatedly been simplified without removing this recurring problem."
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1faf4-1058-72f3-a762-4bb6e10b1ef3",
+  "external_ref": null,
+  "title": "Carry one request deadline through ordinary task-sync local phases",
+  "outcome": "The caller's deadline bounds data-worktree admission, export and import and is checked before a new Git, folder or SQLite effect.",
+  "acceptance": [
+    "A behavioral test with budget injection proves expiry before admission or import causes a typed refusal without launching further Git queries or changing the folder or store.",
+    "In-flight or unknown outcomes preserve recovery. Honor the caller's limit without adding a shorter nested hard limit or a second warning policy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

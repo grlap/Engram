@@ -1,0 +1,30 @@
+{
+  "id": "01a1fd22-8de4-7b13-9e0d-3ec48c3bdc78",
+  "external_ref": null,
+  "title": "Retire the journal-free legacy import branch that hashes selected task bodies, refusing with an explicit rebuild instead",
+  "outcome": "Retire the journal-free legacy import branch that hashes selected task bodies, refusing with an explicit rebuild instead",
+  "acceptance": [
+    "Every live data branch (Engram, TermAl and Comovo hosts) is confirmed to carry the import journal, or is rebuilt, before the branch is removed",
+    "Import of a journal-free legacy head no longer hashes task bodies against stored byte digests (src/task_sync/git/delta/written.rs and the legacy calls in src/work_service/task_sync_folder_import.rs); it refuses with a typed reason that names the explicit rebuild as the remedy",
+    "A behaviour test shows the journal-free legacy head refuses with that reason and remedy, and an ordinary journal-backed import is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

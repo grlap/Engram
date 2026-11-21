@@ -1,0 +1,29 @@
+{
+  "id": "01a1fdd8-b5f6-7581-91ca-7cad6c29ac44",
+  "external_ref": null,
+  "title": "Align task-sync documentation with the shared code review source identity",
+  "outcome": "Remove obsolete references to a separate code review freeze from the task-sync specification and design brief while keeping the distinction between code source identity and imported planning freshness.",
+  "acceptance": [
+    "docs/spec.md and docs/features/git-task-sync.md describe HEAD and tracked task bytes through the shared code source_id and state that data commits never establish tested code.",
+    "The wording adds no hashing, source capture or Git or review authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

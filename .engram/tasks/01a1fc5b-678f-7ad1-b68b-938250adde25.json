@@ -1,0 +1,33 @@
+{
+  "id": "01a1fc5b-678f-7ad1-b68b-938250adde25",
+  "external_ref": null,
+  "title": "Make the one-command task-sync read only what changed on fetch, merge, push and memory steps",
+  "outcome": "Make the one-command task-sync read only what changed on fetch, merge, push and memory steps",
+  "acceptance": [
+    "On fast-forward and after an agent merge, the sync command applies a verified delta from the recorded basis instead of reading the full task tree; a full read stays only for the first trusted read or an explicit rebuild",
+    "Before a push, the disclosure check covers each changed document in the newly published history, including data later deleted in that history and dependent retirement targets, without re-reading unchanged documents; the existing case of content deleted before the final tip stays covered",
+    "With memories included, an unchanged memory subtree and no pending memory changes is skipped; a changed one reads only the changed keys",
+    "A CLI behaviour test counts the task and memory documents actually read or decoded for no-op, pull, push and divergence at the same small changed set, while varying together the task count (N=200 and N=2,000) and the number of unchanged memory keys; the counts do not grow with either"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "ready-to-land",
+    "sync"
+  ],
+  "assigned_to": "session-11323",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

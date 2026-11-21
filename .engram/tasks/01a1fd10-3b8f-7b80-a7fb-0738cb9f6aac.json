@@ -1,0 +1,30 @@
+{
+  "id": "01a1fd10-3b8f-7b80-a7fb-0738cb9f6aac",
+  "external_ref": null,
+  "title": "Retire the review-freeze fingerprint's own hashing; test refs use the commit id and the launcher keeps only its source_id helpers",
+  "outcome": "Retire the review-freeze CLI and its worktree, untracked and rule-source hashing. Use the one shared source_id as the only input identity across review and test runs, with commit8 naming the test ref.",
+  "acceptance": [
+    "scripts/review-freeze-fingerprint.mjs no longer computes its own worktree, untracked or rule-source (.gitignore, .gitattributes, info/exclude, global) digest, and its --write/--check CLI is removed; the launcher's source_id helpers it exports today (captureCommitInputStatus, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations) keep working, moved to a source_id module if that is simpler, and no new scanner or hashing is added",
+    "The Merger's remote test refs are named refs/heads/test/<item>-<commit8> (a name only) and carry no Review-Freeze trailer; the one shared source_id that the Merger records before the push, and that the runner's launcher observes before and after, is the only input identity, with no separate tree-id or fingerprint identity; AGENTS.md and CLAUDE.md (Test refs bullet and Commit messages section), review-changes.md, docs/development.md, the engram-repo skill and the CI workflow say so; this authority-text change lands only with both coordinators' concurrence, Greg sent the wording, and the final-diff audit recorded. Each review boundary and carry proof binds to the parent's recorded complete source_id for its explicit Git diff scope. Reviewers cite that record and do not create separate captures. Both review commands, fix-bug.md and the affected skills use this same identity while preserving the existing evidence requirements.",
+    "Tests for the removed hashing are deleted; behaviour tests for the kept launcher helpers still pass in the full gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "ready-to-land",
+    "source-identity"
+  ],
+  "assigned_to": "session-12329",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

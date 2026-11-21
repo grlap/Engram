@@ -1,0 +1,28 @@
+{
+  "id": "01a1fadd-c206-71e0-8f38-71c3c608e078",
+  "external_ref": null,
+  "title": "Exercise task-sync upgrade recovery with pending peer changes",
+  "outcome": "Cover the printed rebuild, commit and saved-basis import sequence with a held peer task or an unseen committed memory revision.",
+  "acceptance": [
+    "Recovery leaves the committed bytes of a still-held peer task intact and records it pending, or applies the edit if its hold has resolved.",
+    "Combined recovery retains a peer-only or unseen committed memory revision through rebuild and explicit import."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 4,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

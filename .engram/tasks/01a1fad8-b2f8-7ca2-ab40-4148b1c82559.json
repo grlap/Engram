@@ -1,0 +1,27 @@
+{
+  "id": "01a1fad8-b2f8-7ca2-ab40-4148b1c82559",
+  "external_ref": null,
+  "title": "Clarify what the loose-edit task-sync upgrade fixture verifies",
+  "outcome": "Make the recovery test comment describe the incremental import refusal and the preservation of loose bytes. Distinguish this from the documented instruction to preserve edits before an explicit rebuild.",
+  "acceptance": [
+    "The fixture explains and retains its existing assertions about the refused import and the unchanged loose file."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

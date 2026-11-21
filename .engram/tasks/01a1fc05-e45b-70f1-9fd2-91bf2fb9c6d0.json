@@ -1,0 +1,29 @@
+{
+  "id": "01a1fc05-e45b-70f1-9fd2-91bf2fb9c6d0",
+  "external_ref": null,
+  "title": "Teach federation test dispatch in the portable coder and coordination skills, with no side SSH",
+  "outcome": "Teach federation test dispatch in the portable coder and coordination skills, with no side SSH",
+  "acceptance": [
+    "coder-test-execution step 3 says the job goes through the host's existing remote mailbox to the runner's registered native session on that host, never a side ssh/scp shell or copy, and that the runner returns its terminal result and artifact locators through the same route",
+    "team-coordination's 'Centralize test execution' section says the same remote-mailbox/native-session routing and exact-commit Git input, by reference, without adding a new workflow or gate",
+    "Only .md skill files change; the link check passes through the focused launcher and a Codex+Claude pair reviews it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "skills"
+  ],
+  "assigned_to": "session-11334",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

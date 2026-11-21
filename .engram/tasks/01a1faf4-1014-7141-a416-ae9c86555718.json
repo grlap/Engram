@@ -1,0 +1,28 @@
+{
+  "id": "01a1faf4-1014-7141-a416-ae9c86555718",
+  "external_ref": null,
+  "title": "Recover ordinary task sync across divergent task and memory profiles",
+  "outcome": "Resolve differing parent profile capabilities without leaving a merge that cannot be resumed.",
+  "acceptance": [
+    "A CLI regression creates divergent task-only and task-and-memory data tips and verifies a supported resolution or a refusal before a merge starts. Both tips and task and memory data remain intact.",
+    "The refusal or completed resolution gives the operator the supported next action, with no false success receipt."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

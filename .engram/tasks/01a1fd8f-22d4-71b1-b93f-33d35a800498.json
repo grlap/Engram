@@ -1,0 +1,33 @@
+{
+  "id": "01a1fd8f-22d4-71b1-b93f-33d35a800498",
+  "external_ref": null,
+  "title": "Tighten the README's acceptance-policy and Execution Observability wording",
+  "outcome": "Tighten the README's acceptance-policy and Execution Observability wording",
+  "acceptance": [
+    "The README's --require-source-freshness bullet no longer reads as requiring a declaration at done for a live registered check; it defers to the paragraph on when done needs one",
+    "The evaluate lead-in limits the mandatory declaration to live registered input on the run or registered evidence the evaluation relies on, not any run with registered checks",
+    "The sentence after the TermAl setting names Execution Observability as its subject, so 'never admits, delays or refuses a model turn' is not read as the setting",
+    "The Execution Observability overview says in one sentence that done and show can report untested source changes and that open required checks can block completion",
+    "The mixed-build limit is scoped to rolling out live registered-input decisions, keeping the readiness limitation",
+    "The Git limits also say that edits reverted between measurements can go unseen"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "execution-observability",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

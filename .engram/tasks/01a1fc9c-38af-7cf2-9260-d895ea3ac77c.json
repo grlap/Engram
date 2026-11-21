@@ -1,0 +1,30 @@
+{
+  "id": "01a1fc9c-38af-7cf2-9260-d895ea3ac77c",
+  "external_ref": null,
+  "title": "Compute the shared source_id from Git commit ids plus one hash of the Git diff, in the one existing producer",
+  "outcome": "Compute the shared source_id from Git commit ids plus one hash of the Git diff, in the one existing producer",
+  "acceptance": [
+    "The one existing source_id producer records the root and submodule commit ids plus exactly one hash over defined Git delta bytes, instead of a per-changed-file list with a hash per file; it does no environment inventory, whole-repository or submodule file census, per-file hash-object, or second capture within one producer call",
+    "The contract states exactly which delta the hash covers: index versus HEAD, worktree versus index, untracked non-ignored files (which plain git diff omits) and submodule state; ignored paths stay excluded; unavailable or partial capture never becomes a complete identity; the previously recorded visibility guarantees are kept, not assumed dropped",
+    "Engram's own consumers (committed-input, launcher before/after comparison, evaluation and completion) use the new shape; records already stored keep being read as stored and are never recomputed; no parallel second identity is introduced",
+    "TermAl's consumers switch in coordination with Termal::Fable2 at an agreed point, and a behaviour test shows an unchanged tree gives an equal source_id before and after, while a changed tracked, staged or untracked file changes it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "session-11334",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

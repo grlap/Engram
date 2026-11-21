@@ -1,0 +1,36 @@
+{
+  "id": "01a1fc25-67b6-7d90-bbed-b3996665c67a",
+  "external_ref": null,
+  "title": "Find why the oversized committed-memory read test never finishes on macOS",
+  "outcome": "Find why the oversized committed-memory read test never finishes on macOS",
+  "acceptance": [
+    "The cause of task_sync::data_worktree::tests::memories::committed_memory_read_refuses_an_oversized_file_before_reading_any_body not finishing on the Mac is diagnosed and recorded (product hang, test setup cost, or environment)",
+    "On the Mac, `cargo test --lib task_sync` completes through the standard launcher with a final test-result summary and that test passing, run through the Mac runner's remote session"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "macos",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": "session-11312",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed as a no-code diagnosis. The original serial macOS task_sync run hit its 1,800-second outer deadline after 719 completed cases. On the unchanged commit, the oversized-memory test passed individually in 4.01 s and within the full four-thread selection in 3.984 s. The registered Mac runner completed 1,094 passed, 0 failed, and 2 ignored in 936.09 s. Independent acceptance attempt 2 passed both criteria on the same unchanged source. The unused fixture patch was withdrawn and its test ref deleted.",
+    "completed_at": "2026-11-21T09:05:28.753802800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
+}

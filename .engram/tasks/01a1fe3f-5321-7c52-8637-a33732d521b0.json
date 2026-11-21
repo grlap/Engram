@@ -1,0 +1,27 @@
+{
+  "id": "01a1fe3f-5321-7c52-8637-a33732d521b0",
+  "external_ref": null,
+  "title": "Give retained worktree Git-admin evidence a safe archive path",
+  "outcome": "Document an archive destination for cited files in a linked worktree's own Git administrative directory outside review-runs.",
+  "acceptance": [
+    "The Engram repository skill maps cited worktree-local Git administrative files to a contained admin-relative archive destination, preserving the existing review-runs layout and retention checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

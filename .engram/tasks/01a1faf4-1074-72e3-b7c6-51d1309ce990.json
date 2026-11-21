@@ -1,0 +1,28 @@
+{
+  "id": "01a1faf4-1074-72e3-b7c6-51d1309ce990",
+  "external_ref": null,
+  "title": "Exercise ordinary task-sync overlap refusal and reconciled resume through the CLI",
+  "outcome": "Protect manual conflict resolution and the ordinary sync resume path with behavior tests.",
+  "acceptance": [
+    "A two-host CLI regression edits the same task, confirms the merge is left pending, and then resumes an edited resolution with --reconciled. The committed merge retains the peer tip and imports before updating the remote.",
+    "CLI cases verify refusal of --reconciled without a merge and direct the operator to --reconciled when a merge is pending."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1fd23-3601-7422-bbae-665772726031",
+  "external_ref": null,
+  "title": "Delete the source-file-size test that reads every Rust file and caps sizes",
+  "outcome": "Delete the source-file-size test that reads every Rust file and caps sizes",
+  "acceptance": [
+    "tests/source_file_size.rs and its wiring in scripts/test-rust.sh, scripts/test-rust.ps1 and CI are removed; nothing else reads all Rust source to count or cap sizes",
+    "The full gate passes without it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "test-infra"
+  ],
+  "assigned_to": "session-7284",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "already satisfied by master commit 4e0c11cd, which deleted tests/source_file_size.rs; the cited script lines are the generic cargo test steps, no wiring left (Fable #4492)",
+  "completion": null
+}

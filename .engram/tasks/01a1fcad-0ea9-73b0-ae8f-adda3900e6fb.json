@@ -1,0 +1,28 @@
+{
+  "id": "01a1fcad-0ea9-73b0-ae8f-adda3900e6fb",
+  "external_ref": null,
+  "title": "Tell coordinators to assign an item to the waiting actor before recording an owned wait",
+  "outcome": "Tell coordinators to assign an item to the waiting actor before recording an owned wait",
+  "acceptance": [
+    "The team-coordination owned-wait passage says the item must be assigned to the waiting actor before the wait is recorded, so that current status falls back to the assignee when the claim lapses (src/storage/work/status.rs:93-95)",
+    "Optionally, in the same Markdown change: the review-changes section 4 brief list names the parent's recorded run when a reviewer needs its source_id, and the capture-once pointer notes that the launcher's own admission/before/after comparisons are part of one execution"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review-follow-up",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

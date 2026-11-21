@@ -1,0 +1,28 @@
+{
+  "id": "01a1fd52-8690-72b3-bbbf-40c1feb07b81",
+  "external_ref": null,
+  "title": "Move the multi-minute task_sync tests out of the ordinary lib suite into the existing scale phase",
+  "outcome": "Move the multi-minute task_sync tests out of the ordinary lib suite into the existing scale phase",
+  "acceptance": [
+    "The evidence-import record-limit replay (~335 s on the Mac), near-capacity custody replay (~242 s) and 2,000-member atomic delta (~155 s) tests run in the existing scale-test phase of scripts/test-rust.sh / test-rust.ps1 instead of the ordinary `cargo test --lib` run, with no loss of coverage",
+    "An ordinary `cargo test --lib task_sync` on the Mac finishes well under the previous 936 s, recorded with per-test timings"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "sync",
+    "test-infra"
+  ],
+  "assigned_to": "session-11312",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

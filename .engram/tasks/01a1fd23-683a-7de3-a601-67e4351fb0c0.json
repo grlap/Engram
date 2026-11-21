@@ -1,0 +1,31 @@
+{
+  "id": "01a1fd23-683a-7de3-a601-67e4351fb0c0",
+  "external_ref": null,
+  "title": "Managed task-sync exchange uses Git selections and object ids instead of full candidate digests, a commit SHA-256 beside the OID and separate pack hashing",
+  "outcome": "Managed task-sync exchange uses Git selections and object ids instead of full candidate digests, a commit SHA-256 beside the OID and separate pack hashing",
+  "acceptance": [
+    "prepare/step and the managed exchange (src/task_sync/progress.rs, directory.rs:982, exchange/delta.rs, delta/resolution.rs, work_service/task_sync_exchange/driver.rs) no longer compute full candidate digests or reread unchanged tasks; selections come from the Git diff and changed objects",
+    "src/task_sync/git/snapshot.rs no longer SHA-256s commit bytes beside the Git OID for retained selection or evidence import; pack staging/import binds integrity to the selected Git blob instead of a separate pack hash",
+    "The serialized task-membership inventory root (src/task_sync/inventory.rs) is replaced as an import/export basis by the exported and applied commit ids, unless the item records why it must stay; stored records are read as stored",
+    "Behaviour tests cover a retried exchange and an evidence-pack import on the new identity"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "sync"
+  ],
+  "assigned_to": "session-11330",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

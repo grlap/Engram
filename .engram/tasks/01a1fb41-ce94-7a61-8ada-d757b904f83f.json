@@ -1,0 +1,28 @@
+{
+  "id": "01a1fb41-ce94-7a61-8ada-d757b904f83f",
+  "external_ref": null,
+  "title": "Reuse shared trees and blobs when auditing ordinary task-sync publication history",
+  "outcome": "An initial push can audit previously unpublished data history within the request budget by reusing unchanged directory and blob validation across distinct Git trees.",
+  "acceptance": [
+    "A behavioral fixture with many commits sharing task and memory blobs proves the audit still refuses restricted content in any outgoing tree, including when the destination ref is absent.",
+    "Git object and decode work scales with distinct changed inputs. Preserve exact remote-basis binding and the fail-closed request deadline."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

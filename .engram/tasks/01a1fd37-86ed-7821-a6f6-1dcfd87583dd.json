@@ -1,0 +1,28 @@
+{
+  "id": "01a1fd37-86ed-7821-a6f6-1dcfd87583dd",
+  "external_ref": null,
+  "title": "Decide how the Mac runner should budget long focused suites",
+  "outcome": "Decide whether to retain or change the outer 30-minute Mac runner wrapper budget for long focused selections, based on observed compile and suite timings.",
+  "acceptance": [
+    "Identify who owns the outer wrapper and document when its 1,800-second budget starts, what it terminates, and how this differs from the standard launcher's native terminal verdict.",
+    "Record a decision to retain, reconfigure, or replace this wrapper budget, with observed compile and suite timings and the effect on legitimate long-running selections."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "macos"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

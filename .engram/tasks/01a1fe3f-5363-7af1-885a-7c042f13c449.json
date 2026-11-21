@@ -1,0 +1,27 @@
+{
+  "id": "01a1fe3f-5363-7af1-885a-7c042f13c449",
+  "external_ref": null,
+  "title": "Remove stale fingerprint-tool wording from the testing review lens",
+  "outcome": "Align the testing review lens with the shared source_id workflow.",
+  "acceptance": [
+    "The testing reviewer lens describes any exempt infrastructure checks without referring to the retired review input fingerprint tool or adding an instruction-file test."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

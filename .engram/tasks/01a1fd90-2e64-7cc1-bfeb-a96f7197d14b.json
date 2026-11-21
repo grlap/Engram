@@ -1,0 +1,30 @@
+{
+  "id": "01a1fd90-2e64-7cc1-bfeb-a96f7197d14b",
+  "external_ref": null,
+  "title": "Update the README again when the epic's last criterion lands",
+  "outcome": "Update the README again when the epic's last criterion lands",
+  "acceptance": [
+    "Re-checked at the landing of the epic's last other criterion: README.md describes Execution Observability as actually delivered then: host-recorded checks, remote test results (DL560, Mac) counting as verification evidence, source identity, and independent acceptance evaluation, each with its real limits, and links to docs/features/execution-observability.md and docs/shipped.md.",
+    "Re-checked at that landing: README.md announces nothing that is not landed and installed; every claim it makes matches docs/shipped.md, and roadmap items stay out of it or are marked as not yet delivered.",
+    "Any README change passes the link check through the focused launcher and is reviewed by the Codex and Claude pair like any Markdown-only change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "docs",
+    "execution-observability",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1d5a8-54e4-7371-b870-06f2c1b2b856",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,33 @@
+{
+  "id": "01a1fc38-c38e-7881-9d1f-4540834c799e",
+  "external_ref": null,
+  "title": "Say in the coordination skill that an owned wait survives claim expiry through its assignee and named waker",
+  "outcome": "Say in the coordination skill that an owned wait survives claim expiry through its assignee and named waker",
+  "acceptance": [
+    "The portable team-coordination skill states that before a wait the item keeps its assignee and a status note naming the exact result awaited and its direct waker; the execution claim may lapse during the wait by design (only mutations and explicit claim renew it); on the wake the assignee recovers the claim and continues",
+    ".agents/skills/coder-test-execution/SKILL.md (Engram's shared procedural skill; Engram has no evidence-based-delivery skill) contains, verbatim and identical to TermAl's copy: \"Capture source_id once per actual execution or resume. Delegation, result collection, reporting and tracker recording cite the original source_id/run result; never recapture merely because custody moved. Capture afresh only for a named source change or a criterion that genuinely requires a new current observation. Read-only review children consume the parent's exact source_id; no raw capture or second identity.\"",
+    "The review commands' source_id handling is the one landed by w-0738cb9f6aac (reviewers cite the parent's recorded source_id and capture none); this item changes no command file and adds no separate pointer sentence",
+    "Markdown only (skills); built on master after w-0738cb9f6aac lands so no remaining rule contradicts it; link check through the focused launcher passes and a Codex+Claude pair reviews it",
+    "Greg's one-identity contract („czy mozemy to zapisac w skillach takze, chce miec jednolity system pracy agentow”, via Kimi::Consultant c15db92c #478) is in .agents/skills/coder-test-execution/SKILL.md beside the capture-once rule, verbatim and identical to TermAl's copy: \"Use the shared Engram-owned source_id as the only source identity for review, gates, handoffs and evidence. Do not create a task/review/run-specific fingerprint, manually hash files, enumerate or hash unchanged files, inventory the environment, or add a fallback scanner. Use Git commit/tree/diff to select and display scope; reuse the shared producer's complete source_id. If it is missing, partial or refused, record that evidence gap and fix the shared producer; never substitute a local hash or another identity.\"; team-coordination's 'Centralize test execution' section points to it in one sentence; no other evidence layer or gate is added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1fd10-3b8f-7b80-a7fb-0738cb9f6aac"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

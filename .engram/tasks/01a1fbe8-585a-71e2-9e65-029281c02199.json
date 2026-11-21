@@ -1,0 +1,28 @@
+{
+  "id": "01a1fbe8-585a-71e2-9e65-029281c02199",
+  "external_ref": null,
+  "title": "Keep ordinary task-sync publication compatible with admitted Git versions",
+  "outcome": "Keep ordinary task-sync publication compatible with admitted Git versions",
+  "acceptance": [
+    "Ordinary publication succeeds on supported Git versions, or prior admission names an unsupported version before any mutation.",
+    "A selected remote tip and all outgoing history retain the same disclosure and fast-forward checks without introducing one Git launch per commit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-agent-ssh-2026-11-21",
+  "head": {
+    "state": "active",
+    "chain": [
+      "3cbc6aa32f184b4caaa15c0628db1177",
+      "67d3ba36d95e4036aca6dfd9b22a6374"
+    ]
+  }
+}

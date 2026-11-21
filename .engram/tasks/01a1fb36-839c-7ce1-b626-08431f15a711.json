@@ -1,0 +1,38 @@
+{
+  "id": "01a1fb36-839c-7ce1-b626-08431f15a711",
+  "external_ref": null,
+  "title": "Admit a rebuild's basis on a live store: local edits made after the rebuild must stay owed, not refuse the basis import",
+  "outcome": "Admit a rebuild's basis on a live store: local edits made after the rebuild must stay owed, not refuse the basis import",
+  "acceptance": [
+    "After `task-sync export --rebuild` is committed, `task-sync import --basis OWN_EXPORT/project.json` succeeds even when tasks were edited locally after the rebuild; those later local edits stay owed to the next export and are never treated as divergent planning against the store's own rebuild",
+    "The next ordinary `task-sync export` after that basis import takes the incremental route (no task_sync_commit_context_required) with a constant Git launch count",
+    "A behavioural CLI test reproduces it: rebuild, commit, a local edit, the basis import (passes), then an incremental export that writes the edited task",
+    "A genuine peer change to the same task between the rebuild and the import is still refused as divergent; this is not loosened"
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 3,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

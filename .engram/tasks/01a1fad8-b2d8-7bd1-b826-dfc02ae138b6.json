@@ -1,0 +1,27 @@
+{
+  "id": "01a1fad8-b2d8-7bd1-b826-dfc02ae138b6",
+  "external_ref": null,
+  "title": "Complete the task import recovery wording when held and other tasks diverge",
+  "outcome": "After directing the operator to reconcile locally changed held tasks, name the export, commit and retry sequence and the applicable set-aside recovery for other hosts’ commits.",
+  "acceptance": [
+    "A behavioral case for a locally changed held task alongside another divergence preserves the held bytes and names the supported follow-through without suggesting the upgrade rebuild shortcut."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

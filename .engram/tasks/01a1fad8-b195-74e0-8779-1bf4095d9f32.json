@@ -1,0 +1,28 @@
+{
+  "id": "01a1fad8-b195-74e0-8779-1bf4095d9f32",
+  "external_ref": null,
+  "title": "Make the dirty-folder task import refusal print a runnable recovery command",
+  "outcome": "When loose selected edits prevent incremental import, keep the preservation advice and give a complete-import command the operator can run with the same worktree, branch and memory selection.",
+  "acceptance": [
+    "In a non-default branch and memory-capable fixture, a dirty-folder refusal preserves the edits and prints a complete import retry with FOLDER, the applicable branch and memory opt-in, and the saved basis argument.",
+    "The printed retry runs after the operator has preserved the loose edits and restored the committed folder."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

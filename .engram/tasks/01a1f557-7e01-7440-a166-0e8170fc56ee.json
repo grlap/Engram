@@ -20,12 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed the shared testing guidance and source-shape review lens. The independent post-landing evaluation b608706a63a74f5c89704dc74b07de8d passed all 3 criteria on landed commit ef0f042e56d71708d9e2f3a8c1d3c15aeff26a4e / tree 44030b32217e88e99478656f2d61cfea108610ee.",
+    "completed_at": "2026-11-21T00:27:10.206006900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

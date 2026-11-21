@@ -1,0 +1,30 @@
+{
+  "id": "01a1fd29-8d44-7982-875e-be0dac562beb",
+  "external_ref": null,
+  "title": "Verify removal of handwritten source hashing and competing review identities across Engram, TermAl, and Comovo",
+  "outcome": "Verify removal of handwritten source hashing and competing review identities across Engram, TermAl, and Comovo",
+  "acceptance": [
+    "Identify every still-active duplicate input-identity or repository-hashing route within the source observation, test-input, and review flows in the three projects. Record the active location, owner and linked fix or a demonstrated reason it is not an input-identity route.",
+    "Verify on the actual fixed inputs that the shared Engram producer supplies the only source_id and that the three projects' ordinary callers no longer select legacy source fingerprints, manual file hashing, or replacement scans. Record exact source/evidence, the validation and any unresolved issue without overstating completion.",
+    "Verify the shared producer correction and TermAl consumer transition through their actual validation and report the disposition of Comovo review, including independent evidence of the first eligible run or its concrete remaining blocker."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "coordination",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1faf4-1091-7572-9e92-8c544caa023c",
+  "external_ref": null,
+  "title": "Verify a held ordinary task-sync import prevents publication",
+  "outcome": "Exercise the pending receipt and operator exit behavior when a selected task cannot be imported.",
+  "acceptance": [
+    "A local-remote CLI regression hits a held or refused import, returns failure with a pending receipt and pushed=false, and verifies the remote tip remains unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

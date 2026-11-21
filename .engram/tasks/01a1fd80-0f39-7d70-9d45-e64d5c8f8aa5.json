@@ -1,0 +1,29 @@
+{
+  "id": "01a1fd80-0f39-7d70-9d45-e64d5c8f8aa5",
+  "external_ref": null,
+  "title": "Keep source identity available for large unstaged changes on Windows",
+  "outcome": "Pass Git-selected unstaged paths without requiring a Windows process command line that exceeds its length limit.",
+  "acceptance": [
+    "A Windows checkout whose reported unstaged path list exceeds the process argument limit still yields a complete source_id when its Git diff is within the supported output budget.",
+    "The solution keeps Git as the path selector and preserves one shared source identity, stable ordering, path confinement, the caller deadline and output limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "source-identity",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

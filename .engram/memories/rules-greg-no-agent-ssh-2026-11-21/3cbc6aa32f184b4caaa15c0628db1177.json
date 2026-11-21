@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-agent-ssh-2026-11-21",
+    "revision_id": "3cbc6aa32f184b4caaa15c0628db1177",
+    "previous": null,
+    "body_sha256": "07a404e1ed2c763b8dee235f5059085d81db401e28458dadeb2f348295160664",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T02:39:47.288155800Z"
+    }
+  },
+  "body": "GREG, 2026-11-21 about 02:39Z, relayed by Engram::Asistant (mailbox 43498a6e #1664, message 89749170), verbatim: „znowu + Kimi\n\nzakaz uzywania SSH, wlasnie to jest problem\npozniej tworzymy pierdolniete procedury\n\npo to mamy remote sesje, po to mamy git branche aby tak pracowac\nA NIE URUCHAMIAC SSH NA BOKU\n\nJESTEM WSCIEKLY”.\nAsistant's instruction: apply it at once. Work on other machines goes through the existing remote sessions or federation and Git branches. Remove side-channel direct SSH from procedures, find where it still occurs, and send concrete fixes. Keep the distinction between the federation's internal transport and agents' actions; don't change the transport mechanism on guesswork.\nRULE (both projects):\n- No agent runs ssh, scp or any other direct remote shell or file copy to another machine. That covers Central, the Mac, DL560, Windows B and any other host.\n- Work on another host goes through that host's TermAl remote session (federation and relay mail) or through Git branches (test refs, author-test refs, the data branch on origin).\n- TermAl's federation transport itself (however the host implements it) is NOT an agent action and is unchanged.\n- Any procedure, skill, memory or instruction text that tells an agent to use SSH is to be removed and replaced with the remote-session or Git-branch route.\n- Git remotes over SSH configured by the operator for product features (an operator's own remote URL) are product configuration, not an agent side channel. Raise any doubt with Greg rather than guess."
+}

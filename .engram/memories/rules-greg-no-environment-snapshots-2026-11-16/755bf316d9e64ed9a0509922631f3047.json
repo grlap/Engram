@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-environment-snapshots-2026-11-16",
+    "revision_id": "755bf316d9e64ed9a0509922631f3047",
+    "previous": "e3cb431bd4994484a12bd977f57ad94e",
+    "body_sha256": "fde4d95ac8824783dfbfd5d83b1ebd2a0159055a65e0cffee5746110a1aefe4a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T05:11:08.878795100Z"
+    }
+  },
+  "body": "GREG, 2026-11-16 about 05:14Z, relayed by Engram::Asistant (mailbox 43498a6e #1351, message b559cb11). Verbatim: „na zapas probujemy zrobic serializable system, kiedy sie po prostu NIE DA”; on the recurring \"capture env snapshot and let's make sure it did not change\": „TO NIGDY NIE ZADZIALA, widac to po EO ile czasu probujemy to dopiac, widac bylo takze po source_id”.\nAsistant's scope: review this anti-pattern with the EO and Engram authors. Name concrete unjustified snapshots of the whole mutable environment and the fragile gates built on them. Propose simple solutions bounded to the actual operation and the data that matter, with no watchers and no duties for Greg. Separate evidence of a concrete real risk from speculation. Map the existing source_id directives without assuming they change. Report in Polish, with no new elaborate processes. Kimi holds the standing simplification task.\nRule for design: guarantee only what the operation itself touches. Verify the bytes an operation reads or writes, and publish only the paths it produced. Don't try to prove that the rest of a live, mutable environment did not change, and don't build serializable guarantees over things the operation doesn't own.\n\nRev 2, GREG, 2026-11-16 about 05:15Z, via Asistant 43498a6e #1353 (message 3ff06da1), verbatim: „jedyne wyjscie do jakies kontenery, albo docker albo inne podejscie, ale nie potrzebujemy tego ... licze na dalesze uproszczenia”. So don't propose containerization only to freeze an environment; keep simplifying instead.\n\n2026-11-21 05:06:38Z, Greg verbatim via Engram::Asistant (mailbox-c0551a4e-fca3-408a-8019-b78538206d3c #8, mailbox-message-b339b9e1-e579-4ccb-80d6-5de0f95feed3) on the double read in review identity: „JAKIEGO KORWA ODCZYTU, WTF!! serio, znowu probujemy nie wiem co robic kontrolowac srodowisko NIEEEE”. Asistant's relay gives the scope: use Git as the source of the reviewed change/input identity; no environment control, second full repository/submodule scan, new gate or hook. Seek the minimum that lets Comovo resume and keep coding moving. Review Git identity and evidence of actual test execution answer different questions; this relay grants no change to the applicable test evidence requirements or Git authority."
+}

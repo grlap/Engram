@@ -1,0 +1,30 @@
+{
+  "id": "01a1fd23-4c6b-7613-a9fd-32d090724b70",
+  "external_ref": null,
+  "title": "Task-sync folder admission uses Git-reported changes instead of full listings and repeated revalidation",
+  "outcome": "Task-sync folder admission uses Git-reported changes instead of full listings and repeated revalidation",
+  "acceptance": [
+    "Data-folder admission and revalidation (src/task_sync/data_worktree.rs, called from src/bin_support/task_sync.rs and src/task_sync/directory/incremental.rs) read only what Git reports as changed plus the expected tip checked immediately before effects; they no longer list unchanged index entries, untracked/ignored paths or committed root entries, and do not repeat the observation after incremental writes",
+    "Any change this makes to clean-folder or drift admission is stated on the item with its reason before landing",
+    "A behaviour test shows a dirty tracked file and a non-ignored untracked file in the data folder are still refused, with the same typed reasons"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "sync"
+  ],
+  "assigned_to": "session-7284",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

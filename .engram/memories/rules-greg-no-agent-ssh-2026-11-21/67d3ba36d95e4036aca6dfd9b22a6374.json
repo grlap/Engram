@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-agent-ssh-2026-11-21",
+    "revision_id": "67d3ba36d95e4036aca6dfd9b22a6374",
+    "previous": "3cbc6aa32f184b4caaa15c0628db1177",
+    "body_sha256": "0fca2c27fbe0656e70418b9013392815917b07486f30f4d28a9eca9c9804309d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T02:43:21.549339700Z"
+    }
+  },
+  "body": "GREG, 2026-11-21 about 02:39Z, relayed by Engram::Asistant (mailbox 43498a6e #1664, message 89749170; the same words also reached Kimi via Asistant mailbox 125b6704 #382, message acec5280-1b86-4908-a1bc-192b48ca93fa), verbatim: „znowu + Kimi\n\nzakaz uzywania SSH, wlasnie to jest problem\npozniej tworzymy pierdolniete procedury\n\npo to mamy remote sesje, po to mamy git branche aby tak pracowac\nA NIE URUCHAMIAC SSH NA BOKU\n\nJESTEM WSCIEKLY”.\nThen about 02:40Z (Asistant 43498a6e #1665, message 2bb7b91f), verbatim: „WIECEJ, MAC CALY CZAS BYL W FEDERACJI, SPRAWDZILEM LOGI\n\nPO PROSTU KTOS PROBOWAL SIE POLACZYC PO STAREMU SSH\n\nPRZEJRZEC PAMIEC SKASOWAC\n\njestem wsciekly”. Asistant: review the current memories and remote-work instructions, delete stale guidance that sends agents to direct SSH and old addresses, keep other current facts in a live entry, check portable skills too, and report concretely what was removed or changed, with no new gates.\nRULE (both projects):\n- No agent runs ssh, scp or any other direct remote shell or file copy to another machine, not even as a fallback. That covers Central, the Mac, DL560, Windows B and any other host.\n- Work on another host goes through that host's TermAl remote session (federation and relay mail) or through Git branches (test refs, author-test refs, the data branch on origin). The Mac is in federation; use it.\n- A missing or broken remote step goes to the federation owner (TermAl) or Greg; never route around it.\n- TermAl's federation transport itself (however the host implements it) is NOT an agent action and is unchanged; don't change it on guesswork.\n- Any procedure, skill, memory or instruction text that tells an agent to use SSH is removed and replaced with the remote-session or Git-branch route.\n- Git remotes over SSH configured by the operator for product features are product configuration, not an agent side channel. Raise any doubt with Greg rather than guess.\nThis entry replaces Kimi's duplicate rules-greg-no-side-ssh-2026-11-21, which was forgotten after its source citation was moved here."
+}

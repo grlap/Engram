@@ -1,0 +1,29 @@
+{
+  "id": "01a1fb60-3cbf-7823-be16-0e5aef29492e",
+  "external_ref": null,
+  "title": "Replay an already-admitted task-sync rebuild basis import",
+  "outcome": "A clean repeat of the same explicit saved-basis import converges after a successful own-rebuild adoption, a lost receipt or a journal-cleanup failure. Later local work remains owed and an unrelated basis or changed committed tip still uses ordinary admission.",
+  "acceptance": [
+    "A behavioral test commits an own rebuild, edits a task locally, imports the saved basis, then repeats the same import without a false divergence or duplicate planning changes.",
+    "A deterministic post-commit journal-cleanup failure or lost receipt can be retried to the same successful state, with the matching slot retired and the later local edit available to ordinary incremental export.",
+    "A changed tip or unrelated saved envelope cannot replay that success."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "deferred-review",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

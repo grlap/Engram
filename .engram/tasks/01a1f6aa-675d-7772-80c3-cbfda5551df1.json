@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "The paired Markdown change is landed in origin/master at ef0f042e56d71708d9e2f3a8c1d3c15aeff26a4e. A fresh independent post-landing evaluation on that exact commit passed both acceptance criteria (evaluation 24ee99d146ce470588e4b6804c590181); complete this item.",
+    "completed_at": "2026-11-21T00:22:38.197326800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

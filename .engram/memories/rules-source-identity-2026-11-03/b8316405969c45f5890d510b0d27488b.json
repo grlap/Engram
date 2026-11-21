@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-source-identity-2026-11-03",
+    "revision_id": "b8316405969c45f5890d510b0d27488b",
+    "previous": "2a8bd3b9d24a43188b37f4ca3a777639",
+    "body_sha256": "78a8e89f7a70542804f6750287320675077cc40506ce95b5086289921d09715c",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T05:36:59.913815200Z"
+    }
+  },
+  "body": "Current agreed source identity and EO credit. Use the one Engram-owned source_id contract; delivery/build status belongs on its work items, not in this memory. The current design target is Git commits plus a hash of the Git diff in the one source_id. The previously shipped per-changed-file representation is the earlier contract. Use existing Git status/diff, not a whole-repository file/index list, watcher events or hashing/comparing the .git directory. Ignored paths stay excluded. Unavailable or partial capture never becomes a complete identity. Keep the accepted Git visibility limits, including reverted changes between captures and changes Git does not report.\n\nGreg via Asistant#406 (2026-11-06), verbatim: „NIE, source_id opisuje stan zrodel, czyli commity git + hashe lokalnie zmienionych plikow mamy jeden mechanizm na wszystko TAK ? to jest moja propozycja ktora probuje wymusic od paru dni”. Asistant#396: „ŻADNEGO hashowania katalogu .git”. Asistant#402: „NIE ... PO TO MAMY SOURCE_ID ktory rozwiazuje te problemy wszyscy maja uzywac tylko source_id”.\n\nAgreed native credit: a host-observed declared command as the turn's first tool action; its valid declared result artifact supplies the verdict; full source_id before == after, dirty allowed; existing project/store/item/claim/root/run identity and completion-obligation guards. No watcher or other non-agreed credit condition. Greg via Asistant#418: „to jest wystarczajacy warunek ... mysle, ze i tak jest za silny, ale zacznijmy od tego”. Detailed binding and verdict semantics remain with the existing owner and agreed definition (rules-greg-no-credit-blocking-rules-2026-11-07). This is the agreed target, not an independently verified claim about every installed consumer. Preserve existing evaluations and seals; content-v1 retirement and evaluation re-enable follow their own current decisions.\n\n2026-11-21, Greg directly in Engram::Inquisitor (session-19238), verbatim: „NIE NIE NIE NIE\n\nkorwa NIE\n\npo to termal ma source_id ABY TEGO W JEDNOLITY SPOSOB UZYWAC”. This explicitly applies the existing single Engram-owned source_id to review in TermAl and Comovo. An explicit Git base and commit select the diff scope; `git diff --submodule=diff` is how to display that scope. Neither is a second review identity. Use the existing producer and stop whole-repository file hashing on ordinary review paths.\n\nKimi::Consultant's 2026-11-21 05:33:09Z relay of Greg's final correction (mailbox-1b68de3a-70e9-499a-8689-9763938e09c1 #10, mailbox-message-7991eced-e979-4b5b-a5fb-b9e81902bb2c): compute the same shared source_id from Git commits and the hash of the diff. No environment inventory, whole-repository/submodule inventory, per-file content census, double capture within the producer or alternate review identity. This is a relay, not a verbatim quote. Respect the already recorded source_id evidence requirements at independent execution/review boundaries."
+}

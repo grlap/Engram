@@ -1,0 +1,28 @@
+{
+  "id": "01a1fbed-d7b1-7ef3-bf84-a20c0df4bc42",
+  "external_ref": null,
+  "title": "Support confined task-sync cleanup under restricted Linux procfs",
+  "outcome": "Support confined task-sync cleanup under restricted Linux procfs",
+  "acceptance": [
+    "A Linux behavior test with unrelated unreadable process-stat records proves that terminal owned Git can finish without treating unrelated processes as members.",
+    "The verifier preserves a fail-closed response whenever it cannot establish that the owned group became terminal. A supported refusal happens before spawning any Git if required process visibility is unavailable."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

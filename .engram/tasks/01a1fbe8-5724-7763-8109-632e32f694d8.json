@@ -1,0 +1,28 @@
+{
+  "id": "01a1fbe8-5724-7763-8109-632e32f694d8",
+  "external_ref": null,
+  "title": "Isolate ordinary task-sync test Git and loopback configuration",
+  "outcome": "Isolate ordinary task-sync test Git and loopback configuration",
+  "acceptance": [
+    "The ordinary CLI and target-drift tests use fixture-owned Git configuration and exercise only the intended local endpoint.",
+    "An unrelated global URL, helper or proxy setting cannot alter the behavioral test outcome."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

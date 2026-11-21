@@ -6,7 +6,7 @@
   "acceptance": [
     "README.md describes Execution Observability as actually delivered at the closing landing: host-recorded checks, remote test results (DL560, Mac) counting as verification evidence, source identity, and independent acceptance evaluation, each with its real limits, and links to docs/features/execution-observability.md and docs/shipped.md.",
     "README.md announces nothing that is not landed and installed; every claim it makes matches docs/shipped.md, and roadmap items stay out of it or are marked as not yet delivered.",
-    "Written after the epic's other criteria have landed (or updated again at the last of them), passes the link check through the focused launcher, and is reviewed by the Codex and Claude pair like any Markdown-only change."
+    "Passes the link check through the focused launcher and is reviewed by the Codex and Claude pair like any Markdown-only change."
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,

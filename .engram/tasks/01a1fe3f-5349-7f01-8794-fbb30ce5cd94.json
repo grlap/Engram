@@ -1,0 +1,27 @@
+{
+  "id": "01a1fe3f-5349-7f01-8794-fbb30ce5cd94",
+  "external_ref": null,
+  "title": "Use committed-input landing commands in the Engram repository skill",
+  "outcome": "Align the repository skill's landing commands with the clean-candidate policy.",
+  "acceptance": [
+    "The skill's landing validation uses full --input commit on a clean candidate and correctly distinguishes focused correction checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

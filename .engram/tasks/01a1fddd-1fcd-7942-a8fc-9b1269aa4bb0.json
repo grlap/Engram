@@ -1,0 +1,29 @@
+{
+  "id": "01a1fddd-1fcd-7942-a8fc-9b1269aa4bb0",
+  "external_ref": null,
+  "title": "Remove the satisfied TermAl reader-activation hold from Engram launcher guidance",
+  "outcome": "After w-0738 lands, remove the historical launcher-reader activation paragraph from docs/development.md and .claude/commands/review-changes.md without a replacement condition.",
+  "acceptance": [
+    "Both Markdown guides drop the satisfied TermAl complete source_id reader activation hold and add no new landing condition.",
+    "The existing authority-text process is followed for the review command and the separate git_delta producer rollout is unaffected."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

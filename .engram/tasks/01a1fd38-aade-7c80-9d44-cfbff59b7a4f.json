@@ -1,0 +1,32 @@
+{
+  "id": "01a1fd38-aade-7c80-9d44-cfbff59b7a4f",
+  "external_ref": null,
+  "title": "Carry the admitted data worktree and commit selection through an exchange attempt instead of re-observing it",
+  "outcome": "Carry the admitted data worktree and commit selection through an exchange attempt instead of re-observing it",
+  "acceptance": [
+    "Within one exchange attempt (delta attempt, resolution, evidence exchange, delta commit recording, publication and branch advance), the data worktree is admitted once and later steps recheck only the captured administration, branch and tip before each effect; observe_git_selection_data and its callers no longer re-enter full admission after reads or writes",
+    "Commit-content checks (orphan history and root tree of the selected, common and extended commits) stay at the commit and disclosure admissions, and SelectedHeadChanged and the ref compare-and-swap refusals are unchanged",
+    "A deterministic count test shows the Git launches of one exchange attempt do not grow with the number of rechecks a step makes, and existing exchange drift and tip-move tests still refuse"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1d212-f0c2-7100-aaa2-6ea6f92ccffc"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

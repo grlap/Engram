@@ -20,12 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed the Windows–Mac Comovo task and memory rollout on 2026-11-17. The Mac installed the agreed Engram build and initialized its own ready store. Windows exported and published the private data branch after the disclosure check, and the Mac imported 234 tasks and 3 memories. Both directions were demonstrated with memory revisions and a task created on the Mac and completed on Windows. Fresh independent evaluation dfd481472856414fab33b192b5b554cf passed all four criteria.",
+    "completed_at": "2026-11-21T04:06:46.704100200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

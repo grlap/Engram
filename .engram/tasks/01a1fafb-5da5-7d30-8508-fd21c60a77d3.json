@@ -1,0 +1,27 @@
+{
+  "id": "01a1fafb-5da5-7d30-8508-fd21c60a77d3",
+  "external_ref": null,
+  "title": "Report remaining local export work after ordinary sync adopts a newer head",
+  "outcome": "Keep the receipt accurate if a manually advanced or partial-import head must be adopted before staged local planning can be exported.",
+  "acceptance": [
+    "A CLI behavior regression with a mismatched recorded import basis and owed local edits verifies that the edits are published safely or the receipt explicitly reports the remaining export and the resume command."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

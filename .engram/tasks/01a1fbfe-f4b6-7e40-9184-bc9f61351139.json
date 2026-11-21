@@ -1,0 +1,31 @@
+{
+  "id": "01a1fbfe-f4b6-7e40-9184-bc9f61351139",
+  "external_ref": null,
+  "title": "Remove agent SSH routes from AGENTS.md and CLAUDE.md under Greg's SSH ban",
+  "outcome": "Remove agent SSH routes from AGENTS.md and CLAUDE.md under Greg's SSH ban",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md no longer contain the S3 pilot folder-exchange bullet that authorizes the Windows-to-Mac SSH path",
+    "AGENTS.md and CLAUDE.md no longer list ssh or scp invocation examples under Non-Interactive Shell Commands",
+    "AGENTS.md and CLAUDE.md state that agents never run ssh, scp or another side-channel remote shell or copy to another host, and that remote work goes through TermAl remote sessions or Git branches",
+    "AGENTS.md and CLAUDE.md stay identical; the link check passes through the focused launcher",
+    "Both coordinators' concurrence, the exact wording sent to Greg, and the final-diff audit are recorded on this item before landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
