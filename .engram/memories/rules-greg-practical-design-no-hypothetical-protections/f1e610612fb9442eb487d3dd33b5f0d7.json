@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-practical-design-no-hypothetical-protections",
+    "revision_id": "f1e610612fb9442eb487d3dd33b5f0d7",
+    "previous": null,
+    "body_sha256": "10f67251edd2a03f3a8e9200d35711c401c0735b559443cf6d6254f385d953aa",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T16:16:41.664264800Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-21, Engram::Asistant: „takie podejscie do designu ma zostac usunieta. NIE MA HIPOTETYCZNYCH SYTUACJI, NIE DA SIE PRZED TYM ZABEZPIECZYC” oraz „NIE MA ZABEZPIECZENIA PLIKU to jest absurd; chce zapis aby uniknac takich kosztowych bledow projektowych”. Apply together with rules-greg-standing-direction: design for concrete needs and observed failures; do not add protections against hypothetical file replacement or a separate OS file-identity proof. Keep recovery focused on actual operation state, without speculative protective layers."
+}

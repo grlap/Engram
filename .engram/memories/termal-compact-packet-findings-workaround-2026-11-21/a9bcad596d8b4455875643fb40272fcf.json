@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-compact-packet-findings-workaround-2026-11-21",
+    "revision_id": "a9bcad596d8b4455875643fb40272fcf",
+    "previous": null,
+    "body_sha256": "415531f67a7032241e7012842fafe51d8a2d52a5baa3ed16144f2b6461db3b3d",
+    "retiring_target": {
+      "kind": "external",
+      "project": "termal",
+      "reference": "w-1bcc77607388"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-21T16:15:23.802215Z"
+    }
+  },
+  "body": "INTERIM RULE for reviews, shared with TermAl (Engram::Fable, 2026-11-21 about 16:16Z, agreed with Termal::Fable2 ebe242f7 #8579). A TermAl delegation's compact result packet can report \"no findings\" while the reviewer's original result holds Medium or High findings. Example: Engram w-952b's explorer delegation-27839f52 had a compact packet saying none, while the original had two Highs and a Medium (11334 note d0ae5277). TermAl tracks it as w-1bcc77607388 (P0, owner Sol-a7bb).\nRULE until that item lands:\n- Findings and severities come ONLY from each reviewer's exact original result (termal_get_session_result for that attempt and result), never from the compact packet alone.\n- Any review pair recorded as clean on the compact packet alone is rechecked against the originals before its landing. The Merger checks this for every queued package.\nRetire this note when w-1bcc lands and is deployed."
+}

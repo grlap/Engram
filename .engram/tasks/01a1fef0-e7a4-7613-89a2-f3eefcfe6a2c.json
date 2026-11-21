@@ -1,0 +1,30 @@
+{
+  "id": "01a1fef0-e7a4-7613-89a2-f3eefcfe6a2c",
+  "external_ref": null,
+  "title": "Put the agreed design-review guidance in Engram's architecture reviewer lens and the coder skill",
+  "outcome": "Put the agreed design-review guidance in Engram's architecture reviewer lens and the coder skill",
+  "acceptance": [
+    "`.claude/reviewers/architecture.md` contains, verbatim, the guidance agreed by both coordinators: \"For a new mechanism or a significant behavior change, the item states the goal, the observed problem, the proposed behavior and its cost before code. The existing design reviewer checks necessity, simpler existing alternatives, real host behavior and possible damage to functionality. Do not require protection for hypothetical scenarios; a severity label is not evidence. Do not dismiss a concrete correctness defect merely because no incident has occurred. Small fixes use ordinary review only.\"",
+    "`.agents/skills/coder-test-execution/SKILL.md` gains one \"before code\" sentence carrying the first sentence of that guidance",
+    "The change is Markdown-only on a clean candidate commit, passes the focused link check, and gets a review pair; no other text changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1fee8-1046-7891-b0a2-5a44c45388ab",
+  "external_ref": null,
+  "title": "Remove protections against hypothetical file swaps (same_file and share-mode pinning) where they guard no real scenario",
+  "outcome": "Remove protections against hypothetical file swaps (same_file and share-mode pinning) where they guard no real scenario",
+  "acceptance": [
+    "The physical file and directory identity proofs (PhysicalId, file_identity, Directory::identity) in src/task_sync/setup/materialize (journal, completion, replacement, publication) and src/task_sync/setup/files.rs are removed; the restore same_file held-versus-named check, graph publication's held ancestor chain, SUBST volume-root check and reparse/real-directory walk, and both share_mode(1) uses (bin_support/source_identity.rs, task_sync/setup/files.rs) are removed; each site's keep/remove classification is recorded on the item (Inquisitor note 0d096353)",
+    "Kept and still working: resume after interruption from an admitted journal (including journals written before identities were dropped), no-replace publication, preservation of the set-aside before file, the real UNC full-path removal in backup restore, the rule that a graph snapshot never lands in Engram's project stores as a resolved-path comparison, is_same_file and same_directory comparisons of the user's two spellings, share_mode(7), and a plain same-filesystem refusal before a materialization attempt is created",
+    "The removed protections' tests and documentation are deleted with no replacement check, scanner or identity mechanism, and the surrounding real recovery behaviour tests pass",
+    "Reviewer findings whose only trigger is a hypothetical swap, rename, alias or concurrent writer are rejected, per rules-greg-no-hypothetical-protections-2026-11-21"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1fee8-9e1d-70b3-af81-3ef73eff57d0",
+  "external_ref": null,
+  "title": "Remove physical file identity checks added for hypothetical task materialization replacements",
+  "outcome": "Prepared task materialization resumes from its journal and retained operation files after an interrupted write, without rejecting identical local state over a physical file or directory ID.",
+  "acceptance": [
+    "Remove physical file and directory identity checks in materialize/replacement.rs, journal.rs, and completion.rs whose only evidence is a hypothetical replacement or equal-content alias. Review adjacent publication.rs for checks enforcing that same assumption. Reuse the current operation ID, retained files and journaled operation state.",
+    "Preserve recovery after real process interruption: use the original preparation, retain displaced bytes, resume partial publication, and never overwrite an independently changed destination. Keep the existing atomic/no-replace writes and selection/disclosure rules. Accept equivalent recorded state where the only difference was a physical file ID.",
+    "Previously recorded materialization journals remain readable and recoverable. Existing interruption/retry and occupied-destination coverage still passes, with tests that only simulate physical identity replacement removed or corrected. User-facing docs describe the resulting recovery behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1fee8-1046-7891-b0a2-5a44c45388ab",
+  "disposal_reason": "Fable assigned the same materialization work to Engram::Opus on the existing wider item. The complete materialization scope, evidence and backward-recovery requirements are now recorded on w-5a44c45388ab note 0d096353f6f44f178d85922d51bd6267; one implementation owner and verification.",
+  "completion": null
+}

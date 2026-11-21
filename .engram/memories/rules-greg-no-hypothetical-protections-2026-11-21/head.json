@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-hypothetical-protections-2026-11-21",
+  "head": {
+    "state": "active",
+    "chain": [
+      "d697a30501ef4bbb995262bf354a9674",
+      "6367c85d398244059d2e231620e29d79",
+      "79e4662c75204c05bc5e53270f4f592c",
+      "8ad63a6b3c564724a9ee02b7fc6a8baa"
+    ]
+  }
+}
