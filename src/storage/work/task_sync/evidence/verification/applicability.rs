@@ -9,7 +9,7 @@ use crate::domain::{
     ControlWorkBinding, RegisteredHostRun, VerificationEvidence, VerificationProducerFacts,
     VerificationRequirement,
 };
-use crate::storage::work::{feeds, planning, query};
+use crate::storage::work::{feeds, planning, query, registered_commit_currency::LiveCurrency};
 use crate::task_sync::evidence::EvidenceError;
 use crate::task_sync::evidence::verification::{ApplicabilityRequest, ApplicabilitySummary};
 use crate::{ActorContext, CanonicalObject, ObjectId, ProjectId, SessionId};
@@ -145,6 +145,16 @@ pub(crate) fn measure_binding_destination(
     connection: &Connection,
     binding: &ControlWorkBinding,
 ) -> Result<MeasuredDestination> {
+    measure_binding_destination_reusing(connection, binding, None)
+}
+
+/// Reuse the operation's own measurement of the same named root, when it has
+/// one; otherwise read the source as `measure_binding_destination` does.
+pub(in crate::storage) fn measure_binding_destination_reusing(
+    connection: &Connection,
+    binding: &ControlWorkBinding,
+    currency: Option<&LiveCurrency>,
+) -> Result<MeasuredDestination> {
     if !connection.is_autocommit() {
         return Err(invalid(
             "source currency must be measured outside the writer",
@@ -158,13 +168,18 @@ pub(crate) fn measure_binding_destination(
     )?
     .filter(|(_, _, event)| event.kind == crate::domain::NamedRootBindingKind::Bound)
     .ok_or_else(|| invalid("destination has no active named root"))?;
-    let measured = crate::source::inspect(
-        std::path::Path::new(&event.workspace_id),
-        crate::source::MAX_BUDGET,
-    );
-    let source = measured
-        .source_id
-        .ok_or_else(|| invalid("destination source identity is unavailable"))?;
+    let source = match currency.and_then(|value| value.observed_source(&root, &event.workspace_id))
+    {
+        Some(measured) => measured.ok().cloned(),
+        None => {
+            crate::source::inspect(
+                std::path::Path::new(&event.workspace_id),
+                crate::source::MAX_BUDGET,
+            )
+            .source_id
+        }
+    }
+    .ok_or_else(|| invalid("destination source identity is unavailable"))?;
     Ok(MeasuredDestination { root, source })
 }
 

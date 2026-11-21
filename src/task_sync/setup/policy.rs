@@ -22,13 +22,13 @@ fn ignore() -> String {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Edit {
+pub(in crate::task_sync) struct Edit {
     pub path: String,
     pub before: Option<Vec<u8>>,
     pub after: Vec<u8>,
 }
 
-pub(super) fn propose(path: &str, before: Option<Vec<u8>>) -> Result<Edit> {
+pub(in crate::task_sync) fn propose(path: &str, before: Option<Vec<u8>>) -> Result<Edit> {
     let text = std::str::from_utf8(before.as_deref().unwrap_or_default())?;
     ensure!(
         !text.contains(BEGIN) && !text.contains(END),

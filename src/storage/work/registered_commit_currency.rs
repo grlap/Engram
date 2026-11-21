@@ -130,6 +130,30 @@ impl LiveCurrency {
         Ok(result)
     }
 
+    /// This operation's measurement of `workspace`, when it was taken for a
+    /// live check sampled on exactly the named-root binding `root`. An error
+    /// is a measurement that found no source identity, with its reason.
+    pub(in crate::storage) fn observed_source(
+        &self,
+        root: &ObjectId,
+        workspace: &str,
+    ) -> Option<Result<&crate::source::SourceId, &str>> {
+        let measured = self.roots.get(workspace)?;
+        self.candidates
+            .iter()
+            .any(|candidate| {
+                candidate.is_live()
+                    && candidate.root.as_ref() == Some(root)
+                    && candidate.evidence.source_basis.workspace_id == workspace
+            })
+            .then(|| {
+                measured
+                    .as_ref()
+                    .map(|measurement| &measurement.source_id)
+                    .map_err(String::as_str)
+            })
+    }
+
     fn is_current(&self, candidate: &Candidate) -> bool {
         let basis = &candidate.evidence.source_basis;
         self.roots

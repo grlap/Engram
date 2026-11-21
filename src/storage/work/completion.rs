@@ -203,6 +203,7 @@ impl SqliteStore {
                 request.run_id,
                 &request.evidence,
                 true,
+                &currency,
             )?
         };
         let transaction = self.begin_work_mutation()?;

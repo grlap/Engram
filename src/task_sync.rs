@@ -529,6 +529,8 @@ pub enum TaskSyncRefusal {
     SetupIntentPolicyObsolete,
     /// A memory-capable folder requires explicit memory import/export selection.
     MemoryProfileRequiresOptIn,
+    /// An ignore rule would keep a file the export writes out of its commit.
+    TaskIgnorePolicyExcludesFile,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -589,6 +591,7 @@ task_sync_refusal_codes! {
     MemoryExportBasisInvalid => "memory_export_basis_invalid",
     SetupIntentPolicyObsolete => "setup_intent_policy_obsolete",
     MemoryProfileRequiresOptIn => "memory_profile_requires_opt_in",
+    TaskIgnorePolicyExcludesFile => "task_sync_ignore_policy_excludes_file",
 }
 
 impl TaskSyncRefusal {

@@ -82,7 +82,6 @@ impl DataWorktree {
             }
             compare(&root, path, bytes)?;
         }
-        self.revalidate()?;
         Ok(selected)
     }
 }

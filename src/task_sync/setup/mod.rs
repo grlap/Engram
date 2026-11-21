@@ -14,6 +14,8 @@ pub(in crate::task_sync) use files::Directory as PrivateDirectory;
 
 pub(crate) use materialize::materialize;
 pub use materialize::{MaterializeReceipt, MaterializeSelection};
+#[cfg(test)]
+pub(in crate::task_sync) use policy::propose as propose_policy;
 
 use std::path::{Path, PathBuf};
 

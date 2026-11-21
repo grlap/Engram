@@ -167,3 +167,47 @@ fn staged_data_commit_retains_both_resolved_data_parents_and_refuses_code_ancest
     assert_eq!(run(&f.data, &["rev-list", "--count", "HEAD"]), b"4\n");
     assert_eq!(f.code_snapshot(), code_before);
 }
+
+#[test]
+fn a_clean_head_with_a_foreign_root_entry_is_never_a_data_commit_parent() {
+    let f = Fixture::new();
+    // A commit on the bound data branch, made outside Engram, that holds a
+    // file beside `.engram/`. Its worktree is clean, so status reports nothing.
+    fs::create_dir_all(f.data.join(".engram")).unwrap();
+    fs::write(f.data.join(".engram/project.json"), "{}\n").unwrap();
+    fs::write(f.data.join("foreign.rs"), "preserve me\n").unwrap();
+    run(&f.data, &["add", ".engram/project.json", "foreign.rs"]);
+    run(&f.data, &["commit", "-m", "Foreign root entry"]);
+    let head = oid_line(&run(&f.data, &["rev-parse", "HEAD"])).unwrap();
+    let selected = DataWorktree::observe(&f.code, &f.data, "engram-data").unwrap();
+    assert!(
+        selected
+            .check_commit(&head)
+            .unwrap_err()
+            .to_string()
+            .contains("outside the .engram/")
+    );
+    let code_before = f.code_snapshot();
+    let request = staged(&f, "{\"selection\":1}\n", Some(&head));
+    let refs = run(
+        &f.data,
+        &["for-each-ref", "--format=%(refname) %(objectname)"],
+    );
+    assert!(selected.create_retained(&request).is_err());
+    assert_eq!(
+        run(
+            &f.data,
+            &["for-each-ref", "--format=%(refname) %(objectname)"]
+        ),
+        refs
+    );
+    assert_eq!(
+        oid_line(&run(&f.data, &["rev-parse", "HEAD"])).unwrap(),
+        head
+    );
+    assert_eq!(
+        fs::read_to_string(f.data.join("foreign.rs")).unwrap(),
+        "preserve me\n"
+    );
+    assert_eq!(f.code_snapshot(), code_before);
+}

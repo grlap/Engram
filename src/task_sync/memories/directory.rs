@@ -71,12 +71,9 @@ pub fn read_locked(
     held: &PublicationLock,
 ) -> Result<BTreeMap<String, KeyHistory>> {
     held.validate(data)?;
-    data.revalidate()?;
     let selected = data.select_folder(&data.checkout.join(".engram"))?;
     let root = PrivateDirectory::open(&selected)?;
-    let result = read_root(&root)?;
-    data.revalidate()?;
-    Ok(result)
+    read_root(&root)
 }
 
 /// [`read_locked`], with the bytes the memory files hold on disk as read, for
@@ -89,11 +86,9 @@ pub fn read_locked_with_bytes(
     held: &PublicationLock,
 ) -> Result<(BTreeMap<String, KeyHistory>, u64)> {
     held.validate(data)?;
-    data.revalidate()?;
     let selected = data.select_folder(&data.checkout.join(".engram"))?;
     let root = PrivateDirectory::open(&selected)?;
     let (result, bytes) = read_root_with_bytes(&root)?;
-    data.revalidate()?;
     Ok((result, u64::try_from(bytes)?))
 }
 
@@ -106,12 +101,10 @@ pub fn committed(
     project: &crate::ProjectId,
 ) -> Result<BTreeMap<String, KeyHistory>> {
     data.revalidate()?;
-    let result = match &data.head {
+    Ok(match &data.head {
         Some(head) => crate::task_sync::git::read_memory_snapshot(&data.checkout, project, head)?,
         None => BTreeMap::new(),
-    };
-    data.revalidate()?;
-    Ok(result)
+    })
 }
 
 fn ensure_memory_policy(
@@ -288,7 +281,6 @@ pub fn preflight_component(
             crate::task_sync::TaskSyncRefusal::MemoryExportComponentMissing.invalid("memory_export_component_missing: restore the committed memory component before export")
         ),
     }
-    data.revalidate()?;
     Ok(u64::try_from(total)?)
 }
 
@@ -864,6 +856,5 @@ pub fn write_admitted(
         read_root(&root)? == *selected,
         "memory publication did not match selected content"
     );
-    data.revalidate()?;
     Ok(())
 }

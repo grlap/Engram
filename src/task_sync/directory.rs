@@ -317,7 +317,6 @@ pub(crate) fn read_resolved_data_folder_profile(
         .tree
         .validate_folder()
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    data.revalidate()?;
     Ok(exchange)
 }
 
@@ -636,7 +635,6 @@ pub(in crate::task_sync) fn read_resolved_data_folder_for_memory_recovery(
     )?;
     let folder = folder_from_documents_profile(documents, intended.is_some(), true)?;
     folder.tree.validate_folder()?;
-    data.revalidate()?;
     Ok((folder, bytes))
 }
 
@@ -850,7 +848,6 @@ pub fn enable_memory_profile(data: &super::data_worktree::DataWorktree) -> Resul
         "project envelope changed before capability publication"
     );
     root.dir().rename(&pending, root.dir(), "project.json")?;
-    data.revalidate()?;
     Ok(())
 }
 
@@ -1157,9 +1154,7 @@ fn write_data_folder_profile(
     if !include_memories {
         require_task_only_head(data, "export")?;
     }
-    let written = write_folder_at(&path, tree, profile, true)?;
-    data.revalidate()?;
-    Ok(written)
+    write_folder_at(&path, tree, profile, true)
 }
 
 pub(crate) fn invalid_memory_export_basis(

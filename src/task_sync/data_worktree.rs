@@ -146,10 +146,12 @@ impl DataWorktree {
         }
     }
 
-    /// The observed HEAD commit, when the folder's task files and envelope
-    /// hold exactly its content: nothing staged, modified or untracked there.
-    /// Policy files and other data beside them do not count. A HEAD that moved
-    /// since the observation refuses rather than certifying another commit.
+    /// The observed HEAD commit, when Git status reports nothing staged,
+    /// modified or untracked among the folder's task files and envelope.
+    /// Ignored files are not reported, so a complete import separately
+    /// compares the commit's task files with those it reads. Policy files and
+    /// other data beside them do not count. A HEAD that moved since the
+    /// observation refuses rather than certifying another commit.
     ///
     /// # Errors
     /// Refuses a failed or unbounded Git status read, and drift.
@@ -167,11 +169,9 @@ impl DataWorktree {
     }
 
     /// The task files and envelope that differ from HEAD: staged, modified,
-    /// deleted or untracked, as paths relative to the data checkout. An
-    /// ignored task file or envelope counts too, so an ignore rule never
-    /// hides a loose file at a folder path, which an export would otherwise
-    /// count as committed; other ignored entries, which the folder's policy
-    /// ignores by design, do not.
+    /// deleted or untracked, as paths relative to the data checkout, exactly
+    /// as Git reports them. Ignored files are not listed; an export never
+    /// overwrites a file whose bytes differ from what it planned over.
     ///
     /// Comparing worktree bytes lets Git apply attributes, so every configured
     /// filter driver is disabled for this read: no clean or process command
@@ -198,8 +198,8 @@ impl DataWorktree {
         // The same bound as every other folder listing: a status over a folder
         // at its task limit on a slow disk must finish, not time out.
         let deadline = QUERY_BOUND;
-        // Both listings name every folder path, so they take the folder
-        // listing limit rather than the general query output limit.
+        // A folder whose every task changed is reported in full, so the status
+        // takes the folder listing limit rather than the general query limit.
         let listing = |args: &[&str]| {
             let _warning = crate::operation_time::Warning::start("local Git query");
             super::git::query_listing(
@@ -209,35 +209,131 @@ impl DataWorktree {
                 super::git::MAX_LISTING_BYTES,
             )
         };
-        // Status skips a file whose index entry is marked assume-unchanged or
-        // skip-worktree, so such a file could hide an edit from this read.
+        // Only Git's own change report is read: an index entry an operator
+        // marked assume-unchanged or skip-worktree is trusted as marked.
         let paths: &[&str] = if include_memories {
             &[".engram/tasks", ".engram/project.json", ".engram/memories"]
         } else {
             &[".engram/tasks", ".engram/project.json"]
         };
-        let mut index_args = vec!["ls-files", "-v", "-z", "--"];
-        index_args.extend_from_slice(paths);
-        for entry in listing(&index_args)?
+        let overrides = self.filter_overrides_within(Budget::PerQuery)?;
+        let mut args = overrides.iter().map(String::as_str).collect::<Vec<_>>();
+        args.extend([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--no-renames",
+            "--",
+        ]);
+        args.extend_from_slice(paths);
+        let status = listing(args.as_slice())?;
+        let mut paths = std::collections::BTreeSet::new();
+        for record in status
             .split(|byte| *byte == 0)
-            .filter(|entry| !entry.is_empty())
+            .filter(|record| !record.is_empty())
         {
-            ensure!(
-                entry.len() > 2 && entry[1] == b' ',
-                "malformed Git index result"
-            );
-            ensure!(
-                entry[0] != b'S' && !entry[0].is_ascii_lowercase(),
-                "index inspection is suppressed for {}: clear it with `git update-index --no-assume-unchanged --no-skip-worktree` on that path in the data worktree",
-                String::from_utf8_lossy(&entry[2..])
-            );
+            let path = record
+                .get(3..)
+                .ok_or_else(|| anyhow::anyhow!("malformed Git status record"))?;
+            paths.insert(String::from_utf8(path.to_vec())?);
         }
-        let configured = super::git::query(
+        Ok(paths)
+    }
+
+    /// Refuse folder files, named relative to `.engram/`, that an ignore rule
+    /// would keep out of `git add`, naming the first matching rule. Only these
+    /// paths are asked; a tracked file is not subject to ignore rules.
+    ///
+    /// # Errors
+    /// Refuses an ignored file and a failed Git query.
+    pub(crate) fn refuse_ignored_files<'a>(
+        &self,
+        files: impl IntoIterator<Item = &'a str>,
+    ) -> Result<()> {
+        let mut input = Vec::new();
+        for file in files {
+            input.extend_from_slice(b".engram/");
+            input.extend_from_slice(file.as_bytes());
+            input.push(0);
+        }
+        if input.is_empty() {
+            return Ok(());
+        }
+        // Plain check-ignore names only paths a rule effectively excludes; a
+        // path the folder's own policy re-includes with `!` is not reported.
+        let ignored = git::ignored_paths(&self.checkout, &input, QUERY_BOUND)?;
+        let Some(path) = ignored
+            .split(|byte| *byte == 0)
+            .find(|path| !path.is_empty())
+        else {
+            return Ok(());
+        };
+        // Only for the refusal: which rule excludes that one path.
+        let mut first = path.to_vec();
+        first.push(0);
+        let verbose = git::query(
+            &self.checkout,
+            &["check-ignore", "-v", "-z", "--stdin"],
+            true,
+            Some(&first),
+            QUERY_BOUND,
+        )?;
+        // The match is its rule's source, line and pattern, then the path.
+        let fields = verbose
+            .split(|byte| *byte == 0)
+            .map(String::from_utf8_lossy)
+            .collect::<Vec<_>>();
+        let path = String::from_utf8_lossy(path);
+        let rule = match fields.as_slice() {
+            [source, line, pattern, ..] => format!("`{pattern}` at {source}:{line}"),
+            _ => "an ignore rule".to_owned(),
+        };
+        Err(super::TaskSyncRefusal::TaskIgnorePolicyExcludesFile
+            .invalid(format!(
+                "task_sync_ignore_policy_excludes_file: {path} is ignored by {rule}, so committing the export would leave it out; remove or narrow that rule, then export again"
+            ))
+            .into())
+    }
+
+    /// The envelope and task file paths a data commit holds, for a complete
+    /// import that records the folder on disk as that commit.
+    ///
+    /// # Errors
+    /// Refuses a failed or unbounded Git read.
+    pub(crate) fn committed_task_files(
+        &self,
+        commit: &str,
+    ) -> Result<std::collections::BTreeSet<String>> {
+        super::ledger::oid(commit)?;
+        let listing = git::query_listing(
+            &self.checkout,
+            &[
+                "ls-tree",
+                "-z",
+                "--name-only",
+                commit,
+                "--",
+                ".engram/project.json",
+                ".engram/tasks/",
+            ],
+            QUERY_BOUND,
+            git::MAX_LISTING_BYTES,
+        )?;
+        listing
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(|path| Ok(String::from_utf8(path.to_vec())?))
+            .collect()
+    }
+
+    /// Prevent worktree reads and effects from invoking configured Git filters.
+    pub(crate) fn filter_overrides_within(&self, budget: Budget) -> Result<Vec<String>> {
+        let configured = query_within(
             &self.checkout,
             &["config", "--name-only", "--get-regexp", r"^filter\."],
             true,
-            None,
-            deadline,
+            budget,
         )?;
         let drivers = String::from_utf8(configured)?
             .lines()
@@ -256,57 +352,21 @@ impl DataWorktree {
                 overrides.push(format!("filter.{driver}.{key}={value}"));
             }
         }
-        let mut args = overrides.iter().map(String::as_str).collect::<Vec<_>>();
-        args.extend([
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            // Each ignored file, also inside an ignored directory, which
-            // `matching` would list as the directory alone.
-            "--ignored=traditional",
-            "--no-renames",
-            "--",
-        ]);
-        args.extend_from_slice(paths);
-        let status = listing(args.as_slice())?;
-        let mut paths = std::collections::BTreeSet::new();
-        for record in status
-            .split(|byte| *byte == 0)
-            .filter(|record| !record.is_empty())
-        {
-            let path = record
-                .get(3..)
-                .ok_or_else(|| anyhow::anyhow!("malformed Git status record"))?;
-            let path = String::from_utf8(path.to_vec())?;
-            // The folder policy ignores entries such as desktop metadata.
-            // An ignored document inside a shared component still counts.
-            let folder_file = path == ".engram/project.json"
-                || (include_memories
-                    && path.starts_with(".engram/memories/")
-                    && path.rsplit_once('.').is_some_and(|(_, ext)| ext == "json"))
-                || path.strip_prefix(".engram/tasks/").is_some_and(|name| {
-                    !name.contains('/')
-                        && std::path::Path::new(name)
-                            .extension()
-                            .is_some_and(|extension| extension == "json")
-                });
-            if record.starts_with(b"!! ") && !folder_file {
-                continue;
-            }
-            paths.insert(path);
-        }
-        Ok(paths)
+        Ok(overrides)
     }
 
     /// Recheck the bound branch and commit immediately before an effect.
     pub(crate) fn check_head(&self) -> Result<()> {
+        self.check_head_within(Budget::PerQuery)
+    }
+
+    fn check_head_within(&self, budget: Budget) -> Result<()> {
         PrivateDirectory::open(&self.checkout)?;
         ensure!(
-            git_path(&self.checkout, "--git-dir")? == self.git_directory,
+            git_path_within(&self.checkout, "--git-dir", budget)? == self.git_directory,
             "data worktree administration changed since observation"
         );
-        let (branch, commit) = self.observe_tip()?;
+        let (branch, commit) = self.observe_tip_within(budget)?;
         self.require_expected_tip(&branch, commit.as_deref())
     }
 
@@ -331,14 +391,24 @@ impl DataWorktree {
     }
 
     fn observe_tip(&self) -> Result<(String, Option<String>)> {
-        let branch = query(&self.checkout, &["symbolic-ref", "--quiet", "HEAD"], true)?;
+        self.observe_tip_within(Budget::PerQuery)
+    }
+
+    fn observe_tip_within(&self, budget: Budget) -> Result<(String, Option<String>)> {
+        let branch = query_within(
+            &self.checkout,
+            &["symbolic-ref", "--quiet", "HEAD"],
+            true,
+            budget,
+        )?;
         let branch = std::str::from_utf8(&branch)?
             .trim_end_matches('\n')
             .to_owned();
-        let commit = query(
+        let commit = query_within(
             &self.checkout,
             &["rev-parse", "--verify", "--quiet", "HEAD"],
             true,
+            budget,
         )?;
         let commit = if commit.is_empty() {
             None
@@ -367,10 +437,12 @@ impl DataWorktree {
         Ok(())
     }
 
-    /// Re-observe the exact worktree, administration, branch and HEAD.
+    /// Recheck the worktree's administration, attached branch and HEAD before
+    /// an effect. The admission itself is not repeated: one session syncs a
+    /// data folder at a time, and the tip check catches any other writer.
     ///
     /// # Errors
-    /// Refuses any drift since this observation.
+    /// Refuses a changed administration, branch or HEAD.
     pub fn revalidate(&self) -> Result<()> {
         self.revalidate_within(Budget::PerQuery)
     }
@@ -380,22 +452,17 @@ impl DataWorktree {
     /// # Errors
     /// As [`Self::revalidate`], and a deadline once the budget is spent.
     pub fn revalidate_within(&self, budget: Budget) -> Result<()> {
-        let branch = self
-            .reference
-            .strip_prefix("refs/heads/")
-            .context("data branch ref missing")?;
-        let observed = Self::observe_within(&self.code_checkout, &self.checkout, branch, budget)?;
-        self.require_expected_tip(&observed.reference, observed.head.as_deref())?;
-        ensure!(observed == *self, "data worktree changed since observation");
-        Ok(())
+        self.check_head_within(budget)
     }
 
     /// Bind an existing dedicated linked worktree, including an unborn orphan
     /// branch. Existing canonical repository observations are never rewritten.
     ///
     /// # Errors
-    /// Refuses another repository, a code-history branch, a non-ignored location
-    /// or any indexed/working-tree file outside the shared data directory.
+    /// Refuses another repository, a code-history branch, a non-ignored
+    /// location, or a staged, changed or untracked file outside the shared
+    /// data directory. A committed entry outside it is refused where a commit
+    /// is made, taken in, recorded or pushed, not here.
     pub fn observe(code_checkout: &Path, checkout: &Path, branch: &str) -> Result<Self> {
         Self::observe_within(code_checkout, checkout, branch, Budget::PerQuery)
     }
@@ -486,8 +553,10 @@ impl DataWorktree {
             reference,
             head,
         };
+        // HEAD's tree is not listed here: every commit this host makes or
+        // takes in has its root tree checked when it is admitted.
         if let Some(head) = &observed.head {
-            observed.check_commit_within(head, budget)?;
+            observed.check_orphan_within(head, budget)?;
         }
         observed.check_data_paths_within(budget)?;
         Ok(observed)
@@ -507,6 +576,11 @@ impl DataWorktree {
     /// # Errors
     /// As [`Self::check_commit`], and a deadline once the budget is spent.
     pub fn check_commit_within(&self, commit: &str, budget: Budget) -> Result<()> {
+        self.check_orphan_within(commit, budget)?;
+        self.check_root_tree_within(commit, budget)
+    }
+
+    fn check_orphan_within(&self, commit: &str, budget: Budget) -> Result<()> {
         super::ledger::oid(commit)?;
         let code_head = oid_line(&query_within(
             &self.code_checkout,
@@ -524,10 +598,14 @@ impl DataWorktree {
             .is_empty(),
             "data branch must have orphan history separate from code"
         );
-        self.check_root_tree_within(commit, budget)
+        Ok(())
     }
 
-    fn check_root_tree(&self, tree: &str) -> Result<()> {
+    /// Refuse a commit or tree whose root holds anything but `.engram/`.
+    ///
+    /// # Errors
+    /// Refuses another root entry and a failed Git read.
+    pub(crate) fn check_root_tree(&self, tree: &str) -> Result<()> {
         self.check_root_tree_within(tree, Budget::PerQuery)
     }
 
@@ -565,38 +643,51 @@ impl DataWorktree {
         Ok(())
     }
 
-    /// Inspect names without comparing file content or invoking a clean filter.
-    /// Ignored untracked files count too: an ignored code file must not become
-    /// an unnoticed occupant of the data worktree.
+    /// Refuse a staged, modified, deleted or untracked path outside `.engram/`,
+    /// as Git reports it. Unchanged index entries and ignored files are not
+    /// listed: Git never commits an ignored file, and the root tree of every
+    /// commit is checked when it is admitted.
     ///
     /// # Errors
-    /// Refuses unreadable inventories and any file outside `.engram/`.
+    /// Refuses an unreadable status and any changed path outside `.engram/`.
     pub fn check_data_paths(&self) -> Result<()> {
         self.check_data_paths_within(Budget::PerQuery)
     }
 
     fn check_data_paths_within(&self, budget: Budget) -> Result<()> {
-        for args in [
-            vec!["ls-files", "-z", "--cached"],
-            vec!["ls-files", "-z", "--others", "--exclude-standard"],
-            vec![
-                "ls-files",
-                "-z",
-                "--others",
-                "--ignored",
-                "--exclude-standard",
-            ],
-        ] {
-            // Each inventory names every folder path, so it takes the folder
-            // listing limit rather than the general query output limit.
-            check_paths(&git::query_listing(
-                &self.checkout,
-                &args,
-                budget.bound()?,
-                git::MAX_LISTING_BYTES,
-            )?)?;
+        // Comparing worktree bytes must not run a configured clean filter.
+        let overrides = self.filter_overrides_within(budget)?;
+        let mut args = overrides.iter().map(String::as_str).collect::<Vec<_>>();
+        args.extend([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--no-renames",
+        ]);
+        let status = git::query_listing(
+            &self.checkout,
+            &args,
+            budget.bound()?,
+            git::MAX_LISTING_BYTES,
+        )?;
+        ensure!(
+            status.is_empty() || status.last() == Some(&0),
+            "unterminated data path inventory"
+        );
+        let mut paths = Vec::with_capacity(status.len());
+        for record in status
+            .split(|byte| *byte == 0)
+            .filter(|record| !record.is_empty())
+        {
+            paths.extend_from_slice(
+                record
+                    .get(3..)
+                    .ok_or_else(|| anyhow::anyhow!("malformed Git status record"))?,
+            );
+            paths.push(0);
         }
-        Ok(())
+        check_paths(&paths)
     }
 }
 

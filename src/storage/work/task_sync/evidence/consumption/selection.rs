@@ -2,11 +2,13 @@
 
 use rusqlite::{Connection, params};
 
+use super::super::verification::applicability::measure_binding_destination_reusing;
 use super::{
     ConsumedProof, ImportedEvidenceConsumption, MeasuredDestination, ObjectId, Result, current_on,
-    invalid, load_on, measure_binding_destination, object_on, store_error,
+    invalid, load_on, object_on, store_error,
 };
 use crate::domain::{AcceptanceResult, ControlWorkBinding, WorkId, WorkRunId};
+use crate::storage::work::registered_commit_currency::LiveCurrency;
 use crate::task_sync::evidence::consumption::CONSUMPTION_KIND;
 
 pub(crate) struct LiveUses {
@@ -70,6 +72,7 @@ pub(crate) fn measure_selected_on(
     run: WorkRunId,
     citations: &[ObjectId],
     include_satisfied: bool,
+    currency: &LiveCurrency,
 ) -> Result<Option<LiveUses>> {
     // Capture the database selection together. Source-owner I/O must run only
     // after this snapshot ends; measurement requires an autocommit connection.
@@ -109,7 +112,10 @@ pub(crate) fn measure_selected_on(
     };
     let measured = binding
         .as_ref()
-        .map(|binding| measure_binding_destination(connection, binding).map_err(store_error))
+        .map(|binding| {
+            measure_binding_destination_reusing(connection, binding, Some(currency))
+                .map_err(store_error)
+        })
         .transpose()?;
     Ok(Some(LiveUses { measured, records }))
 }

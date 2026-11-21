@@ -103,9 +103,14 @@ and tests its own patch from the frozen input and failure evidence.
 
 ## Centralize test execution
 
-Use the host's supported runner for gates and focused checks. Implementers
-should receive pass/fail metadata and only the bounded diagnostics needed to
-fix a failure, rather than routine full logs. Keep full logs as runner
+Use the host's supported runner for gates and focused checks. For a remote
+runner, send the job through the host's existing remote mailbox to the runner's
+registered native session on that host. Follow step 3 of
+[Coder test execution](../coder-test-execution/SKILL.md) for the exact Git commit
+and for returning the terminal result and artifact locators through that mailbox.
+
+Implementers should receive pass/fail metadata and only the bounded diagnostics
+needed to fix a failure, rather than routine full logs. Keep full logs as runner
 artifacts for the coordinator and reviewer when inspection is necessary.
 
 ## Use architects sparingly

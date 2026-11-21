@@ -301,6 +301,14 @@ pub(super) async fn observe_git_selection_data(
     if let Some(base) = selected.common_commit {
         data.check_commit_within(&base.oid, budget)?;
     }
+    // A push publishes the selected commit's history: the head it extends,
+    // which the worktree admission does not list, is checked here too.
+    if let Some(head) = selected
+        .expected_head
+        .filter(|head| *head != selected.commit.oid)
+    {
+        data.check_commit_within(head, budget)?;
+    }
     let admin = git_directory(repository, remaining(limits, started)?, cancel).await?;
     ensure!(
         std::fs::canonicalize(&admin)? == std::fs::canonicalize(&binding.repository.git_directory)?,

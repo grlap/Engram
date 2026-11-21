@@ -110,6 +110,34 @@ pub(crate) fn run_observed(
     )
 }
 
+/// The NUL-terminated paths of `input` that an ignore rule effectively
+/// excludes, as plain `check-ignore` reports them: a path a negated `!` rule
+/// re-includes is not reported. Input and output take the folder listing
+/// limit, so a whole folder's files are asked in one query.
+pub(crate) fn ignored_paths(root: &Path, input: &[u8], bound: Duration) -> Result<Vec<u8>> {
+    let _warning = crate::operation_time::Warning::start("local Git query");
+    let mut command = super::command(root, &["check-ignore", "-z", "--stdin"]);
+    command.env_remove("GIT_ATTR_SOURCE");
+    // check-ignore accepts pathname input, not pathspec magic.
+    for name in [
+        "GIT_LITERAL_PATHSPECS",
+        "GIT_GLOB_PATHSPECS",
+        "GIT_NOGLOB_PATHSPECS",
+        "GIT_ICASE_PATHSPECS",
+    ] {
+        command.env_remove(name);
+    }
+    run_command_bounded(
+        command,
+        "check-ignore",
+        true,
+        Some((input, MAX_LISTING_BYTES)),
+        bound,
+        StderrPolicy::ErrorOnly,
+        MAX_LISTING_BYTES,
+    )
+}
+
 /// A path listing whose output grows with the number of paths it names, such
 /// as a commit diff, under the caller's output limit instead of the general
 /// one; every other bound and the hardened environment are the same.

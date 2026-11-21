@@ -602,6 +602,14 @@ impl LocalWorkService {
             task_bytes,
             policy_bytes.saturating_add(memory_bytes.unwrap_or(0)),
         )?;
+        // A file an ignore rule would keep out of the commit refuses before
+        // the export is recorded, so nothing is left to replay.
+        data.refuse_ignored_files(
+            files
+                .iter()
+                .filter(|(_, bytes)| bytes.is_some())
+                .map(|(path, _)| path.as_str()),
+        )?;
         // A task file planning read must still be as it read it: a change
         // since, such as a merge into the folder, is never overwritten.
         let mut before = BTreeMap::new();
@@ -906,6 +914,9 @@ impl LocalWorkService {
         )? {
             return Ok(None);
         }
+        // The proven commit becomes the comparison basis: like every data
+        // commit it holds only `.engram/` at its root, inherited entries too.
+        data.check_root_tree(commit)?;
         let documents = write
             .files
             .iter()

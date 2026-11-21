@@ -250,10 +250,14 @@ fn selected_original_evaluation_completes_under_observed_independent_policy_with
     let use_request = consume(&mut target, &decision.decision, true);
     let evaluations = count(&target.store, "acceptance_evaluation");
     let request = completion(&mut target, root.path(), &use_request.consumption, true);
+    let reads = crate::committed_input::read_count();
     let seal = target
         .store
         .complete_work(&request, &DevelopmentNoopRedactor)
         .unwrap();
+    // The registered check and the imported proof share one named root, so
+    // completion reads that source once and measures both against it.
+    assert_eq!(crate::committed_input::read_count(), reads + 1);
     assert!(seal.acceptance_evaluation.is_none());
     assert_eq!(count(&target.store, "acceptance_evaluation"), evaluations);
     assert_eq!(seal.acceptance[0].evidence, vec![use_request.consumption]);

@@ -305,6 +305,14 @@ impl FolderWrite {
     }
 
     pub(crate) fn validate_replay(&self, data: &DataWorktree) -> Result<()> {
+        // A fresh export checked this before it was recorded; a replay checks
+        // again, so it never commits less than it writes either.
+        data.refuse_ignored_files(
+            self.files
+                .iter()
+                .filter(|(_, bytes)| bytes.is_some())
+                .map(|(path, _)| path.as_str()),
+        )?;
         let folder = data.checkout.join(".engram");
         for directory in [&folder, &folder.join("tasks")] {
             match fs::symlink_metadata(directory) {

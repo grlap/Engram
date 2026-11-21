@@ -278,6 +278,7 @@ impl SqliteStore {
                     run,
                     &imported_citations,
                     false,
+                    &currency,
                 )?
             }
         } else {

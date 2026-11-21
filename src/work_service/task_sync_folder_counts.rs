@@ -477,7 +477,7 @@ fn task_sync_status_queries_keep_their_verb_with_filter_overrides() {
     ]);
     let (configured, configured_queries) = counted_export(&exchange);
     assert_eq!(configured.route, "unchanged");
-    assert_eq!(configured_queries.get("status"), Some(&1));
+    assert_eq!(configured_queries.get("status"), Some(&2));
     assert!(!configured_queries.contains_key("-c"));
     assert_eq!(configured_queries, baseline_queries);
 
@@ -557,8 +557,8 @@ fn count_bootstrap_confirmation(size: usize) -> BTreeMap<String, usize> {
         ("unchanged", 0, 0)
     );
     assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
-    assert_eq!(queries.values().sum::<usize>(), 33);
-    assert_eq!(queries.get("status"), Some(&1));
+    assert_eq!(queries.values().sum::<usize>(), 31);
+    assert_eq!(queries.get("status"), Some(&2));
     assert_eq!(queries.get("diff-tree"), Some(&1));
     let (_, head) = service
         .task_sync_folder_head(&profile(), chrono::Utc::now())
@@ -629,7 +629,7 @@ fn ordinary_export_git_starts_are_constant_across_folder_and_change_counts() {
         );
         assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
         assert_eq!(queries.get("diff-tree"), Some(&1));
-        assert_eq!(queries.get("status"), Some(&1));
+        assert_eq!(queries.get("status"), Some(&2));
         first_after_rebuild.push(queries);
 
         let change_counts: &[usize] = if size == 200 { &[1] } else { &[1, 100, 2_000] };
@@ -643,7 +643,7 @@ fn ordinary_export_git_starts_are_constant_across_folder_and_change_counts() {
             );
             assert_eq!((phase.blob_reads, phase.file_reads), (0, changed));
             assert!(!queries.contains_key("diff-tree"));
-            assert_eq!(queries.get("status"), Some(&1));
+            assert_eq!(queries.get("status"), Some(&2));
             assert_eq!(queries.get("for-each-ref"), Some(&1));
             write_queries.push(queries);
             exchange.commit("Publish this host's edits");
@@ -653,7 +653,7 @@ fn ordinary_export_git_starts_are_constant_across_folder_and_change_counts() {
             assert_eq!((phase.route.as_str(), phase.written), ("unchanged", 0));
             assert_eq!((phase.blob_reads, phase.file_reads), (0, 0));
             assert_eq!(queries.get("diff-tree"), Some(&1));
-            assert_eq!(queries.get("status"), Some(&1));
+            assert_eq!(queries.get("status"), Some(&2));
             confirm_queries.push(queries);
         }
     }

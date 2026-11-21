@@ -369,51 +369,235 @@ fn identical_heads_in_two_stores_do_not_authorize_unowned_journal_replay() {
     assert_eq!(FolderWrite::pending(&data, None).unwrap(), Some(unowned));
 }
 
-#[test]
-fn a_task_file_hidden_from_status_is_refused_rather_than_read_as_committed() {
-    let exchange = Exchange::new(3);
-    let ids = exchange.ids();
-    let path = format!(".engram/tasks/{}.json", ids[0].0);
-    exchange.git(&["update-index", "--assume-unchanged", "--", &path]);
-    let target = exchange.checkout.join(&path);
-    let mut edited = fs::read_to_string(&target).unwrap();
-    edited.push('\n');
-    fs::write(&target, &edited).unwrap();
-    let data = exchange.data();
-    let export = exchange
-        .a
-        .service
-        .export_task_sync_data_folder(&data, &profile(), false, None, now())
-        .unwrap_err();
-    let import = exchange
-        .b
-        .service
-        .import_task_sync_data_folder(&data, None, false, false, None, now())
-        .unwrap_err();
-    for refusal in [export, import] {
-        assert!(
-            format!("{refusal:#}").contains("index inspection is suppressed"),
-            "{refusal:#}"
-        );
-    }
-    // The hidden edit is still there: nothing overwrote it.
-    assert_eq!(fs::read_to_string(&target).unwrap(), edited);
+fn assert_refused(
+    error: &anyhow::Error,
+    expected: crate::task_sync::TaskSyncRefusal,
+    reason: &str,
+) {
+    assert!(
+        matches!(
+            error.downcast_ref::<crate::storage::StoreError>(),
+            Some(crate::storage::StoreError::TaskSyncRefused { refusal, .. }) if *refusal == expected
+        ),
+        "{error:#}"
+    );
+    assert!(format!("{error:#}").contains(reason), "{error:#}");
 }
 
 #[test]
-fn an_ignored_task_file_counts_as_a_folder_change() {
+fn a_modified_or_untracked_task_file_is_refused_and_kept() {
+    use crate::task_sync::TaskSyncRefusal::{CommitContextRequired, IncrementalBasisUnavailable};
     let exchange = Exchange::new(3);
+    let ids = exchange.ids();
+    // A tracked task file edited in place, then a task file Git does not track.
+    let tracked = format!(".engram/tasks/{}.json", ids[0].0);
+    let untracked = format!(".engram/tasks/{}.json", crate::WorkId::new().0);
+    let modified = exchange.checkout.join(&tracked);
+    let mut edited = fs::read_to_string(&modified).unwrap();
+    edited.push('\n');
+    let original = fs::read_to_string(&modified).unwrap();
+    for (path, bytes) in [(&tracked, edited.clone()), (&untracked, original.clone())] {
+        fs::write(exchange.checkout.join(path), &bytes).unwrap();
+        let data = exchange.data();
+        assert!(data.folder_changes().unwrap().contains(path));
+        let export = exchange
+            .a
+            .service
+            .export_task_sync_data_folder(&data, &profile(), false, None, now())
+            .unwrap_err();
+        assert_refused(&export, IncrementalBasisUnavailable, "uncommitted changes");
+        let import = exchange
+            .b
+            .service
+            .import_task_sync_data_folder(&data, None, false, false, None, now())
+            .unwrap_err();
+        assert_refused(&import, CommitContextRequired, "commit the merged folder");
+        // Nothing overwrote or removed the loose file.
+        assert_eq!(
+            fs::read_to_string(exchange.checkout.join(path)).unwrap(),
+            bytes
+        );
+        if path == &tracked {
+            fs::write(&modified, &original).unwrap();
+        }
+    }
+}
+
+#[test]
+fn an_ignored_task_file_is_not_listed_and_is_left_in_place() {
+    let exchange = Exchange::new(3);
+    let committed = exchange.data().committed_folder().unwrap();
+    assert!(committed.is_some());
     // A rule outside the folder ignores a loose task file at a canonical path.
+    // Only Git's own change report is read, so the rule is trusted as set.
     let path = format!(".engram/tasks/{}.json", crate::WorkId::new().0);
     let excludes = exchange.data().git_directory.join("folder-excludes");
     fs::write(&excludes, format!("/{path}\n")).unwrap();
     exchange.git(&["config", "core.excludesFile", &git_path(&excludes)]);
     let first = format!(".engram/tasks/{}.json", exchange.ids()[0].0);
     fs::copy(exchange.checkout.join(first), exchange.checkout.join(&path)).unwrap();
+    let bytes = fs::read(exchange.checkout.join(&path)).unwrap();
     let data = exchange.data();
-    assert!(data.folder_changes().unwrap().contains(&path));
-    // So no import or export takes the folder on disk for its commit.
-    assert!(data.committed_folder().unwrap().is_none());
+    assert!(!data.folder_changes().unwrap().contains(&path));
+    assert_eq!(data.committed_folder().unwrap(), committed);
+    assert_eq!(fs::read(exchange.checkout.join(&path)).unwrap(), bytes);
+}
+
+#[test]
+fn an_export_never_writes_a_task_file_an_ignore_rule_would_leave_uncommitted() {
+    let exchange = Exchange::new(3);
+    let a = &exchange.a;
+    // An operator rule outside the folder matches every task file.
+    let excludes = exchange.data().git_directory.join("folder-excludes");
+    fs::write(&excludes, "/.engram/tasks/*.json\n").unwrap();
+    exchange.git(&["config", "core.excludesFile", &git_path(&excludes)]);
+    // A tracked task file is not subject to ignore rules: its edit exports
+    // and commits as usual.
+    a.rename(&exchange.ids()[..1], "edited on A");
+    let receipt = a
+        .service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), false, None, now())
+        .unwrap();
+    assert_eq!((receipt.route, receipt.written), ("incremental", 1));
+    exchange.commit("Publish the edit");
+    // A new task file would be left out of `git add`, so the export refuses
+    // before writing it, naming the rule.
+    let added = a.add("added on A");
+    let path = exchange
+        .checkout
+        .join(".engram/tasks")
+        .join(format!("{}.json", added.0));
+    let data = exchange.data();
+    let head = a.service.task_sync_folder_head(&profile(), now()).unwrap();
+    let journal = owned_write(&a.service, &data);
+    let refused = a
+        .service
+        .export_task_sync_data_folder(&data, &profile(), false, None, now())
+        .unwrap_err();
+    assert_refused(
+        &refused,
+        crate::task_sync::TaskSyncRefusal::TaskIgnorePolicyExcludesFile,
+        "/.engram/tasks/*.json",
+    );
+    assert!(!path.exists());
+    // Refused before the export was recorded: the head and the retained
+    // journal are as they were, so nothing new is left to replay.
+    assert_eq!(
+        a.service.task_sync_folder_head(&profile(), now()).unwrap(),
+        head
+    );
+    assert_eq!(owned_write(&a.service, &data), journal);
+}
+
+#[test]
+fn an_export_never_adopts_a_commit_whose_root_holds_a_file_outside_the_folder() {
+    let exchange = Exchange::unborn(0);
+    // The data branch starts with a commit holding a file beside `.engram/`.
+    fs::write(exchange.checkout.join("foreign.rs"), b"not task data\n").unwrap();
+    exchange.git(&["add", "--", "foreign.rs"]);
+    exchange.git(&["commit", "-m", "Commit a file outside the folder"]);
+    let a = &exchange.a;
+    a.add("local planning");
+    a.service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), false, None, now())
+        .unwrap();
+    // The export is committed on top; foreign.rs is inherited unchanged.
+    exchange.commit("Publish the export");
+    let data = exchange.data();
+    let head = a.service.task_sync_folder_head(&profile(), now()).unwrap();
+    let refused = a
+        .service
+        .export_task_sync_data_folder(&data, &profile(), false, None, now())
+        .unwrap_err();
+    assert!(
+        format!("{refused:#}").contains("outside the .engram/"),
+        "{refused:#}"
+    );
+    assert_eq!(
+        a.service.task_sync_folder_head(&profile(), now()).unwrap(),
+        head
+    );
+}
+
+#[test]
+fn an_incremental_import_refuses_a_commit_with_a_file_outside_the_folder() {
+    let exchange = Exchange::new(3);
+    // A clean descendant on the data branch with a file beside `.engram/`.
+    fs::write(exchange.checkout.join("foreign.rs"), b"not task data\n").unwrap();
+    exchange.git(&["add", "--", "foreign.rs"]);
+    exchange.git(&["commit", "-m", "Commit a file outside the folder"]);
+    let data = exchange.data();
+    let head = exchange
+        .b
+        .service
+        .task_sync_folder_head(&profile(), now())
+        .unwrap();
+    let refused = exchange
+        .b
+        .service
+        .import_task_sync_data_folder(&data, None, false, false, None, now())
+        .unwrap_err();
+    assert!(
+        format!("{refused:#}").contains("outside the .engram/"),
+        "{refused:#}"
+    );
+    assert_eq!(
+        exchange
+            .b
+            .service
+            .task_sync_folder_head(&profile(), now())
+            .unwrap(),
+        head
+    );
+}
+
+#[test]
+fn a_complete_import_refuses_a_task_file_its_commit_lacks() {
+    let exchange = Exchange::unborn(3);
+    let data = exchange.data();
+    crate::task_sync::directory::write_data_folder(&data, &exchange.tree, &profile()).unwrap();
+    exchange.commit("Publish the shared planning");
+    // One task file leaves the commit but stays on disk, where an operator
+    // rule hides it from Git status.
+    let path = format!(".engram/tasks/{}.json", exchange.ids()[0].0);
+    let excludes = exchange.data().git_directory.join("folder-excludes");
+    fs::write(&excludes, format!("/{path}\n")).unwrap();
+    exchange.git(&["config", "core.excludesFile", &git_path(&excludes)]);
+    exchange.git(&["rm", "--cached", "--quiet", "--", &path]);
+    exchange.git(&["commit", "-m", "Drop one task from the commit"]);
+    let data = exchange.data();
+    assert!(data.committed_folder().unwrap().is_some());
+    let head = exchange
+        .a
+        .service
+        .task_sync_folder_head(&profile(), now())
+        .unwrap();
+    let refused = exchange
+        .a
+        .service
+        .import_task_sync_data_folder(
+            &data,
+            Some(&crate::task_sync::directory::DestinationBasis::Empty),
+            false,
+            false,
+            None,
+            now(),
+        )
+        .unwrap_err();
+    assert_refused(
+        &refused,
+        crate::task_sync::TaskSyncRefusal::CommitContextRequired,
+        "differ from its commit",
+    );
+    assert_eq!(
+        exchange
+            .a
+            .service
+            .task_sync_folder_head(&profile(), now())
+            .unwrap(),
+        head
+    );
+    assert!(exchange.checkout.join(&path).exists());
 }
 
 #[test]
@@ -430,26 +614,6 @@ fn an_ignored_entry_that_is_no_task_file_leaves_the_folder_committed() {
     let data = exchange.data();
     assert!(!data.folder_changes().unwrap().contains(path));
     assert_eq!(data.committed_folder().unwrap(), committed);
-}
-
-#[test]
-fn a_loose_task_file_in_an_ignored_tasks_directory_counts_as_a_folder_change() {
-    let exchange = Exchange::new(0);
-    // A rule outside the folder ignores the whole tasks directory, which no
-    // committed task file holds open.
-    let excludes = exchange.data().git_directory.join("folder-excludes");
-    fs::write(&excludes, "/.engram/tasks/\n").unwrap();
-    exchange.git(&["config", "core.excludesFile", &git_path(&excludes)]);
-    let tasks = exchange.checkout.join(".engram").join("tasks");
-    fs::create_dir_all(&tasks).unwrap();
-    let path = format!(".engram/tasks/{}.json", crate::WorkId::new().0);
-    fs::write(exchange.checkout.join(&path), b"{}").unwrap();
-    fs::write(tasks.join(".DS_Store"), b"metadata").unwrap();
-    let data = exchange.data();
-    let changes = data.folder_changes().unwrap();
-    assert!(changes.contains(&path), "{changes:?}");
-    assert!(!changes.contains(".engram/tasks/.DS_Store"), "{changes:?}");
-    assert!(data.committed_folder().unwrap().is_none());
 }
 
 #[test]

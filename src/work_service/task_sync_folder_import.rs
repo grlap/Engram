@@ -240,6 +240,26 @@ impl LocalWorkService {
             }
             None => directory::read_resolved_data_folder(data)?,
         };
+        // The folder is recorded as its commit only when that commit holds
+        // exactly the envelope and task files read from disk: one an ignore
+        // rule hides from Git status is on disk but not in the commit.
+        if let Some(commit) = committed.as_deref() {
+            data.check_commit(commit)?;
+            let on_disk = folder
+                .tree
+                .tasks
+                .iter()
+                .map(|task| format!(".engram/tasks/{}.json", task.id.0))
+                .chain(std::iter::once(".engram/project.json".to_owned()))
+                .collect::<BTreeSet<_>>();
+            if data.committed_task_files(commit)? != on_disk {
+                return Err(TaskSyncRefusal::CommitContextRequired
+                    .invalid(format!(
+                        "the data folder's task files differ from its commit {commit}, for example a task file an ignore rule hides from Git: commit or remove it, then import again"
+                    ))
+                    .into());
+            }
+        }
         if recovery.requires_committed_basis {
             let commit = committed.as_deref().ok_or_else(recovery_required)?;
             let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
@@ -284,20 +304,9 @@ impl LocalWorkService {
                 task_bytes,
                 rebuild,
             }),
-            || {
-                if recovery.requires_committed_basis {
-                    if !data.folder_changes_admitted(memories.is_some())?.is_empty() {
-                        return Err(recovery_required());
-                    }
-                } else if data.head_commit().is_some()
-                    && data.folder_changes_admitted(false)?.is_empty() != committed.is_some()
-                {
-                    return Err(TaskSyncRefusal::IncrementalBasisUnavailable
-                        .invalid("the data folder changed while it was read; run the import again")
-                        .into());
-                }
-                data.check_head()
-            },
+            // One session syncs a data folder at a time: the folder admitted
+            // above is not listed again, and the tip is checked before applying.
+            || data.check_head(),
         )?;
         if !recovery.requires_committed_basis
             || head
@@ -374,6 +383,10 @@ impl LocalWorkService {
                 memory_partial: false,
             });
         }
+        // A new commit becomes the recorded source: its root must hold only
+        // `.engram/`, as every data commit's does. The unchanged source above
+        // was checked when it was recorded.
+        data.check_commit(&incoming)?;
         let delta = crate::task_sync::git::read_verified_task_delta(
             &data.checkout,
             &self.project_id,

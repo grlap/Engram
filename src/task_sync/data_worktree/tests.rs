@@ -132,15 +132,18 @@ fn orphan_data_export_and_commit_leave_code_head_index_and_worktree_unchanged() 
 }
 
 #[test]
-fn data_worktree_refuses_foreign_index_untracked_and_ignored_files() {
+fn data_worktree_refuses_foreign_staged_and_untracked_files_and_admits_ignored_ones() {
     let fixture = Fixture::new();
     let selected = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
     fs::write(fixture.data.join("foreign.rs"), "preserve me\n").unwrap();
     assert!(selected.check_data_paths().is_err());
+    assert!(DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").is_err());
     run(&fixture.data, &["add", "foreign.rs"]);
     fs::remove_file(fixture.data.join("foreign.rs")).unwrap();
     assert!(selected.check_data_paths().is_err());
     run(&fixture.data, &["rm", "--cached", "foreign.rs"]);
+    selected.check_data_paths().unwrap();
+    // Git never commits an ignored file, so it is left alone and admitted.
     fs::write(
         selected.common_directory.join("info/exclude"),
         "secret.rs\n",
@@ -151,7 +154,8 @@ fn data_worktree_refuses_foreign_index_untracked_and_ignored_files() {
         "ignored but not shared data\n",
     )
     .unwrap();
-    assert!(selected.check_data_paths().is_err());
+    selected.check_data_paths().unwrap();
+    DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
     assert_eq!(
         fs::read_to_string(fixture.data.join("secret.rs")).unwrap(),
         "ignored but not shared data\n"
@@ -428,4 +432,37 @@ fn initialization_refuses_a_linked_exclusion_file_without_touching_its_target() 
     );
     assert_eq!(fs::read(&target).unwrap(), b"preserve rules\n");
     assert!(!fixture.data.exists());
+}
+
+#[test]
+fn the_managed_folder_policy_admits_new_task_files_and_an_excluding_rule_refuses() {
+    let fixture = Fixture::new();
+    let folder = fixture.data.join(".engram");
+    fs::create_dir_all(folder.join("tasks")).unwrap();
+    let policy = crate::task_sync::setup::propose_policy(".gitignore", None).unwrap();
+    fs::write(folder.join(".gitignore"), &policy.after).unwrap();
+    let selected = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
+    let kept = format!("tasks/{}.json", uuid::Uuid::new_v4());
+    let excluded = format!("tasks/{}.json", uuid::Uuid::new_v4());
+    // The policy re-includes task files with a negated rule: not ignored.
+    selected
+        .refuse_ignored_files([kept.as_str(), "project.json"])
+        .unwrap();
+    // A deeper rule that does exclude one task file refuses, naming it.
+    let name = excluded.strip_prefix("tasks/").unwrap();
+    fs::write(folder.join("tasks/.gitignore"), format!("{name}\n")).unwrap();
+    let error = selected
+        .refuse_ignored_files([kept.as_str(), excluded.as_str()])
+        .unwrap_err();
+    assert!(
+        matches!(
+            error.downcast_ref::<crate::storage::StoreError>(),
+            Some(crate::storage::StoreError::TaskSyncRefused {
+                refusal: crate::task_sync::TaskSyncRefusal::TaskIgnorePolicyExcludesFile,
+                ..
+            })
+        ),
+        "{error:#}"
+    );
+    assert!(error.to_string().contains(name), "{error:#}");
 }

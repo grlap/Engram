@@ -83,9 +83,12 @@ host's planning, including any other host's edits merged into it but not yet
 imported; import those first. Ordinary export uses the recorded commit as
 its comparison basis. It checks the planning paths' status once and does not
 read task blobs from Git. Separately staged evidence packs stay outside that
-status check. After a completed export was committed, the next
-export or ordinary import can adopt a clean new commit with exactly the
-recorded parent and exactly the paths and bytes the retained write produced.
+status check. A file the export writes that an ignore rule would keep out of
+`git add` refuses before any write as `task_sync_ignore_policy_excludes_file`,
+naming the rule, so an export never commits less than it planned. After a
+completed export was committed, the next export or ordinary import can adopt a
+clean new commit with exactly the recorded parent and exactly the paths and
+bytes the retained write produced, and only `.engram/` at its root.
 On an unborn branch this requires a parentless commit. The proof reads the
 commit's parent list and a single raw Git diff. It records the published
 documents as the keyed comparison basis and keeps local edits made since the
@@ -102,9 +105,8 @@ For a rebuild written over an unimported tip, save that rebuild's
 This complete import re-establishes comparison membership. If the export is
 still unfinished, finish it at its original parent before committing.
 The folder's state is read with every Git filter
-driver disabled. A task or envelope file whose index entry is marked
-assume-unchanged or skip-worktree is
-refused by name, because Git would not report an edit to it. Export
+driver disabled, from what Git status reports: an edit hidden by an
+assume-unchanged or skip-worktree flag is not seen. Export
 then takes the tasks the project feed changed since the head's cut, with any
 local changes an import passed over, reads the old file of only those tasks,
 writes only those files and updates the membership root by arithmetic. When

@@ -31,7 +31,7 @@ pub(crate) use query::stream_command as stream_query_command;
 pub(crate) use query::test_clock::PendingQuery;
 #[cfg(test)]
 pub(crate) use query::wait_until_exit;
-pub(crate) use query::{MAX_LISTING_BYTES, run_listing_observed as query_listing};
+pub(crate) use query::{MAX_LISTING_BYTES, ignored_paths, run_listing_observed as query_listing};
 pub(crate) use snapshot::observe_commit;
 pub use snapshot::read_memory_snapshot;
 pub(crate) use snapshot::read_task_snapshot_bounded;

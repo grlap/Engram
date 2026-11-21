@@ -1574,9 +1574,16 @@ Git-plus-SQLite transaction.
 ## Data commits and source landing policy
 
 Task data and evidence use only the dedicated orphan data branch. A data
-commit contains only `.engram/`; a changed, indexed or ignored file outside
-that directory refuses exchange. The data worktree has its own Git index and
-HEAD. Recheck its branch and head immediately before committing/pushing.
+commit contains only `.engram/`; a staged, changed or untracked file outside
+that directory refuses exchange, as Git status reports it. An ignored file is
+left in place, because Git never commits it. Admission reads only what Git
+reports as changed: it lists no unchanged index entry, ignored path or root
+tree, so an edit hidden by an assume-unchanged or skip-worktree flag can be
+missed. Every commit Engram makes, takes in or pushes, and the head a push
+extends, still has its root checked. The data worktree has its own Git index
+and HEAD. Recheck its branch and head immediately before committing/pushing;
+an admitted worktree is rechecked only for its administration, branch and
+head, never observed again in full after a write.
 Export does not stage code, move a code branch or change a code source freeze.
 
 Generated data exchange should have a project-approved validation path distinct

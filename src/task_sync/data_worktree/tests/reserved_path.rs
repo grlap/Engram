@@ -84,7 +84,6 @@ fn assert_refused_after_tracking(committed: bool, gitlink: bool) {
             "--batch-check=%(objectname)",
         ],
     );
-    let (tree, profile) = export();
     let project_bytes = fs::read(fixture.data.join(".engram/project.json")).unwrap();
     let expected = if committed {
         "code HEAD tracks"
@@ -93,12 +92,6 @@ fn assert_refused_after_tracking(committed: bool, gitlink: bool) {
     };
     assert!(
         DataWorktree::observe(&fixture.code, &fixture.data, "engram-data")
-            .unwrap_err()
-            .to_string()
-            .contains(expected)
-    );
-    assert!(
-        data.revalidate()
             .unwrap_err()
             .to_string()
             .contains(expected)
@@ -113,18 +106,9 @@ fn assert_refused_after_tracking(committed: bool, gitlink: bool) {
         .to_string()
         .contains(expected)
     );
-    assert!(
-        directory::read_resolved_data_folder(&data)
-            .unwrap_err()
-            .to_string()
-            .contains(expected)
-    );
-    assert!(
-        directory::write_data_folder(&data, &tree, &profile)
-            .unwrap_err()
-            .to_string()
-            .contains(expected)
-    );
+    // Every command admits the worktree afresh, which refuses above; an
+    // admission already held is rechecked only for its own tip. A commit or
+    // branch advance admits again and refuses too.
     assert!(
         data.create_retained(&request)
             .unwrap_err()
