@@ -1,0 +1,28 @@
+{
+  "id": "01a1ffe6-9c1a-7ab1-a141-67812e74d8b8",
+  "external_ref": null,
+  "title": "Tighten two remaining Coord TLA README wordings (keys and gap clearing)",
+  "outcome": "Tighten two remaining Coord TLA README wordings (keys and gap clearing)",
+  "acceptance": [
+    "README §2 Identity row distinguishes review-round keys from the fixed round-0 recovery and worker keys (Coord.tla:43-55)",
+    "README §2 Recovery row describes the guard on CONT separately from clearing the gap when progress completes (only PContinue checks LostFor; SReadReq/SReadEnd leave the gap alone; Coord.tla:326-345, 374-396)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "formal-verification",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
