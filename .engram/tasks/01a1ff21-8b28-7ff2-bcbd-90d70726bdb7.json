@@ -1,0 +1,26 @@
+{
+  "id": "01a1ff21-8b28-7ff2-bcbd-90d70726bdb7",
+  "external_ref": null,
+  "title": "Pin Git path quoting in the source delta patch",
+  "outcome": "Make the source delta digest independent of core.quotePath for otherwise identical dirty input",
+  "acceptance": [
+    "An unstaged edit to the same tracked UTF-8 path yields the same Git delta when only Git's core.quotePath presentation preference changes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1fc9c-38af-7cf2-9260-d895ea3ac77c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

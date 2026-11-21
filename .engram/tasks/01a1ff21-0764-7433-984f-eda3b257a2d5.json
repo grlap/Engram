@@ -1,0 +1,28 @@
+{
+  "id": "01a1ff21-0764-7433-984f-eda3b257a2d5",
+  "external_ref": null,
+  "title": "Reuse the operation's one source observation for imported evidence on the same named root (no second source read in evaluate/done)",
+  "outcome": "Reuse the operation's one source observation for imported evidence on the same named root (no second source read in evaluate/done)",
+  "acceptance": [
+    "When evaluate or done handles registered and imported evidence on the same active named root, the operation takes one source observation and passes it to the imported-evidence path when the root binding matches exactly; writer-side validation is unchanged",
+    "A behaviour test shows such an operation makes one source read, not two, and gives the same verdicts as before"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "source-id"
+  ],
+  "assigned_to": "peer-ba9572b66c02875403ad0dcd",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

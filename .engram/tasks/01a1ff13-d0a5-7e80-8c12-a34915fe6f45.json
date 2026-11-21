@@ -1,0 +1,27 @@
+{
+  "id": "01a1ff13-d0a5-7e80-8c12-a34915fe6f45",
+  "external_ref": null,
+  "title": "Show Git-delta state in remote verification receipts",
+  "outcome": "Display the shared source identity summary for remote-run endpoints, including dirty Git deltas and selected gitlinks",
+  "acceptance": [
+    "Remote-run descriptions show the dirty or clean Git delta and selected gitlink count using SourceIdSummary, without measuring the source again.",
+    "Legacy remote-run input and unavailable endpoints still have usable descriptions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1fc9c-38af-7cf2-9260-d895ea3ac77c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

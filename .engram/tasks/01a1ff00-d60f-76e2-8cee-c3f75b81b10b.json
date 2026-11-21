@@ -1,0 +1,30 @@
+{
+  "id": "01a1ff00-d60f-76e2-8cee-c3f75b81b10b",
+  "external_ref": null,
+  "title": "Remove the second Git filter-driver lookup from source observations",
+  "outcome": "After the shared Git-delta source identity lands, remove the redundant filter-driver lookup, its dedicated test, and its contract text",
+  "acceptance": [
+    "The shared source producer discovers and neutralizes configured Git filter drivers once for each observed repository, before reading the worktree.",
+    "The post-read filter-driver lookup, the test for an intervening configuration write, and its development contract text are removed. Source observations continue to refuse partial Git reads reported on stderr."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1fc9c-38af-7cf2-9260-d895ea3ac77c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Fable #2673 supersedes #2671 on Greg’s instruction and folds this exact staged change into D895 R14 before landing. Separate follow-up duplicates the active work.",
+  "completion": null
+}
