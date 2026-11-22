@@ -1,0 +1,24 @@
+{
+  "id": "01a20588-0ed1-7173-8a03-aa1ec65c4954",
+  "external_ref": null,
+  "title": "Share source declaration refusal wording between CLI and MCP",
+  "outcome": "Share source declaration refusal wording between CLI and MCP",
+  "acceptance": [
+    "Share source declaration refusal wording between CLI and MCP is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
