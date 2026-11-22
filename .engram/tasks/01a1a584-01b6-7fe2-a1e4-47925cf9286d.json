@@ -23,12 +23,12 @@
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Engram::Fable, cancelled on Greg's word via Asistant 43498a6e #1865 (07:22:46Z), verbatim: „Tak. Bo sync ogólnie działa jak należy.” Managed write-ahead custody guards interrupted or uncertain artifact effects, which is protection beyond any observed failure. The parent w-dd205a1454a3's six criteria were judged met on landed master code eecabd6a (evaluation 6ed293a4). Its review fix rounds w-f317 and w-8e56 are cancelled too. None of this code is on master.",
   "completion": null
 }

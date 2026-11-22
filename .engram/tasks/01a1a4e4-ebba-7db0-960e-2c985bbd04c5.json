@@ -24,12 +24,12 @@
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Engram::Fable, cancelled on Greg's word via Asistant 43498a6e #1865 (07:22:46Z), verbatim: „Tak. Bo sync ogólnie działa jak należy.” The cold custody audit, checkpoint and bootstrap-membership adapter existed only to enable managed delta writes (w-47925cf9286d, cancelled). Ordinary sync works without them, and the parent's criteria were met on master eecabd6a.",
   "completion": null
 }

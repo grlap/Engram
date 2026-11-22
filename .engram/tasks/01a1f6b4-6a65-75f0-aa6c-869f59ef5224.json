@@ -24,7 +24,7 @@
   ],
   "assigned_to": "greg/claude",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [
@@ -33,5 +33,12 @@
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Bounded TLA+ model Coord (v9) of agent handoffs, named waits and review decisions, checked with TLC on DL560.\nDELIVERED, frozen package: Central target\\tla-coord\\handoff-v9e (746 files; archive handoff-v9e.tgz, 545,067 B, sha256 4492f10451008e9cf53f842c5ca88748b8c9f2b6be759d0ae349663c691c1e8b).\n- spec v1–v9, plus CoordWit, CoordWit2, CoordWit3 and CoordF2.\n- 39 configurations; jobs r1–r9b; results and ledgers for rounds 1–9b.\n- A README stating only checkable facts and the bounds: the combined-fault liveness check is unverified (both runs hit their caps); every verdict holds for the modelled semantics only.\nREVIEW AND EVALUATION:\n- Kimi's C6 PASS on v9, quoted in holder note c54fdd5d.\n- Opus/Sol pair rounds 1–4. All Mediums were documentation; each was resolved and the dispositions are recorded. Fable ruled no round 5 (#93).\n- Independent re-evaluation (Codex session-19456, delegation-ae93725e) passed 7/7 on handoff-v9e, after Fable's C4 ruling (#95, holder note 6feb815b).\n- Lows filed as w-67812e74d8b8.\nCLEANUP OWED, held under Greg's 01:17Z hold on new work and cleanups; Codex executes it on Greg's go:\n- DL560: target/tla-869f-r1 … r9 and r9b and their -job.sh files (including r5-withdrawn, r5c, r6, r6c, r7, r8, r8c, r9, r9b and the withdrawn copies); target/tla-coord-jdk/; target/tla-coord-dl/; target/jobs/s4-tlc-869f/.\n- Central: target\\tla-coord, keeping handoff-v9e (and its tgz) while still needed; target\\tasksync-v11-recovery after Astra confirms.",
+    "completed_at": "2026-11-22T01:22:11.346773100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  }
 }

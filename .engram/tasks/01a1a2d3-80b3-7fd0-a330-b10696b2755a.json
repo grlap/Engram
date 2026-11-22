@@ -25,12 +25,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Engram::Fable, cancelled on Greg's word via Asistant 43498a6e #1865 (07:22:46Z), verbatim: „Tak. Bo sync ogólnie działa jak należy.” Keyed historical exchange views would need a projection cutover in every live store, and they serve the managed delta ledger, which is cancelled. Receipt-first replay already holds on master: parent criterion 4 passed at eecabd6a.",
   "completion": null
 }

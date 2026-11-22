@@ -22,12 +22,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Engram::Fable, cancelled on Greg's word via Asistant 43498a6e #1865 (07:22:46Z), answering my proposal to review the sync custody and delta-ledger items as redundant protection, verbatim: „Tak. Bo sync ogólnie działa jak należy.” These are review fixes for unlanded managed-custody code (base f56646f8, not on master). Their parent w-47925cf9286d is cancelled, so there is nothing to fix.",
   "completion": null
 }

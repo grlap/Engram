@@ -1,0 +1,27 @@
+{
+  "id": "01a202e6-688f-70a2-a8ea-1dd5ef10a198",
+  "external_ref": null,
+  "title": "Name SHA-256 repositories as unsupported in engram source instead of \"Git status did not report a HEAD commit\"",
+  "outcome": "Name SHA-256 repositories as unsupported in engram source instead of \"Git status did not report a HEAD commit\"",
+  "acceptance": [
+    "engram source on a repository created with --object-format=sha256 refuses with a reason that says SHA-256 repositories are unsupported, not that Git status reported no HEAD commit",
+    "A behaviour test drives that refusal through the CLI on a real SHA-256 fixture repository"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

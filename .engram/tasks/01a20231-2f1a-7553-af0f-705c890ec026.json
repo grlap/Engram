@@ -1,0 +1,29 @@
+{
+  "id": "01a20231-2f1a-7553-af0f-705c890ec026",
+  "external_ref": null,
+  "title": "Let an open parent be cancelled or superseded while its open optional children are detached as independent work",
+  "outcome": "Let an open parent be cancelled or superseded while its open optional children are detached as independent work",
+  "acceptance": [
+    "An open optional child of an open parent can be detached into an independent root, keeping its id, notes and history, without first completing, cancelling or superseding an ancestor",
+    "After its open optional children are detached, the parent can be cancelled or superseded with a replacement; required open children still block disposal, as today",
+    "A CLI behaviour test drives the observed case end to end: a parent with four open optional children is superseded after they are detached, and each refusal that remains names its route"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "planning"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

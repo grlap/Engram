@@ -1,0 +1,30 @@
+{
+  "id": "01a20430-4f05-7a81-ad7d-cc10aadfed34",
+  "external_ref": null,
+  "title": "Say in the coder test-execution skill that a settled last check needs a real wake for its acceptance evaluation",
+  "outcome": "Say in the coder test-execution skill that a settled last check needs a real wake for its acceptance evaluation",
+  "acceptance": [
+    "`.agents/skills/coder-test-execution/SKILL.md` contains, right after READY step 6, verbatim and identical to TermAl's copy: \"When the last required check settles and acceptance evaluation must be requested in a later turn, do not end with only a note or 'next turn'. Use the host's event-driven acceptance when available. Otherwise send READY: evaluation to the project coordinator with the item, run and verification/credit locators before ending; the coordinator wakes the owner to request evaluation. The owner reuses the settled evidence and never reruns the check merely to obtain a later turn. A turn boundary without a host or named coordinator wake is an incomplete handoff.\"",
+    "Markdown only: no other text changes; the focused link check passes and a Codex plus Claude pair reviews it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "greg-directed",
+    "ready-to-land",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

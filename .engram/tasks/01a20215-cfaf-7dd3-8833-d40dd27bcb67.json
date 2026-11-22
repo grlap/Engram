@@ -1,0 +1,29 @@
+{
+  "id": "01a20215-cfaf-7dd3-8833-d40dd27bcb67",
+  "external_ref": null,
+  "title": "Accept Greg's verbatim word relayed by any session for an out-of-rule commit or push, aligned with TermAl",
+  "outcome": "Accept Greg's verbatim word relayed by any session for an out-of-rule commit or push, aligned with TermAl",
+  "acceptance": [
+    "In AGENTS.md and CLAUDE.md (kept identical), the Authority and Git bullet that today counts a relayed word only from Engram::Asistant says that Greg's word for a commit or push counts when he gives it in the acting session or when another session relays it verbatim with its source; the acting session records that verbatim word and its source on the item before acting; a paraphrase, summary or agent's own reading never carries a commit or push; the wording matches TermAl's w-d0fb35c08022 apart from project names",
+    "The change lands only after both coordinators concur on the exact wording, Greg is sent the wording and its consequence, and the final-diff audit is recorded; Greg's widening word is recorded verbatim with its source: „moze masz zle instrukcje, masz mnie zapytac, ale nie musi byc bezposrednio w sesji / czesto uzywam telegrama i kontaktuje sie z inna sesja” (typed in Termal::Opus2's session about 2026-11-22 07:06Z, Opus2 #7525, relayed by Termal::Fable2 ebe242f7 #8704)",
+    "Markdown only: the focused link check passes and a Codex plus Claude pair reviews it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
