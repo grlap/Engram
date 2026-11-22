@@ -17,12 +17,19 @@
   ],
   "assigned_to": "peer-ba9572b66c02875403ad0dcd",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed the single-source-observation reuse change on combined candidate 5bcd10b8fdcfc7e2b14c133bce786bc3ab279f7a. The exact candidate FULL passed, and independent acceptance evaluation e2a84f679ff34faf9b7067f7529c6dee passed both criteria. The combined candidate has not yet landed.",
+    "completed_at": "2026-11-21T23:20:26.224095300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
