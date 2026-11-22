@@ -23,9 +23,9 @@ Recent changes on master:
 - Graph restore inserts parents before children when the snapshot has no
   supersession references, avoiding deferred foreign-key scans. Snapshots
   with supersession retain their original insertion order (`6ebcc62`).
-- The repository pins Node 24.14.0, consumed by review-freeze CI (`6ebcc62`),
-  and ordinary reviews use Git tree identity, with raw-byte checks reserved
-  for changes that need them (`0ec2e14`).
+- The launcher verification workflow uses the repository's Node 24.14.0 pin
+  (`6ebcc62`). The [review procedure](.claude/commands/review-changes.md#3-freeze-the-review-input)
+  describes how review uses the shared `source_id`.
 - A known-committed note or gate stays successful if later response work
   fails, returning its evidence locator and readback while disclosing the
   unavailable response details (`9f4a1c7`).

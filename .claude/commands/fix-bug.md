@@ -22,8 +22,8 @@ Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
    stable project identity, task-shared versus agent-private visibility,
    lease/cursor semantics, finalization barriers, and storage integrity.
 6. Add or update behavioral tests that would fail without the fix.
-7. Invoke `/review-changes`, which runs the required gates and both reviews
-   in parallel on one frozen input.
+7. Invoke `/review-changes` for the required gates and both reviews on the
+   input identified by the parent's complete `source_id`.
 8. Fix every justified review finding of Medium or higher about the scope
    this change modifies, and start a new round (gate, freeze and both
    reviewers in parallel), as the engram-repo skill requires. Leave only a

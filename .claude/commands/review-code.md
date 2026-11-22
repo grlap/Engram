@@ -7,8 +7,8 @@ metadata:
       strategy: default
 ---
 
-Inspect staged, unstaged, and untracked changes. This is a read-only,
-non-nesting review leaf.
+Inspect the supplied clean candidate commit against its base. This is a
+read-only, non-nesting review leaf.
 
 **Do not edit files, mutate Git, run build/test/lint/format gates, mutate the
 tracker, spawn agents, or launch nested review commands.** The writable
@@ -19,12 +19,9 @@ tracker, spawn agents, or launch nested review commands.** The writable
 Run only read-only inspection commands:
 
 ```bash
-git status --short
-git diff
-git diff --cached
-git diff --name-only
-git diff --cached --name-only
-git ls-files --others --exclude-standard
+git rev-parse HEAD
+git status --porcelain --untracked-files=all
+git diff --submodule=diff BASE COMMIT
 ```
 
 Run each of these as its own standalone command from the working directory,
@@ -49,32 +46,13 @@ commands run, not a Codex reviewer's shell:
 - Do not use `git hash-object`; it can run configured clean filters. Use
   `git diff --no-index FILE_A FILE_B` to inspect content differences. Inside
   a repository it may apply end-of-line conversion and is not a byte-identity
-  check. When byte identity matters, compare a per-file hash of both sides.
+  check. When raw bytes matter, report what the parent needs to verify
+  directly under [section 3](review-changes.md#3-freeze-the-review-input).
 
-Untracked files do not appear in `git diff`; inspect their contents directly
-when relevant. If nothing changed and no committed input was supplied, report
-that and stop. For a supplied committed input, read its complete change against
-the supplied base, including added files, even though the checkout is clean.
-
-For a frozen input, follow the Git identity checks in
-[/review-changes section 3](review-changes.md#3-freeze-the-review-input).
-The parent stages the input and records `TREE` with `git write-tree`;
-reviewers never run that writing command. At the start and end, run separately:
-
-```bash
-git diff --cached --quiet TREE
-git diff --quiet
-git ls-files --others --exclude-standard
-```
-
-Require zero exit statuses and an empty untracked listing; confirm the supplied
-HEAD and report the tree id and `index == TREE, clean` at both boundaries.
-For a committed input, confirm HEAD equals the supplied commit, report its
-tree id with `git show -s --format=%T COMMIT`, and require empty output from
-`git status --porcelain --untracked-files=all`, with zero exit statuses.
-Both boundary tree ids must match the parent's recorded id. Raw capture and
-the compiled host freeze checker are optional only for the concrete raw-byte
-exceptions recorded under section 3; neither is an ordinary review prerequisite.
+Cite the parent's complete `source_id` record and read the whole committed
+diff, including added files, as described in [/review-changes section 3](review-changes.md#3-freeze-the-review-input).
+At the start and end, confirm that HEAD equals the record's commit and the
+checkout is clean. Report the root, diff scope and both boundary checks.
 
 If Git inspection is still refused and you cannot see some or all of the diff,
 say so under Coverage in the result. Name what you could not see and how you
@@ -132,7 +110,8 @@ Return one consolidated review:
 ## Coverage
 - How the diff was seen (the Git commands that ran), or which changes could
   not be seen and how they were reviewed instead.
-- The supplied Git tree id and the independent start/end identity results.
+- The parent's `source_id` record locator, root, diff scope and read-only Git
+  checks at both boundaries.
 
 ## Actionable
 ### Critical / High

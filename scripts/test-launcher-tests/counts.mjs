@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { captureCommitInputStatus } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus } from "../launcher-source-id.mjs";
 import { commandKind, completionMetadata, countTests, createRun, diagnostics, executable, executeRun, inspectFailure, machineRecord, requiredStages, selectsTests, startDetached, summarize } from "../test-launcher.mjs";
 
 export function registerCountTests(support) {

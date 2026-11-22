@@ -6,9 +6,9 @@ import { once } from "node:events";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { sourceIdLimitations } from "../review-freeze-fingerprint.mjs";
+import { sourceIdLimitations } from "../launcher-source-id.mjs";
 import { completionMetadata, createRun, diagnostics, executable, executeRun, fileProbes, inspectFailure, machineRecord, notifyRun, requiredStages, summarize } from "../test-launcher.mjs";
-import { fixtureHome, fixtureRoot, removeFixturePath, assertTempClean } from "../test-temp.mjs";
+import { fixtureHome, fixtureRoot, removeFixturePath, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "../test-temp.mjs";
 
 export function registerExecutionFixtures(support) {
   const { env, entryUrl, launcher, stage, json, logPath, git, repository, rustPhaseArgs, rustPhaseCalls, rustWrapperFixture, parseRecord } = support;
@@ -145,7 +145,7 @@ test("required stages preserve all gates with four independent Rust phases", () 
       ["rust-scale-roots", ["--phase", "scale-roots"], true],
       ["rust-scale-planning", ["--phase", "scale-planning"], true],
     ]);
-    assert.deepEqual(stages[7].args, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs", "scripts/source-input.test.mjs"]);
+    assert.deepEqual(stages[7].args, ["--test", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs", "scripts/source-input.test.mjs"]);
     assert.deepEqual(stages.slice(8).map(({ args }) => args), [
       ["--test", "scripts/mcp-dogfood.test.mjs"],
       ["--test", "scripts/control-dogfood.test.mjs"],
@@ -772,11 +772,11 @@ describe("an input that changed only by new untracked paths after every stage pa
     // the run's input.json, then adds a new file. Measured against the saved
     // file, only the new file would differ; measured against the input the
     // run admitted, the tracked file changed too.
-    const fingerprintModule = pathToFileURL(fileURLToPath(new URL("./review-freeze-fingerprint.mjs", entryUrl))).href;
+    const sourceIdModule = pathToFileURL(fileURLToPath(new URL("./launcher-source-id.mjs", entryUrl))).href;
     const source = "const fs = require('node:fs'), path = require('node:path');"
       + " const runs = require('node:child_process').execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'review-runs'], { encoding: 'utf8' }).trim();"
       + " const run = path.join(runs, fs.readdirSync(runs).find((name) => name.startsWith('test-')));"
-      + ` fs.writeFileSync('tracked.txt', 'changed\\n'); import(${JSON.stringify(fingerprintModule)}).then((m) => {`
+      + ` fs.writeFileSync('tracked.txt', 'changed\\n'); import(${JSON.stringify(sourceIdModule)}).then((m) => {`
       + " const current = m.captureCommitInputStatus('.'); fs.writeFileSync(path.join(run, 'input.json'), JSON.stringify({root:current.root, sourceId:current.sourceId}));"
       + " fs.writeFileSync('debris.log', 'x\\n'); });";
     await repository(async (root) => {
@@ -792,6 +792,44 @@ describe("an input that changed only by new untracked paths after every stage pa
 
 export function registerExecutionEnvironment(support) {
   const { env, entryUrl, launcher, git, repository } = support;
+test("fixture ownership cleans failures and Temp audit detects replacement and leftover entries", (t) => {
+  const root = fixtureHome("engram-temp-audit-", t);
+  const parallel = fixtureHome("engram-parallel-audit-", t);
+  try {
+    // Another run's directory cannot fail this run's empty-root check.
+    const empty = tempSnapshot(root);
+    assertTempClean(empty, root);
+    const prior = join(root, ".tmp-prior");
+    mkdirSync(prior);
+    const before = tempSnapshot(root);
+    removeFixturePath(prior);
+    mkdirSync(join(root, ".tmp-new"));
+    assert.throws(() => assertTempClean(before, root), /new entries=.*tmp-new/u);
+    removeFixturePath(join(root, ".tmp-new"));
+    mkdirSync(join(root, "leftover"));
+    assert.throws(() => assertTempClean(before, root), /remaining=.*leftover/u);
+  } finally {
+    removeFixtureHomes(root, parallel);
+  }
+  assert.equal(existsSync(root), false);
+  const failed = fixtureHome("engram-setup-failure-", t);
+  assert.throws(() => {
+    try { throw new Error("setup failed"); }
+    finally { removeFixtureHomes(failed); }
+  }, /setup failed/u);
+  assert.equal(existsSync(failed), false);
+});
+
+test("fixture shutdown attempts every client and retains shutdown failures", async () => {
+  const closed = [];
+  await assert.rejects(closeFixtureClients(
+    { close() { closed.push("first"); throw new Error("close failed"); } },
+    undefined,
+    { async close() { closed.push("second"); } },
+  ), /Fixture process shutdown failed/u);
+  assert.deepEqual(closed, ["first", "second"]);
+});
+
 test("fixture removal refuses paths outside its root and deletes inside it", (t) => {
   const home = fixtureHome("engram-guard-", t);
   const target = join(fileURLToPath(new URL("..", entryUrl)), "target");

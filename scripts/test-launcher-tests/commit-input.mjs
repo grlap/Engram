@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { captureCommitInputStatus, compareSourceIds, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, compareSourceIds, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../launcher-source-id.mjs";
 import { createSourceFixture, sourceCases } from "../source-input-fixtures.mjs";
 import { fixtureHome } from "../test-temp.mjs";
 import { commitInputEligible, createRun, encodeRunRecord, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";

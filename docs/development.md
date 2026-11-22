@@ -140,9 +140,9 @@ commit/tree values are created at runtime under the caller's owned test root.
 
 ## Quality gates
 
-Run `node scripts/test-launcher.mjs full` before landing any changeset with a
-non-`.md` path; a changeset touching only `.md` files runs the two checks
-[Required Quality Gates](../AGENTS.md#required-quality-gates) names instead.
+Run `node scripts/test-launcher.mjs full --input commit` on the clean landing
+candidate for a changeset with any non-`.md` path. For a Markdown-only candidate,
+run the committed-input link check in [Required Quality Gates](../AGENTS.md#required-quality-gates).
 Full mode preserves these gates in order:
 
 ```bash
@@ -150,7 +150,7 @@ cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
+node --test scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
@@ -431,13 +431,10 @@ parity checks establish the launcher's refusals and confirmation behavior;
 they do not establish end-to-end remote verification or host credit before
 that producer ships and a real run demonstrates it.
 
-Full mode is the landing validation of a frozen changeset with any non-`.md`
-path, including configuration, lockfiles and fixtures. Focused mode is the
-fast correction check between fixes: it runs the tests that cover a fix before
-the next freeze, and never replaces full mode for such a changeset. A
-changeset touching only `.md` files lands on one focused run instead, the
-link check (see
-[Required Quality Gates](../AGENTS.md#required-quality-gates)).
+Full mode with `--input commit` is the landing validation of a clean
+candidate commit with any non-`.md` path. Staged inputs are for focused
+correction checks. A Markdown-only candidate uses the focused link check
+with `--input commit` under [Required Quality Gates](../AGENTS.md#required-quality-gates).
 
 Commands are argument arrays, not shell strings. Name `pwsh -NoProfile -File`
 or `sh` explicitly for shell scripts. Full mode chooses the correct Rust runner,
@@ -543,13 +540,12 @@ reported as `UNKNOWN` with reason `no-terminal-result`. `summary` shows a
 another process holds the file open; that retry is file I/O and never reruns a
 test.
 The snapshot checks are boundary checks, not proof against transient edits.
-The explicit review-freeze CLI retains its separate schema-1 algorithm and
-coverage warnings. Automatic runs report the source owner's ordinary Git
-normalization and ignored-path limits. Line-ending-only changes erased by Git
-normalization can be invisible. A filter that Git needs to apply makes the
-source observation unavailable. Known intervening
-edits still invalidate a run. Neither comparison proves raw filesystem bytes. Artifacts use
-owner-only POSIX modes (0700 run directory, 0600 files); Windows uses its ACLs.
+Automatic runs report the source owner's ordinary Git normalization and
+ignored-path limits. Line-ending-only changes erased by Git normalization
+can be invisible. A filter that Git needs to apply makes the source
+observation unavailable. Known intervening edits still invalidate a run.
+Artifacts use owner-only POSIX modes (0700 run directory, 0600 files).
+Windows uses its ACLs.
 Long launcher errors keep a bounded excerpt in the result and attempt to retain
 the full diagnostic in an exclusively created `worker-error-<uuid>.log` file.
 The excerpt names that file, or explicitly reports that its write failed.
@@ -1290,13 +1286,19 @@ bullet. Without any of these, at
 handoff report changed files, validation performed, and proposed next
 commands, then wait.
 
+For a remote landing gate, follow the Test refs bullet in
+[Authority and Git](../AGENTS.md#authority-and-git). The Merger records the
+eligible candidate's complete `source_id` before pushing the exact commit as
+`refs/heads/test/<item>-<commit8>`. The first eight hex digits of the commit id
+supply `<commit8>`. Use the ordinary commit message format. The Merger compares
+the runner's admitted, before and after `source_id` values with the pre-push
+record.
+
 ## Review cadence
 
-Changes are reviewed through the delegated review workflow (two independent
-review passes from different vendors, Codex and Claude, with at most one Kimi
-stand-in, for an unavailable Codex or Claude, over the frozen input, which is
-staged, unstaged and untracked changes or a candidate commit) before any
-landing is proposed. Review findings that warrant follow-up work
+Before proposing a landing, run the delegated review workflow on the clean
+candidate commit. Use two independent reviews, Codex and Claude, with at most
+one Kimi stand-in for an unavailable reviewer. Review findings that warrant follow-up work
 become Engram items, not inline TODOs.
 
 ## Documentation conventions

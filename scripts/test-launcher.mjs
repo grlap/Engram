@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureCommitInputStatus, compareSourceIds, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, compareSourceIds, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./launcher-source-id.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
@@ -234,7 +234,7 @@ export function requiredStages(platform = process.platform) {
     ["rust-scale-claims", "test", rustCommand, [...rustArgs, "--phase", "scale-claims"]],
     ["rust-scale-roots", "test", rustCommand, [...rustArgs, "--phase", "scale-roots"]],
     ["rust-scale-planning", "test", rustCommand, [...rustArgs, "--phase", "scale-planning"]],
-    ["freeze", "test", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs", "scripts/source-input.test.mjs"]],
+    ["freeze", "test", process.execPath, ["--test", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs", "scripts/source-input.test.mjs"]],
     ["mcp", "test", process.execPath, ["--test", "scripts/mcp-dogfood.test.mjs"]],
     ["control", "test", process.execPath, ["--test", "scripts/control-dogfood.test.mjs"]],
     ["parity", "test", process.execPath, ["--test", "scripts/parity.test.mjs"]],
