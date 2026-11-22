@@ -1,0 +1,37 @@
+{
+  "id": "01a2045b-071b-73a2-b41b-58043c736eda",
+  "external_ref": null,
+  "title": "Model the acceptance-wake stall in the coordination TLA+ model: an owner must not sleep after credit settles without a host or coordinator wake",
+  "outcome": "Model the acceptance-wake stall in the coordination TLA+ model: an owner must not sleep after credit settles without a host or coordinator wake",
+  "acceptance": [
+    "The coordination TLA+ model under target/ adds the states and transitions awaitEvalRequest, CreditSettles, RequestEvaluation and SleepWithoutReady, plus only the steps that carry the wake into RequestEvaluation: a host event delivery, or a named coordinator READY message and the coordinator's wake of the owner, with the message state they need. Coord.tla and the rest of the model are otherwise unchanged.",
+    "A matching negative control shows the model catches an owner that sleeps after credit settles with no wake",
+    "One bounded run of one round passes; no production change, no long rerun and no unrelated v9 changes; Kimi reviews the C6 delta afterwards"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "greg-directed",
+    "tla"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Acceptance-after-credit seam added to the coordination TLA+ model, as one bounded one-round check.\nDELIVERED, frozen package Central target\\tla-coord\\handoff-acc (18 files):\n- spec/Coord.tla (v9, byte-identical to handoff-v9e) and spec/CoordAcc.tla. CoordAcc EXTENDS Coord with the phase awaitEvalRequest and the steps CreditSettles, RequestEvaluation (reuses the settled evidence: wExec unchanged) and SleepWithoutReady (negative control). The wake into the request is either the host event (HEVAL) or a named coordinator path: READY to D, then D's EVALWAKE. AccNoUnnamedWait and AccStallIsExplicit reuse Coord's properties with the new wait.\n- 5 configurations, the DL560 job, 8 TLC outputs and a bare-facts README.\nRESULTS (DL560, 2026-11-22 18:29:54-18:31:24Z, one round):\n- AccReady and AccHost: no error over complete state spaces (49,027 and 19,849 distinct states).\n- NegSleepWithoutReady: AccNoUnnamedWait violated, an 11-state trace reproducing the B3C1 'next turn' sleep.\n- WitAccReady and WitAccHost: both positive paths reached.\nREVIEW: Kimi's C6 delta review passed (quoted in holder note f2ca5566). C1 was revised verbatim per Fable's ruling 50c37875 (a wording defect). The independent re-evaluation (Codex session-19568, superseding 61650e63) passed 3/3.\nCLEANUP, released for Codex on the DL560 lane: target/tla-5804-acc/ and target/jobs/s4-tlc-5804/. On Central, handoff-acc stays as the record; the scratch files mkjob9acc.py, unpack9acc.py, steps.py, the stage/request .msg files and results-r9acc can go in the same target\\tla-coord sweep already listed for w-869f.",
+    "completed_at": "2026-11-22T18:55:22.186603300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  }
+}
