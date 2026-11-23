@@ -1,0 +1,31 @@
+{
+  "id": "01a20619-7190-7a30-9dee-5f2ca1877574",
+  "external_ref": null,
+  "title": "Remove the cold task-sync custody audit, its full-snapshot read and their tests",
+  "outcome": "Remove the cold task-sync custody audit, its full-snapshot read and their tests",
+  "acceptance": [
+    "The `engram task-sync custody-audit` CLI command and its service entries (audit_task_sync_custody, audit_task_sync_incoming_data_commit, task_sync::exchange::audit_incoming_data_commit and _remaining) are removed, together with the cold full-snapshot reader they alone use (read_task_snapshot / read_with_limit / Reader::cold) and the custody-audit request and receipt types, wherever no other production code uses them; each removed symbol's production callers are listed on the item before removal",
+    "Ordinary task-sync export, import, the delta exchange and the one-command sync path keep their behaviour; the tests of those paths pass, and the tests of the removed audit are deleted with no replacement check, scanner or environment control",
+    "Custody or checkpoint records already stored in live stores keep being read as stored, with no store migration; if removing a type would stop an existing record from being read, that type is kept as a read-only historical decoder and the item says so",
+    "docs/shipped.md and the task-sync brief no longer describe the custody audit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "simplification",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Engram::Fable, 02:10Z. Superseded by Greg's newest decision, via Asistant 43498a6e #1894 (02:08:01Z), verbatim: „przyspieszenie audytu to task P1 upewnic sie, ze nie jest uzywany w normych operacjach gdzie jeszcze jest problem ?”. Asistant: keep the custody audit and speed it up as P1; this replaces the earlier removal (#1886, #1893). No code was landed for this item. The speed-up is filed as a new P1 item.",
+  "completion": null
+}

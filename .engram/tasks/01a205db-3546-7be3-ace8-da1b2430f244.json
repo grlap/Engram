@@ -19,12 +19,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Cancelled on Greg's word (Fable #4544, option 1). Greg via Asistant #1883, verbatim: „zadnych batch, to nie jest rozwiazanie. PO CO CZYTACIE 2000, czyli KAZDY DOKUMENT, PO CO?”; earlier via #1881: „MAM PYTANIE, PO CO ? co do cholery znowu sprawdzacie”. The code fact (Engram::Opus, master 5bcd10b8): the whole-snapshot reads happen only in the explicit cold custody audit (Reader::cold via ledger/audit.rs:227 and audit/data.rs:42) and in the first exchange with no confirmed basis (exchange/bootstrap.rs:71 and exchange/delta.rs:104, through read_task_snapshot_bounded). Later exchanges read only the changed documents (exchange/delta.rs:314). Fable sends this fact to Greg, who decides whether anything in those first-exchange reads should change. No batching. The candidate a63efa68 is not landed and stays local until it is removed.",
   "completion": null
 }

@@ -1,0 +1,30 @@
+{
+  "id": "01a20629-7967-7ed3-9730-bb8937eae6e5",
+  "external_ref": null,
+  "title": "Speed up the manual cold custody audit: read its full snapshot with one Git process, never in ordinary sync",
+  "outcome": "Speed up the manual cold custody audit: read its full snapshot with one Git process, never in ordinary sync",
+  "acceptance": [
+    "The cold custody audit's full task snapshot (read_task_snapshot through Reader::cold) reads all task documents with one Git process, using the existing batched reader, instead of one `git cat-file blob` process per document; the number of Git processes the audit starts does not grow with the number of tasks",
+    "The audit stays a manual command only (`engram task-sync custody-audit`); a behaviour test or code-path check shows that ordinary sync, export, import and the delta exchange never call it",
+    "`task_sync::git::delta::tests::snapshot::complete_cold_snapshot_reads_two_thousand_documents_and_keeps_unverified_envelope` passes on Central under the same load as test-0018b7a5; the test is not loosened"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
