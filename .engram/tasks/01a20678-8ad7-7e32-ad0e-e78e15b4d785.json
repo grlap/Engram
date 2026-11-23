@@ -1,0 +1,27 @@
+{
+  "id": "01a20678-8ad7-7e32-ad0e-e78e15b4d785",
+  "external_ref": null,
+  "title": "Pin the snapshot launch-count tests to exactly one document process over a no-document baseline",
+  "outcome": "Pin the snapshot launch-count tests to exactly one document process over a no-document baseline",
+  "acceptance": [
+    "The cold snapshot, bounded snapshot and shared-publication export launch-count tests compare each snapshot read with a baseline that reads no task documents, and require exactly one more `git cat-file` start, so an extra fixed Git launch per snapshot (such as an unconditional --batch-check) fails them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

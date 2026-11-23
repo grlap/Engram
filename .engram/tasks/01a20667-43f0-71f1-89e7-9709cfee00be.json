@@ -1,0 +1,30 @@
+{
+  "id": "01a20667-43f0-71f1-89e7-9709cfee00be",
+  "external_ref": null,
+  "title": "Read only the publication members an export capture needs, instead of the whole published snapshot",
+  "outcome": "Read only the publication members an export capture needs, instead of the whole published snapshot",
+  "acceptance": [
+    "During export, the publication-member fallback (storage/work/task_sync/origin.rs published_snapshot_member, called from ledger/publication_members.rs per item) first collects the work ids whose documents the capture actually needs, then reads only those documents from the confirmed publication commit in one Git batch; it no longer reads every document of the published snapshot",
+    "A behaviour test with a large published snapshot and few needed members counts documents read (only the needed ones) and Git process starts (constant, the same at N=2 and N=200 needed members)",
+    "Export outcome is unchanged; no new check, flag or cache table"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

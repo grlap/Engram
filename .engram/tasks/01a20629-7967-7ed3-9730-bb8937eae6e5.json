@@ -4,9 +4,9 @@
   "title": "Read needed task-sync documents with one Git process: the cold audit, the first exchange and changed-document deltas",
   "outcome": "Every needed task-document read through the shared read_documents (the cold custody audit snapshot, the first exchange without a basis, and changed-document deltas) uses one Git process per batch instead of one per document. The custody audit stays manual-only, and unneeded full reads are removed, not batched (owned by w-938250adde25).",
   "acceptance": [
-    "Every needed task-document read through the shared read_documents uses the existing batched reader, one `git cat-file --batch` process per batch, instead of one `git cat-file blob` process per document. This covers the cold custody audit snapshot (read_task_snapshot through Reader::cold), the first exchange without a basis (read_task_snapshot_bounded) and changed-document deltas (read_task_delta). A behaviour test counts Git launches and shows they do not grow with the number of tasks (2 vs 200) for the cold snapshot, the bounded snapshot and a delta, with the delta starting exactly one more process than a delta with no changed document",
+    "Every needed task-document read through the shared read_documents uses the existing batched reader, one `git cat-file --batch` process per batch, instead of one `git cat-file blob` process per document. This covers the cold custody audit snapshot (read_task_snapshot through Reader::cold), the first exchange without a basis (read_task_snapshot_bounded), the confirmed-publication fallback of export, which shares one snapshot per exchange capture across its members, and changed-document deltas (read_task_delta). Behaviour tests count Git launches and show they do not grow with the number of tasks. At 2 vs 200 tasks they check the cold snapshot, the bounded snapshot and a delta; the delta must start exactly one more process than a delta with no changed document. At 2 vs 200 members they check an export that falls back to one confirmed publication",
     "The custody audit stays a manual command only (`engram task-sync custody-audit`); a behaviour test or code-path check shows that ordinary sync, export, import and the delta exchange never call it",
-    "`task_sync::git::delta::tests::snapshot::complete_cold_snapshot_reads_two_thousand_documents_and_keeps_unverified_envelope` passes on Central under the same load as test-0018b7a5; the test is not loosened"
+    "`task_sync::git::delta::tests::snapshot::complete_cold_snapshot_reads_two_thousand_documents_and_keeps_unverified_envelope` passes on Central inside a complete `cargo test --lib` suite run; the test is not loosened"
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,
@@ -15,6 +15,7 @@
   "labels": [
     "greg-directed",
     "performance",
+    "ready-to-land",
     "sync"
   ],
   "assigned_to": null,

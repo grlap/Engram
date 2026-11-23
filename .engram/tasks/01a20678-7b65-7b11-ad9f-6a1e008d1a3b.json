@@ -1,0 +1,28 @@
+{
+  "id": "01a20678-7b65-7b11-ad9f-6a1e008d1a3b",
+  "external_ref": null,
+  "title": "Parse batched task documents straight from the cat-file output instead of copying every body",
+  "outcome": "Parse batched task documents straight from the cat-file output instead of copying every body",
+  "acceptance": [
+    "Reader::batch hands each document to its caller as a slice of the chunk's cat-file output, or read_documents parses each record as it is read, so peak memory for a batched read stays near one copy of the payload rather than the chunk output plus a copy of every body",
+    "A behaviour test reads a batch of documents and gets them byte-identical, and existing task_sync::git tests pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
