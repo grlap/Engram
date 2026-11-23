@@ -17,12 +17,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Verified the 60 s source/committed-input budget on master, where aacb1370 delivered it: MAX_BUDGET_MS = MIN_PUBLIC_BUDGET_MS = 60_000; `engram source --timeout-ms` defaults to 60000, takes 1..=60000, and raises a shorter public request to one 60 s deadline. Central runs at 5bcd10b8: committed_input a_ tests 2/2 (test-e48e6cea); source-input.test.mjs 56/56 (test-90aaab8b) after building the debug binary (test-f4f5d375). An independent Codex evaluator (session-19633) passed both criteria.",
+    "completed_at": "2026-11-23T02:51:49.594728900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  }
 }
