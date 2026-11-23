@@ -244,7 +244,7 @@ fn read_selected(
     })?;
     let (documents, _) = delta::read_documents(
         reader,
-        changes,
+        &changes,
         project,
         envelope.profile.include_notes,
         remaining,

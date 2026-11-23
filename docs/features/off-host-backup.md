@@ -156,9 +156,7 @@ the file is removed as part of that abandoned attempt. The adapter removes
 only files of attempts that this home recorded and then resolved as abandoned;
 it never deletes other files in the directory because they look orphaned. It
 uses plain file operations and accepts network paths and cloud folders on
-purpose; the link and placeholder refusals of `graph save --out` protect a
-disclosure default and do not apply to a path the operator configured as a
-target.
+purpose.
 
 The `git-ref` adapter writes commits to `refs/engram/backup/<project digest>`
 in a scratch repository under `ENGRAM_HOME` and pushes that ref, never a

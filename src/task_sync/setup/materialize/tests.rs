@@ -509,9 +509,7 @@ fn snapshot_with_lock_metadata(
                 if locked == Some(path) {
                     // Windows refuses ReadFile under the held byte-range lock.
                     // The caller checks its bytes separately after lock release.
-                    let file = fs::File::open(path).unwrap();
-                    let id = super::super::files::file_identity(&file).unwrap();
-                    Some(serde_json::to_vec(&(id, meta.len())).unwrap())
+                    Some(serde_json::to_vec(&meta.len()).unwrap())
                 } else {
                     Some(fs::read(path).unwrap())
                 }

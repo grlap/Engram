@@ -1,7 +1,6 @@
 use std::io::Cursor;
 
 use super::*;
-mod connection_read;
 mod diagnostics;
 mod startup;
 mod store_busy;
@@ -263,6 +262,15 @@ fn oversized_control_frame_is_rejected_and_drained() {
             .is_some_and(|message| message.contains("exceeds"))
     );
     assert_eq!(responses[1]["error"]["code"], "invalid_request");
+}
+
+#[test]
+fn removed_control_connection_read_is_an_invalid_request() {
+    let frame = br#"{"operation":"control_connection_read"}"#;
+    let Err(HostControlResponse::Error { error }) = parse_frame(Ok(frame.to_vec())) else {
+        panic!("removed operation must return an invalid request");
+    };
+    assert_eq!(error.code, "invalid_request");
 }
 
 #[test]

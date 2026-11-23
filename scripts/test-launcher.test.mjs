@@ -31,8 +31,8 @@ import { registerRequestMessageTests } from "./test-launcher-tests/request-messa
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
-// This test file runs in its own Node test process. Isolate both explicit Git
-// children and in-process fingerprint calls from developer configuration.
+// This test file runs in its own Node test process. Isolate fixture Git
+// commands and launcher source probes from developer configuration.
 for (const key of Object.keys(process.env)) if ((key.toUpperCase().startsWith("GIT_") || key.toUpperCase().startsWith("TERMAL_"))) delete process.env[key];
 // Restore the fixture ceiling the scrub removed: Git in a fixture never climbs
 // out into this checkout.

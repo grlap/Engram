@@ -7,8 +7,7 @@ metadata:
       strategy: default
 ---
 
-Review all staged, unstaged, and untracked changes from the existing writable
-parent session.
+Run this workflow from the writable parent session on a clean candidate commit.
 
 **Do not delegate `/review-changes` itself.** The parent owns build artifacts,
 quality gates, the worktree freeze, fan-in, and recording findings in
@@ -92,31 +91,27 @@ Greg's 2026-09-26 decisions also cover the work around each review:
 
 ## 1. Confirm the target
 
-Run:
+Confirm that the checkout is clean and inspect the candidate's change against
+its base.
 
 ```bash
-git status --short
-git diff --name-only
-git diff --cached --name-only
-git ls-files --others --exclude-standard
+git status --porcelain --untracked-files=all
+git diff --name-only BASE COMMIT
 ```
 
-For a candidate commit (section 3), the target is that commit's change against
-its base, and the checkout is clean. Confirm instead that
-`git status --porcelain --untracked-files=all` prints nothing and list the
-change with `git diff --name-only BASE COMMIT`. Otherwise, if there are no
-changes, report that and stop.
+The status must be empty. If the candidate has no changes, report that and stop.
 
 ## 2. Run parent-owned gates
 
-Use `node scripts/test-launcher.mjs full` to run, in order:
+Use `node scripts/test-launcher.mjs full --input commit` to run the checks below
+in order.
 
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
+node --test scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
@@ -134,10 +129,10 @@ CLAUDE.md, skills, commands) runs the link check instead of the full batch
 (Greg, 2026-09-26): no build step or test reads Markdown except the link
 checker. Run it through
 the launcher, so that its complete `source_id` is checked at completion
-as for the full gate. Review identity uses the separate Git tree id in section 3:
+as for the full gate. Review the same input under section 3.
 
 ```bash
-node scripts/test-launcher.mjs focused -- node scripts/check-doc-links.mjs
+node scripts/test-launcher.mjs focused --input commit -- node scripts/check-doc-links.mjs
 ```
 
 Both reviewers still review it. A changeset with any other path runs the
@@ -153,8 +148,8 @@ correction checks never replace landing validation.
 
 ### Gate and review in parallel
 
-Fully stage and freeze the review input (section 3), or make the candidate
-commit and record its identity, before starting the foreground launcher
+Prepare the clean candidate commit and record its identity (section 3)
+before starting the foreground launcher
 under the host's background execution (for example a background shell task
 that reports when it exits). Spawn both reviewers
 (section 4) on the same input while the gate runs (Greg, 2026-09-26).
@@ -171,10 +166,8 @@ already have persisted. Delegation children run checks in the foreground.
 The yield or blocking
 wait described below comes under section 5, only after the reviewers are
 spawned. A host without background execution cannot overlap them: it runs the
-gate after section 3, then section 4. The launcher's automatic before/after
-`source_id` comparison is separate from the review's Git tree id; never
-compare those values for equality. Validation and review cover the same
-unchanged input. A failed gate discards the reviews of that input.
+gate after section 3, then section 4. The launcher's input checks and the reviewers' recorded scope bind to the
+parent's complete `source_id` for that unchanged input. A failed gate discards the reviews of that input.
 When a review finding will change the
 input while the gate still runs, the gate's result can no longer be used: the
 parent stops or discards it and starts the next round on the corrected input.
@@ -206,14 +199,12 @@ the observations before execution and at completion. Before yielding, retain
 the run directory, input manifest path and execution receipt in the work status.
 Hold source and index unchanged during execution. At completion, and before
 reusing recovered results, require a matched comparison of the complete admitted,
-before and after `source_id` values, and repeat section 3's applicable Git
-identity checks. A mismatch or unavailable identity is an evidence gap, not a
+before and after `source_id` values against the reviewed input as described
+in section 3. A mismatch or unavailable identity is an evidence gap, not a
 current pass. A new non-ignored untracked file is an ordinary mismatch; there
 is no separate debris disposition.
-These boundary checks do not prove the absence of transient
-edits; a known intervening edit invalidates the run. This gate-input snapshot
-is separate from the review freeze in section 3, although both cover the same
-tree.
+These boundary checks do not prove the absence of transient edits. A known
+intervening edit invalidates the run.
 Tracked content follows Git's clean/eol normalization, so changes erased by
 that conversion (including line-ending-only edits) are not detected by the
 source identity on any platform. Do not claim raw-byte coverage for tracked files.
@@ -279,82 +270,23 @@ action); "the suite failed" alone is not a report.
 
 ## 3. Freeze the review input
 
-Ordinary review inputs use Git identity. The parent stages every intended
-path, requires an empty `git diff` and no untracked files, then runs
-`git write-tree` once to record the complete index tree id. Record the root,
-base commit, HEAD, changed paths and tree id on the item and in the brief.
-Do this before starting validation; hold source and index unchanged through
-validation and review.
+Independent reviews and landing gates run on clean candidate commits.
+Staged inputs are for focused correction checks only. Reuse the launcher's
+complete admitted `source_id` for the exact candidate when available.
+Otherwise the parent obtains it with `engram source --root ABSOLUTE_WORKTREE --json`.
+Record its locator, the root, the base and the changed paths on the item and
+in the brief. Keep the input unchanged through validation and review.
 
-At the start and end of each review, the reviewer runs these read-only commands
-separately, replacing `TREE` with the parent's recorded tree id:
+Reviewers cite that record and read the diff from the base to its commit.
+At the start and end, use read-only Git checks that HEAD equals that commit
+and the checkout is clean. The parent checks the round against the
+launcher's admitted, before and after values for the same input.
 
-```bash
-git diff --cached --quiet TREE
-git diff --quiet
-git ls-files --others --exclude-standard
-```
-
-Both diffs must exit zero, and the untracked listing must exit zero with no
-output. Also confirm HEAD equals the parent's recorded HEAD. Report the tree id
-and `index == TREE, clean` at both boundaries. Reviewers never run
-`git write-tree`, which writes Git objects; only the parent does that.
-
-For a committed input, the parent records its commit and commit tree id.
-At both boundaries each reviewer confirms HEAD equals that commit, reports its
-tree id using `git show -s --format=%T COMMIT`, and requires empty output from
-`git status --porcelain --untracked-files=all`. Commands must exit zero, and the
-tree id must equal the parent's recorded id. Review the change against the
-supplied base even though the checkout is clean.
-
-A candidate commit, under the candidate-commits rule in the Authority and Git
-section of AGENTS.md and CLAUDE.md, is such a committed input. The parent
-commits its change on its own feature branch or detached worktree, never on
-master, and pushed only as a test ref under the test-ref bullets in AGENTS.md
-and CLAUDE.md, and follows the "Commit messages" section, because a
-fast-forward keeps that commit in master's history. Its freeze identity is the
-commit plus an empty `git status --porcelain --untracked-files=all`, which
-respects `.gitignore`. Record the base commit, the candidate commit and its
-tree id on the item and in the brief before validation starts. Focused checks
-and reviews may run on such a commit. The final full gate runs on a clean
-checkout of a single candidate commit whose parent is the current master, and
-the landing is exactly that commit. When the integration owner commits a
-candidate under the Test refs bullet in AGENTS.md and CLAUDE.md and pushes it
-as a test ref, a full gate run by the standard launcher on that ref, with that
-bullet's records, is this final full gate, and it gates only the fast-forward
-of master to that same commit. A run on an author test ref counts exactly as
-the same run from a bundle of that commit would, and no more.
-
-The integration owner lands a candidate only by fast-forwarding master to
-exactly that gated commit, when the standing approval's conditions hold, and
-pushing it without force. If master has moved, the change is committed afresh
-as a new candidate whose parent is the current master, which is frozen and
-gated as its own input; section 6a decides whether the earlier reviews carry
-over. Several complete READY packages may be integrated as one integration
-commit on the integration owner's own worktree, whose parent is the current
-master, gated as its own input. A candidate that fails is superseded by a new
-candidate commit, never amended, rebased or force-pushed. Each new candidate is
-committed on a new branch or a detached HEAD at the current master, and the
-earlier candidate is left as it is. The staged-tree lane above remains
-available.
-
-Git identity does not replace reading the complete change or prove the absence
-of transient edits. A known intervening source or index edit invalidates the
-affected result. Git normalization is not raw-byte equality.
-
-Review identity capture and the compiled host freeze checker are optional,
-limited to a change whose correctness depends on bytes or filesystem properties
-that ordinary Git identity normalizes or does not track: EOL-sensitive files
-under an `.gitattributes` EOL or filter rule, executable bits, symlink targets,
-or nested repositories/submodules. Record the affected paths, concrete
-correctness dependency and reason on the item before using capture. Record the
-method, comparison value and actual coverage limits; a Git-normalized
-fingerprint is not raw-byte proof. Do not require capture or the compiled
-checker in the ordinary flow.
-
-The launcher's automatic input check compares complete `source_id` values.
-The explicit review-freeze fingerprint, remote test-ref naming and trailer
-remain separate and unchanged. Keep each separate from the review's Git tree id.
+A candidate commit follows the Candidate commits bullet in AGENTS.md, a
+remote final gate follows its Test refs bullet, and review reuse after a
+carry follows section 6a. A known intervening edit invalidates the affected
+result. Where correctness depends on a property Git normalizes, check that
+property directly and record what the check covers.
 
 Activate the launcher that omits `expectedFingerprint` only after TermAl's
 readers accepting the complete `source_id` records are running following its
@@ -378,9 +310,8 @@ the same way, with its own title, and gets the same prompt.
 Give each a multi-line prompt. Its first line tells the reviewer to read
 `.claude/commands/review-code.md` in the worktree and follow it. The rest
 gives the review context: the item, root, base commit, HEAD or input commit,
-changed paths, recorded Git tree id, required start/end checks from section 3,
-and what changed since the previous round. Include capture evidence only for
-a recorded section 3 exception. Do not put that context after `/review-code`
+changed paths, the recorded complete `source_id` locator to cite at both
+boundaries, and what changed since the previous round. Do not put that context after `/review-code`
 on one line:
 TermAl expands a one-line slash command from the command file, which has no
 arguments slot, so everything after the command is dropped.
@@ -411,22 +342,19 @@ until TermAl resumes the parent with the pair's fan-in prompt.
 
 ## 6. Verify the freeze and collect results
 
-Accept reviewer output only once the gate has finished and passed on the same
-unchanged input tree, with its complete admitted, before and after `source_id`
-values matching.
-For a changeset touching only `.md` files, that means once the link check
-passed on that tree. When the reviews arrive first, verify
-the freeze as below. They may be read, and a justified finding may start the
-next round at once, but a clean review counts only once the gate has passed
-on that same input.
+When the pair returns, verify both reviews. Resolve findings under
+section 7. A clean, verified review round satisfies the review
+condition for a remote test-ref push under the Test refs bullet in AGENTS.md.
+For that path the full gate runs after the push. Landing still requires the
+applicable gate to pass on the same candidate commit with matching complete
+admitted, before and after `source_id` values. For a Markdown-only candidate
+the link check is the applicable gate.
 
-Before accepting reviewer output, the parent repeats section 3's applicable
-Git comparisons against its saved identity and requires both reviewers' start
-and end results to match. Missing identity evidence or a mismatch is a gap,
-not a review of the current input. Investigate it; if input changed, renew the
-affected validation and review on the corrected input. Do not replace a saved
-tree id merely to accept an earlier result. Optional capture is used only for
-section 3's recorded exceptions, never as an ordinary prerequisite.
+Confirm each reviewer cited the parent's complete `source_id` and reported
+matching read-only Git boundary checks for the supplied diff scope. Compare
+the record with the launcher's available observations on the unchanged
+input. Investigate missing or mismatched evidence. If the input changed,
+renew the affected validation and review on the corrected input.
 
 Fetch both structured result packets using `termal_get_session_result`, and
 the optional third review's once it has returned. Validated structured
@@ -473,7 +401,7 @@ Deduplicate overlapping findings and tracker suggestions.
 When the reviewed change touches authority text — the text whose change
 conditions (a), (b) and (c) of the Authority and Git section of AGENTS.md and
 CLAUDE.md cover — the parent sends the final frozen change against its recorded
-base, the review Git identity, the separate launcher results and `source_id` values,
+base, the recorded complete `source_id` and the review and launcher results,
 and the list of recorded messages that word each changed
 passage of authority text to the auditing coordinator by TermAl mailbox. The
 parent also sends the auditing coordinator the recorded message that carried
@@ -485,13 +413,13 @@ Before judging the authority passages, the auditing coordinator confirms
 that the supplied authority diff matches a diff read from the frozen worktree
 against the same recorded base commit, including each added authority file
 and its placement. With the holder's confirmation that no check is carried
-in that root, the coordinator verifies section 3's applicable Git identity
-before and after reading that diff and those files from the same input.
-Record the base commit, root, tree id, input commit where applicable, and both
-identity results with the audit. Capture and the compiled checker are optional
-only under section 3's recorded raw-byte exceptions. A missing or mismatched
-identity does not pass: investigate it. Boundary checks do not establish source
-coverage or the absence of transient edits.
+in that root, the coordinator reads a committed authority diff from the
+commit in the parent's complete `source_id` record and verifies the read-only
+Git boundaries in section 3 before and after. Record the
+base commit, root, source record locator and both boundary results with the
+audit. Investigate a missing or mismatched result before passing the audit.
+Reading the complete diff establishes coverage. Boundary checks cannot
+exclude transient edits.
 
 Only when the auditing coordinator cannot read the worktree, record that
 access gap and retain the exact supplied authority diff, each added authority
@@ -509,9 +437,9 @@ apply before landing; the fallback grants no additional authority.
 
 When an audited authority change is carried onto a new base, the auditing
 coordinator repeats the identity part above in full on the carried input: the
-diff read from the new frozen worktree against its base, section 3's applicable
-Git identity before and after that reading, and the passage script. It records
-a new audit for that input. When the authority diff, its placement and its context are
+diff read from the new frozen worktree against its base with the applicable
+boundary checks above, and the passage script. It records a new audit for
+that input. When the authority diff, its placement and its context are
 byte-identical to the audited ones, the new audit may cite the earlier
 wording judgment and its concurrence and notice records instead of
 gathering them again; any difference means a full audit.
@@ -528,7 +456,7 @@ recorded on the item, runs a script that looks for each added or altered
 passage in those sentences, as an exact string after whitespace normalisation
 and with Markdown list and quote markers at line starts removed, and judges
 for each removed passage whether a recorded concurrence names it as removed.
-The auditing coordinator notes on the item the review Git identity, which
+The auditing coordinator notes on the item the review `source_id`, which
 recorded message governs each changed passage, which recorded message carried
 each passage's final wording to Greg before the landing, the script's result
 for each added or altered passage and the judgement for each removed one. The
@@ -560,14 +488,12 @@ A clean carry satisfies all of the following:
 1. The latest required review round has no outstanding in-scope Medium or
    higher finding and meets the standing approval's remaining review
    conditions. Full results, coverage and finding disposition are available.
-2. Record the reviewed and current bases, roots and Git tree ids, any optional
-   section 3 capture, all package paths, statuses and modes, the pre-image and post-image blob
-   ids on each side, and the paths changed between bases. Read the reviewed
-   side from its recorded tree or while section 3's applicable Git identity
-   verifies before and after the read. Verify the final carried input's Git
-   identity before and after reading the proof. Inputs are fully staged,
-   or committed as section 3 describes, without unstaged or untracked
-   changes. Compute paths without rename detection. Prove each package's
+2. Record the reviewed and current bases, roots and complete `source_id`
+   values, all package paths, statuses and modes, the pre-image and post-image
+   blob ids on each side, and the paths changed between bases. Read each
+   clean candidate commit from the complete `source_id` already recorded
+   for it, with section 3's read-only Git boundary checks before and after.
+   Compute paths without rename detection. Prove each package's
    unchanged contribution by either:
    - equal pre-image and post-image blob ids, statuses and modes; or
    - for regular text files, a recorded three-way blob/hunk proof that applies
@@ -587,8 +513,8 @@ A clean carry satisfies all of the following:
    fresh pair. Do not treat unchanged hunk bytes as proof of unchanged
    dependencies or behavior; the final integration still needs its gate.
 4. Several complete READY packages may share one integration tree when each
-   satisfies these conditions. Record their application order and intermediate
-   tree ids when needed to identify each carried contribution. The final tree
+   satisfies these conditions. Record their application order and the proof
+   for each carried contribution. The final tree
    must contain only master plus those unchanged reviewed contributions,
    with no unreviewed path, mode or manual integration change. Do not silently
    discard a review finding.
@@ -596,13 +522,13 @@ A clean carry satisfies all of the following:
 Conflicts or changed package content return to the Coder for a complete,
 applicably reviewed READY. The Merger does not commission a second review.
 Record an adopted round as adopted, citing its original review and freeze and
-its carried contribution and final freeze; do not describe it as a new review
-of the full integration tree.
+its carried contribution and the final candidate's complete `source_id`.
+This binds the adopted review to that candidate for the Test refs bullet.
 
 Adoption carries no gate, Markdown check, readiness or acceptance evaluation.
 Run the required full gate, or the applicable Markdown-only checks, on the
-exact final integration tree, or in the candidate lane on the exact final
-integration commit, with matching complete admitted, before and after `source_id`
+exact clean final integration commit, with matching complete admitted,
+before and after `source_id`
 values. A
 missing or failing check is not a pass. Diagnose a failure through its
 existing owner; a resulting content correction needs the Coder's required

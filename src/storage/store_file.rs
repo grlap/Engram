@@ -1,15 +1,6 @@
-//! Which store a connection serves: the canonical path spelling that
-//! readiness and doctor report, and the check that a control connection is
-//! still current.
-//!
-//! No interface here proves which file SQLite holds. A path observed before
-//! and after SQLite's open can be redirected during it, through a renamed
-//! file, a symbolic link or a directory junction, so two such observations
-//! cannot tell the file SQLite opened from whatever the path names later.
+//! Canonical store path spelling for readiness and doctor.
 
 use std::{io, path::Path};
-
-use super::{SessionId, SqliteStore, StoreError, work};
 
 /// The canonical spelling of a store's database path, as readiness and
 /// doctor report it: symbolic links and junctions resolved, and on Windows
@@ -45,22 +36,23 @@ pub fn store_path_text(path: &Path) -> String {
     }
 }
 
-impl SqliteStore {
-    /// Verifies that `connection_token` is still the session's current
-    /// control connection, on one read snapshot; it writes nothing.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError::ControlConnectionSuperseded`] when a newer
-    /// connection has replaced it, and other [`StoreError`] values when the
-    /// store cannot be read.
-    pub(crate) fn verify_current_control_connection(
-        &self,
-        session_id: &SessionId,
-        connection_token: &str,
-    ) -> Result<(), StoreError> {
-        work::on_one_snapshot(&self.connection, |connection| {
-            Self::verify_control_connection(connection, session_id, connection_token)
-        })
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_store_paths_omit_the_verbatim_prefix() {
+        assert_eq!(
+            store_path_text(Path::new(r"\\?\C:\store\x.db")),
+            r"C:\store\x.db"
+        );
+        assert_eq!(
+            store_path_text(Path::new(r"\\?\UNC\server\share\x.db")),
+            r"\\server\share\x.db"
+        );
+        assert_eq!(
+            store_path_text(Path::new(r"C:\plain\x.db")),
+            r"C:\plain\x.db"
+        );
     }
 }

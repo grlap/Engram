@@ -22,11 +22,23 @@ fn git(root: &std::path::Path, args: &[&str]) -> String {
 }
 
 #[test]
+fn shared_updates_full_folder_publication_keeps_ordinary_reads_offline_and_caches_git_by_commit() {
+    // The export reads the confirmed publication once and shares it across
+    // every member it needs, so its Git processes do not grow with them.
+    assert_eq!(
+        publication_export_launches(2),
+        publication_export_launches(200)
+    );
+}
+
+/// Git processes the export of `count` items from one confirmed full-folder
+/// publication starts, after checking it keys them by commit and that
+/// ordinary reads stay offline.
 #[allow(
     clippy::too_many_lines,
     reason = "one publication workflow checks keyed capture and subsequent offline reads"
 )]
-fn shared_updates_full_folder_publication_keeps_ordinary_reads_offline_and_caches_git_by_commit() {
+fn publication_export_launches(count: usize) -> usize {
     let home = crate::test_support::temp_home().unwrap();
     let mut store = SqliteStore::open(home.path().join("work.db")).unwrap();
     let mut binding = binding(home.path());
@@ -38,7 +50,7 @@ fn shared_updates_full_folder_publication_keeps_ordinary_reads_offline_and_cache
     git(&binding.repository.main_checkout, &["init", "--quiet"]);
     let binding_id = store.activate_task_sync_binding(&binding).unwrap();
     let mut items = Vec::new();
-    for index in 0..2 {
+    for index in 0..count {
         let mut request = crate::storage::work::test_support::root_request(
             &binding.project.0,
             &format!("native-{index}"),
@@ -107,13 +119,15 @@ fn shared_updates_full_folder_publication_keeps_ordinary_reads_offline_and_cache
         .unwrap();
 
     crate::storage::work::task_sync::origin::PUBLICATION_SNAPSHOT_READS.with(|count| count.set(0));
-    assert_eq!(
-        store
-            .export_task_sync_folder(&binding.project, &binding.profile)
-            .unwrap()
-            .tree,
-        exported.tree
-    );
+    let launches = std::rc::Rc::new(std::cell::Cell::new(0));
+    let observed = std::rc::Rc::clone(&launches);
+    let previous = crate::task_sync::git::BEFORE_QUERY
+        .with(|hook| hook.replace(Some(Box::new(move |_| observed.set(observed.get() + 1)))));
+    let reexported = store
+        .export_task_sync_folder(&binding.project, &binding.profile)
+        .unwrap();
+    crate::task_sync::git::BEFORE_QUERY.with(|hook| hook.replace(previous));
+    assert_eq!(reexported.tree, exported.tree);
     crate::storage::work::task_sync::origin::PUBLICATION_SNAPSHOT_READS
         .with(|count| assert_eq!(count.get(), 1));
     assert!(store.verify_all().unwrap().is_healthy());
@@ -160,4 +174,5 @@ fn shared_updates_full_folder_publication_keeps_ordinary_reads_offline_and_cache
         "task_sync_incremental_basis_unavailable"
     );
     assert!(error.to_string().contains(&oid));
+    launches.get()
 }

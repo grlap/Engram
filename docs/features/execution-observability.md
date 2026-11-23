@@ -68,7 +68,7 @@ the serving connection observes the exact current
 A missing or malformed advertisement grants no restricted verification
 credit.
 
-The channel accepts `control_connection_read`, `named_root_bind`,
+The channel accepts `named_root_bind`,
 `named_root_read`, `named_root_sighting_read`, `acceptance_binding_read`,
 `acceptance_verification_read`, `execution_observe`, `verification_record`
 and `remote_verification_record`. Connection fencing,
@@ -83,35 +83,6 @@ session and caller key, retaining the frozen intent and the unchanged
 external receipt. An exact retry returns the original receipt; the same key
 with a changed intent returns `control_operation_idempotency_conflict`.
 Doctor and migration import validate the same canonical receipt associations.
-
-### Reading which store a connection serves
-
-`control_connection_read` takes no fields: `{"operation":"control_connection_read"}`.
-The serving process answers it itself, for its own current connection, from
-the moment its store is open and its connection resumed.
-
-The read is a fail-closed contract. It would return the main database file
-SQLite has open, as `database_path`, with the `project_id` and `session_id`
-the process was started with, only where that file can be proved to be the
-one at the reported path. No platform qualifies today. A path observed just
-before and just after SQLite opens it can be redirected during the open,
-through a renamed file, a symbolic link or a directory junction, and no safe
-interface exposes the file SQLite holds. So on every platform the read
-refuses with `control_connection_identity_unavailable`, and never returns a
-path that might name another file. Should a sound proof exist, the answer's
-`database_path` will be canonicalized and spelled exactly as
-`engram readiness --json` and `engram doctor` spell a database path
-(symbolic links and junctions resolved; on Windows without the `\\?\` prefix,
-`\\?\UNC\server\share` becoming `\\server\share`), never taken from the
-process's arguments, home or configuration.
-
-The connection check comes first: a connection a newer one for the same
-session has superseded refuses with `control_connection_superseded`. Other
-storage and deadline errors keep their codes. A host treats every refusal and
-a malformed reply as unproven identity, never as a match, so its recovery
-fails closed. The read locks nothing and writes nothing to the store; like
-every operation, it may write the usual host-private diagnostics for a
-refusal or a slow reply.
 
 ## Named source roots
 

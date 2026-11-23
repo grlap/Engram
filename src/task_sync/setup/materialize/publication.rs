@@ -1,4 +1,4 @@
-//! Stage directories, rename once, and prove public files against retained links.
+//! Stage directories, rename once, and check public files against their bytes.
 
 use super::super::files::Directory;
 use super::{
@@ -20,17 +20,12 @@ pub(super) fn apply(
 ) -> Result<bool> {
     let pins = private.child(Path::new("pins"))?;
     let present = root.dir().symlink_metadata(".engram");
-    if record.existing_engram.is_none() {
+    if !record.existing_engram {
         match present {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 ensure!(!completed, "completed shared directory disappeared");
                 let stage = private.child(Path::new("stage"))?;
-                ensure!(
-                    stage.identity()? == record.stage
-                        && stage.child(Path::new("tasks"))?.identity()? == record.stage_tasks,
-                    "staged directory identity changed"
-                );
-                check_tree(&stage, &pins, documents)?;
+                check_tree(&stage, documents)?;
                 drop(stage);
                 checkpoint("before-engram-rename")?;
                 // The accepted std rename residual can replace an empty target.
@@ -42,41 +37,21 @@ pub(super) fn apply(
             Ok(_) => (),
         }
         let public = root.child(Path::new(".engram"))?;
-        ensure!(
-            public.identity()? == record.stage,
-            "shared directory is unowned; preserve it"
-        );
-        ensure!(
-            public.child(Path::new("tasks"))?.identity()? == record.stage_tasks,
-            "shared task directory was independently replaced"
-        );
         // Only the staged source has an exact four-entry inventory. Once public,
-        // unrelated private siblings may coexist with the owned shared paths.
+        // unrelated private siblings may coexist with the shared paths.
         check_reserved_names(&public, capacity)?;
-        check_owned_tree(&public, &pins, documents)?;
+        check_shared_tree(&public, documents)?;
         return Ok(false);
     }
     let public = root.child(Path::new(".engram"))?;
-    ensure!(
-        Some(public.identity()?) == record.existing_engram,
-        "existing private .engram directory changed; preserve it"
-    );
     check_reserved_names(&public, capacity)?;
     let stage = private.child(Path::new("stage"))?;
-    ensure!(
-        stage.identity()? == record.stage,
-        "staged directory identity changed"
-    );
     let expected_empty = !documents.keys().any(|path| path.starts_with("tasks/"));
     let equal_empty = match public.dir().symlink_metadata("tasks") {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             ensure!(!completed, "completed shared task directory disappeared");
             let tasks = stage.child(Path::new("tasks"))?;
-            ensure!(
-                tasks.identity()? == record.stage_tasks,
-                "staged tasks identity changed"
-            );
-            check_tasks(&tasks, &pins.child(Path::new("tasks"))?, documents)?;
+            check_tasks(&tasks, documents)?;
             drop(tasks);
             checkpoint("before-tasks-rename")?;
             stage.dir().rename("tasks", public.dir(), "tasks")?;
@@ -85,39 +60,45 @@ pub(super) fn apply(
         }
         Err(error) => return Err(error.into()),
         Ok(_) => {
-            let tasks = public.child(Path::new("tasks"))?;
-            if tasks.identity()? == record.stage_tasks {
-                check_tasks(&tasks, &pins.child(Path::new("tasks"))?, documents)?;
-                false
-            } else {
+            // The staged task directory still in the stage was never moved,
+            // so the public one predates this materialization.
+            let staged = stage
+                .dir()
+                .symlink_metadata("tasks")
+                .map(|_| true)
+                .or_else(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        Ok(false)
+                    } else {
+                        Err(error)
+                    }
+                })?;
+            if staged {
                 ensure!(
-                    expected_empty && tasks.names(1)?.is_empty(),
-                    "unowned shared task directory is divergent; preserve it"
+                    expected_empty && public.child(Path::new("tasks"))?.names(1)?.is_empty(),
+                    "existing shared task directory is divergent; preserve it"
                 );
-                // Equal unowned empty content is reported, never owned or cleaned.
+                // Equal existing empty content is reported, never adopted or cleaned.
                 true
+            } else {
+                false
             }
         }
     };
-    let tasks = public.child(Path::new("tasks"))?;
     if !equal_empty {
-        ensure!(
-            tasks.identity()? == record.stage_tasks,
-            "published tasks identity changed"
-        );
-        check_tasks(&tasks, &pins.child(Path::new("tasks"))?, documents)?;
+        check_tasks(&public.child(Path::new("tasks"))?, documents)?;
     }
     let project = documents
         .get("project.json")
         .expect("validated candidate has project document");
-    if !replacement::owned(&public, Path::new("project.json"), &pins, project)? {
+    if !replacement::owned(&public, Path::new("project.json"), project)? {
         ensure!(!completed, "completed shared project file disappeared");
         checkpoint("before-project-link")?;
         pins.dir()
             .hard_link("project.json", public.dir(), "project.json")?;
         checkpoint("project-linked")?;
         ensure!(
-            replacement::owned(&public, Path::new("project.json"), &pins, project)?,
+            replacement::owned(&public, Path::new("project.json"), project)?,
             "shared project missing after publication"
         );
     }
@@ -141,30 +122,26 @@ pub(super) fn check_reserved_names(public: &Directory, capacity: usize) -> Resul
     Ok(())
 }
 
-fn check_tree(public: &Directory, pins: &Directory, documents: &Documents) -> Result<()> {
+fn check_tree(public: &Directory, documents: &Documents) -> Result<()> {
     ensure!(
         candidate::read_shared(public)? == *documents,
         "published task tree bytes or inventory changed"
     );
-    check_owned_tree(public, pins, documents)
+    Ok(())
 }
 
-fn check_owned_tree(public: &Directory, pins: &Directory, documents: &Documents) -> Result<()> {
+fn check_shared_tree(public: &Directory, documents: &Documents) -> Result<()> {
     let project = documents
         .get("project.json")
         .expect("validated project document");
     ensure!(
-        replacement::owned(public, Path::new("project.json"), pins, project)?,
+        replacement::owned(public, Path::new("project.json"), project)?,
         "shared project missing"
     );
-    check_tasks(
-        &public.child(Path::new("tasks"))?,
-        &pins.child(Path::new("tasks"))?,
-        documents,
-    )
+    check_tasks(&public.child(Path::new("tasks"))?, documents)
 }
 
-fn check_tasks(public: &Directory, pins: &Directory, documents: &Documents) -> Result<()> {
+fn check_tasks(public: &Directory, documents: &Documents) -> Result<()> {
     let expected: Vec<_> = documents
         .keys()
         .filter_map(|path| path.strip_prefix("tasks/"))
@@ -177,7 +154,7 @@ fn check_tasks(public: &Directory, pins: &Directory, documents: &Documents) -> R
     for (path, bytes) in documents {
         if let Some(name) = path.strip_prefix("tasks/") {
             ensure!(
-                replacement::owned(public, Path::new(name), pins, bytes)?,
+                replacement::owned(public, Path::new(name), bytes)?,
                 "shared task file missing"
             );
         }

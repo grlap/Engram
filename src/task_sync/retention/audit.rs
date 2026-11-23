@@ -119,9 +119,8 @@ pub struct AuditReservation {
 
 impl AuditReservation {
     pub(crate) fn require_root(&self, git_directory: &Path) -> Result<()> {
-        let root = PrivateDirectory::open(git_directory)?.child(Path::new(ROOT))?;
         ensure!(
-            root.identity()? == self.directory.identity()?,
+            same_file::is_same_file(&self.git_directory, git_directory)?,
             "custody reservation belongs to another repository"
         );
         Ok(())

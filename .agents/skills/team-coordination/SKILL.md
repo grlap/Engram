@@ -53,11 +53,11 @@ next gate. Run this scan without waiting for the user to request status.
 
 Keep two or three independent candidates moving in parallel when the backlog
 allows it. Parallelize implementation, tests, review and carry preparation.
-Carry candidates onto the current mainline one at a time, then freeze and
-validate the exact combined tree. A completed review or gate applies only to
-the frozen tree it names, except that a completed Coder review round may be
-adopted across a clean carry as `/review-changes` section 6a allows; a gate never
-carries. Re-carry after mainline movement when required.
+Carry candidates onto current mainline one at a time. Record the combined
+input's complete `source_id` and validate that input. Reviews and gates cite
+the recorded value for their input. A completed Coder review round may be
+adopted across a clean carry under `/review-changes` section 6a. Gate credit
+stays with its own source input. Re-carry when mainline movement requires it.
 
 Choose candidates with non-overlapping owned paths where possible. When their
 surfaces overlap, serialize the implementation or explicitly give one owner
@@ -69,8 +69,8 @@ project validation or reviews.
 
 The Merger only receives worker-delivered patches, returns a package with an
 actual merge conflict to its Coder, carries candidates onto the selected
-mainline, freezes the tree,
-coordinates validation and reviews, and lands a result that meets the
+mainline, records the combined input's `source_id`, coordinates validation
+and reviews, and lands a result that meets the
 project's landing conditions (in Engram, the Authority and Git section of
 AGENTS.md). It never
 edits product code, tests, fixtures, documentation, or configuration as a

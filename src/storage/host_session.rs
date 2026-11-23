@@ -200,6 +200,17 @@ impl SqliteStore {
             .map_err(StoreError::Json)
     }
 
+    /// Check that this connection still serves the session, on one read snapshot.
+    pub(crate) fn verify_current_control_connection(
+        &self,
+        session_id: &SessionId,
+        connection_token: &str,
+    ) -> Result<(), StoreError> {
+        work::on_one_snapshot(&self.connection, |connection| {
+            Self::verify_control_connection(connection, session_id, connection_token)
+        })
+    }
+
     pub(crate) fn resume_work_connection(
         &mut self,
         session: &SessionId,

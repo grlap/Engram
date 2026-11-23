@@ -1,7 +1,6 @@
 //! Real process exit and restart; injection exists only in this test executable.
 
 use super::*;
-use crate::task_sync::setup::files::file_identity;
 use serde::{Deserialize, Serialize};
 
 mod boundaries;
@@ -225,7 +224,9 @@ fn task_materialize_process_exit_recovers_every_publication_phase_from_retained_
 
 #[test]
 fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_after_opt_out() {
-    for partial_length in [0, 1] {
+    // 0: an empty record; 1: half of the record; 2: half of the longer
+    // record an older build wrote, with its repair copy begun as well.
+    for partial_length in [0, 1, 2] {
         for repair_boundary in [
             "complete-repair-started",
             "complete-repair-prefix",
@@ -240,34 +241,35 @@ fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_a
             let admitted: serde_json::Value =
                 serde_json::from_slice(&fs::read(private.join("journal.json")).unwrap()).unwrap();
             let operation = serde_json::from_value(admitted["operation"].clone()).unwrap();
-            let public_identity = super::super::super::journal::Completion::observe(
-                &Directory::open(&fixture.root).unwrap(),
+            let completion = super::super::super::journal::Completion {
                 operation,
-                false,
-            )
-            .unwrap();
-            let mut expected = serde_json::to_vec(&public_identity).unwrap();
-            expected.push(b'\n');
-            let length = if partial_length == 0 {
-                0
-            } else {
-                expected.len() / 2
+                equal_unowned_empty_tasks: false,
             };
-            fs::write(private.join(".complete.pending"), &expected[..length]).unwrap();
+            let mut expected = serde_json::to_vec(&completion).unwrap();
+            expected.push(b'\n');
+            match partial_length {
+                0 => fs::write(private.join(".complete.pending"), b"").unwrap(),
+                1 => fs::write(
+                    private.join(".complete.pending"),
+                    &expected[..expected.len() / 2],
+                )
+                .unwrap(),
+                _ => {
+                    let older = format!(
+                        "{{\"operation\":{},\"public\":{{\"device\":1,\"inode\":2}},\"tasks\":{{\"device\":1,\"inode\":3}},\"project\":{{\"device\":1,\"inode\":4}},\"equal_unowned_empty_tasks\":false}}\n",
+                        admitted["operation"]
+                    );
+                    let half = &older.as_bytes()[..older.len() / 2];
+                    assert!(!expected.starts_with(half));
+                    fs::write(private.join(".complete.pending"), half).unwrap();
+                    fs::write(private.join("completion-recovery/source"), half).unwrap();
+                }
+            }
             let original = snapshot(&private.join(".complete.pending"));
             let partial = fs::read(private.join(".complete.pending")).unwrap();
-            let original_id =
-                file_identity(&fs::File::open(private.join(".complete.pending")).unwrap()).unwrap();
             let public = snapshot(&fixture.root.join(".engram"));
-            let setup = [".gitignore", ".gitattributes"].map(|name| {
-                (
-                    fs::read(fixture.root.join(".engram").join(name)).unwrap(),
-                    file_identity(
-                        &fs::File::open(fixture.root.join(".engram").join(name)).unwrap(),
-                    )
-                    .unwrap(),
-                )
-            });
+            let setup = [".gitignore", ".gitattributes"]
+                .map(|name| fs::read(fixture.root.join(".engram").join(name)).unwrap());
             fixture.disable();
             assert_eq!(
                 child(&fixture, Some(repair_boundary), false).status.code(),
@@ -276,10 +278,6 @@ fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_a
             assert_eq!(
                 fs::read(private.join(".complete.pending")).unwrap(),
                 partial
-            );
-            assert_eq!(
-                file_identity(&fs::File::open(private.join(".complete.pending")).unwrap()).unwrap(),
-                original_id
             );
             assert_eq!(snapshot(&private.join(".complete.pending")), original);
             assert!(child(&fixture, None, false).status.success());
@@ -293,36 +291,20 @@ fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_a
             );
             assert_eq!(response["receipt"]["operation"], admitted["operation"]);
             assert_eq!(snapshot(&fixture.root.join(".engram")), public);
-            assert_eq!(
-                super::super::super::journal::Completion::observe(
-                    &Directory::open(&fixture.root).unwrap(),
-                    operation,
-                    false
-                )
-                .unwrap(),
-                public_identity
-            );
             for (index, name) in [".gitignore", ".gitattributes"].iter().enumerate() {
                 assert_eq!(
                     fs::read(fixture.root.join(".engram").join(name)).unwrap(),
-                    setup[index].0
-                );
-                assert_eq!(
-                    file_identity(
-                        &fs::File::open(fixture.root.join(".engram").join(name)).unwrap()
-                    )
-                    .unwrap(),
-                    setup[index].1
+                    setup[index]
                 );
             }
             assert_eq!(
                 fs::read(private.join(".complete.pending")).unwrap(),
                 partial
             );
+            assert_eq!(fs::read(private.join("complete")).unwrap(), expected);
             assert_eq!(
-                file_identity(&fs::File::open(private.join("complete")).unwrap()).unwrap(),
-                file_identity(&fs::File::open(private.join("completion-recovery/source")).unwrap())
-                    .unwrap()
+                fs::read(private.join("completion-recovery/source")).unwrap(),
+                expected
             );
             fixture.assert_output();
             let before = snapshot(&private);

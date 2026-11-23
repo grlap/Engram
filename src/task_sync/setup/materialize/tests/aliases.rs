@@ -74,11 +74,9 @@ fn task_materialize_repeat_refuses_case_only_renames_with_identical_objects() {
             let public = fixture.root.join(".engram");
             fs::write(public.join("unrelated-private"), b"preserve sibling").unwrap();
             let original = public.join(canonical);
-            let identity = physical_identity(&original);
             let intermediate = fixture.owned.path().join("case-rename-intermediate");
             fs::rename(&original, &intermediate).unwrap();
             fs::rename(&intermediate, public.join(alias)).unwrap();
-            assert_eq!(physical_identity(&public.join(alias)), identity);
             let before = snapshot(fixture.owned.path());
             let error = fixture
                 .service
@@ -87,13 +85,5 @@ fn task_materialize_repeat_refuses_case_only_renames_with_identical_objects() {
             assert!(error.to_string().contains("case alias"), "{error:#}");
             assert_eq!(snapshot(fixture.owned.path()), before);
         }
-    }
-}
-
-fn physical_identity(path: &Path) -> super::super::super::files::PhysicalId {
-    if path.is_dir() {
-        Directory::open(path).unwrap().identity().unwrap()
-    } else {
-        super::super::super::files::file_identity(&fs::File::open(path).unwrap()).unwrap()
     }
 }

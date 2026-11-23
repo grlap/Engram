@@ -443,8 +443,7 @@ An existing equivalent snapshot is reported as already saved without being
 rewritten. Equality ignores only manifest `exported_at` and `exporting_build`;
 malformed JSON, duplicate members, or different content are refused.
 Existing destinations must be regular files, not links, directories, or
-special files. Inspection checks both the directory entry and opened handle;
-Unix opens are nonblocking so a raced FIFO cannot stall publication. Comparison
+special files. Comparison
 reads are bounded to the 128 MiB load limit, including when a file grows during
 inspection. An oversized existing file is refused by its named comparison limit;
 it is never truncated or silently classified as different content.
@@ -455,30 +454,15 @@ warns if cleanup fails: the remaining stage may contain disclosure data.
 Directory sync is still attempted on Unix; its failure reports a separate
 durability error and the published path even though publication occurred.
 
-The writer retains every ancestor directory handle through staging,
-publication and cleanup, refuses linked ancestors, and compares directory
-identity with the protected project-store directory independently of path
-case. Unix operations use directory-relative capabilities. Windows handles
-deny delete sharing so ancestors cannot be replaced while library operations
-reconstruct paths; observed reparse-point attributes are refused. This is
-not a claim to classify every possible filesystem reparse implementation.
-The refusal covers the entire path from the filesystem root, including
-system or operator-created links: macOS `/tmp` and `/var`, symlinked homes
-(including `ENGRAM_HOME` for the default save), and Windows cloud placeholder
-directories such as OneDrive. Pass a resolved real directory path without
-such ancestors instead. The diagnostic names the ancestor that could not be
-bound. The writer deliberately does not canonicalize and then reopen a path.
-On macOS and BSD, opening retained directory handles requires read permission
-on every ancestor in addition to search permission. A search-only ancestor is
-therefore refused with a cannot-open-ancestor diagnostic.
+The destination's directory is resolved, through any links, before any
+directory is created; a destination that resolves inside Engram's project
+stores is refused. Links, linked homes and cloud placeholder directories are
+otherwise ordinary ancestors. The writer does not guard against a directory
+being replaced while it runs.
 Destination spellings ending in a directory separator are refused before
 normalization; on Unix a final `/.` is also refused. Supply a file name.
 On Unix, parent-directory (`..`) components are refused rather than resolved
 lexically across possible links.
-Windows file publication requires a real volume root; drive aliases such as
-SUBST that start in a subdirectory are refused before staging. Pass the real
-volume path instead. The opened root is checked by comparing its directory
-identity with its parent's identity.
 Windows file publication supports local drive paths, normalizing a simple
 verbatim drive prefix; UNC/device paths, alternate-stream components, reserved
 DOS device names, separators embedded in verbatim components, and components

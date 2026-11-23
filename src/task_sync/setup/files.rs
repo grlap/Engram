@@ -9,36 +9,6 @@ use std::{
     path::{Component, Path},
 };
 
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(in crate::task_sync) struct PhysicalId {
-    device: u64,
-    inode: u64,
-}
-
-impl PhysicalId {
-    pub fn same_device(self, other: Self) -> bool {
-        self.device == other.device
-    }
-}
-
-pub(super) fn file_identity(file: &std::fs::File) -> Result<PhysicalId> {
-    identity(&cap_std::fs::Metadata::from_file(file)?)
-}
-
-fn identity(metadata: &cap_std::fs::Metadata) -> Result<PhysicalId> {
-    use cap_fs_ext::MetadataExt;
-    let id = PhysicalId {
-        device: metadata.dev(),
-        inode: metadata.ino(),
-    };
-    ensure!(
-        id.inode != 0,
-        "filesystem did not supply a physical file identity"
-    );
-    Ok(id)
-}
-
 pub(in crate::task_sync) struct Directory(Vec<Dir>);
 pub(super) const MAX_PRIVATE_BYTES: usize = 2 * 1024 * 1024;
 
@@ -81,8 +51,10 @@ impl Directory {
         self.0.last().expect("retained directory")
     }
 
-    pub fn identity(&self) -> Result<PhysicalId> {
-        identity(&self.dir().dir_metadata()?)
+    /// Whether both directories are on one filesystem, where hard links work.
+    pub fn same_device(&self, other: &Self) -> Result<bool> {
+        use cap_fs_ext::MetadataExt;
+        Ok(self.dir().dir_metadata()?.dev() == other.dir().dir_metadata()?.dev())
     }
 
     pub fn child(&self, name: &Path) -> Result<Self> {
@@ -159,11 +131,6 @@ impl Directory {
             .write(write)
             .create_new(create)
             .follow(FollowSymlinks::No);
-        #[cfg(windows)]
-        if !write {
-            use cap_std::fs::OpenOptionsExt;
-            options.share_mode(1);
-        }
         #[cfg(unix)]
         {
             use cap_fs_ext::OpenOptionsSyncExt;

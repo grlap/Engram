@@ -69,7 +69,6 @@ pub(super) fn select(
             let record = journal::initialize(
                 &private,
                 root,
-                admin,
                 setup.basis,
                 selection.clone(),
                 attribution,

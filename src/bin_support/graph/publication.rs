@@ -1,7 +1,7 @@
 //! No-replace snapshot publication through retained directory capabilities.
 
 use anyhow::{Context, Result, bail};
-use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
@@ -20,10 +20,7 @@ pub(super) enum GraphSnapshotWriteOutcome {
 }
 
 struct Destination {
-    // Keep the complete chain alive. On Windows these handles deny delete
-    // sharing, protecting the paths cap-std reconstructs for link/removal.
-    directories: Vec<Dir>,
-    _protected: same_file::Handle,
+    parent: Dir,
     name: OsString,
     path: PathBuf,
 }
@@ -53,83 +50,50 @@ impl Destination {
         }
         let (home, _) = super::engram_home_and_project_digest(database)?;
         let projects_path = home.join("projects");
-        let projects =
-            Dir::open_ambient_dir(&projects_path, ambient_authority()).with_context(|| {
-                format!(
-                    "failed to open protected Engram project stores {}",
-                    projects_path.display()
-                )
-            })?;
-        let protected =
-            same_file::Handle::from_file(projects.into_std_file()).with_context(|| {
-                format!(
-                    "failed to identify protected Engram project stores {}",
-                    projects_path.display()
-                )
-            })?;
+        let projects = std::fs::canonicalize(&projects_path).with_context(|| {
+            format!(
+                "failed to resolve Engram project stores {}",
+                projects_path.display()
+            )
+        })?;
         let absolute = std::path::absolute(out)
             .with_context(|| format!("failed to resolve snapshot destination {}", out.display()))?;
         let (root, names) = destination_components(&absolute)?;
         let (name, parents) = names
             .split_last()
             .context("snapshot destination needs a file name")?;
-        let mut walked = root.clone();
-        let mut directories = vec![
-            Dir::open_ambient_dir(root, ambient_authority())
-                .with_context(|| format!("cannot open snapshot root {}", walked.display()))?,
-        ];
-        validate_directory(&directories[0], &protected, &walked)?;
-        #[cfg(windows)]
-        validate_volume_root(&directories[0])
-            .with_context(|| format!("cannot validate snapshot root {}", walked.display()))?;
-        for component in parents {
-            walked.push(component);
-            let parent = directories.last().expect("root directory exists");
-            let child = match parent.open_dir_nofollow(component) {
-                Ok(child) => child,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    match parent.create_dir(component) {
-                        Ok(()) => (),
-                        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
-                        Err(error) => {
-                            return Err(error).with_context(|| {
-                                format!("failed to create snapshot directory {}", walked.display())
-                            });
-                        }
-                    }
-                    parent
-                        .open_dir_nofollow(component)
-                        .with_context(|| ancestor_open_context(parent, component, &walked))?
-                }
-                Err(error) => {
-                    return Err(error)
-                        .with_context(|| ancestor_open_context(parent, component, &walked));
-                }
-            };
-            validate_directory(&child, &protected, &walked)?;
-            directories.push(child);
+        let mut walked = root;
+        walked.extend(parents);
+        // The resolved directory the snapshot would land in, checked before
+        // any directory is created, never inside Engram's project stores.
+        let mut existing = walked.as_path();
+        while !existing.exists() {
+            existing = existing
+                .parent()
+                .context("snapshot destination has no existing ancestor")?;
         }
+        let resolved = std::fs::canonicalize(existing)
+            .with_context(|| format!("cannot open snapshot ancestor {}", existing.display()))?
+            .join(walked.strip_prefix(existing)?);
+        if resolved.starts_with(&projects) {
+            bail!("snapshot destination must be outside Engram's project stores");
+        }
+        std::fs::create_dir_all(&walked)
+            .with_context(|| format!("cannot open snapshot ancestor {}", walked.display()))?;
+        let parent = Dir::open_ambient_dir(&walked, ambient_authority())
+            .with_context(|| format!("cannot open snapshot ancestor {}", walked.display()))?;
         Ok(Self {
-            directories,
-            _protected: protected,
+            parent,
             name: name.clone(),
             path: walked.join(name),
         })
     }
 
     fn parent(&self) -> &Dir {
-        self.directories.last().expect("root directory exists")
+        &self.parent
     }
 
     fn existing(&self, bytes: &[u8]) -> Result<bool> {
-        self.existing_after_inspection(bytes, || Ok(()))
-    }
-
-    fn existing_after_inspection(
-        &self,
-        bytes: &[u8],
-        after_inspection: impl FnOnce() -> Result<()>,
-    ) -> Result<bool> {
         let metadata = match self.parent().symlink_metadata(&self.name) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -145,15 +109,8 @@ impl Destination {
         require_regular_destination(&metadata, &self.path)?;
         let limit = super::MAX_GRAPH_SNAPSHOT_BYTES;
         require_destination_size(metadata.len(), limit, &self.path)?;
-        after_inspection()?;
         let mut options = OpenOptions::new();
         options.read(true).follow(FollowSymlinks::No);
-        #[cfg(unix)]
-        {
-            use cap_fs_ext::OpenOptionsSyncExt;
-            // A FIFO swapped in after metadata inspection must not block open.
-            options.nonblock(true);
-        }
         let file = match self.parent().open_with(&self.name, &options) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -166,16 +123,6 @@ impl Destination {
                 });
             }
         };
-        #[cfg(windows)]
-        reject_reparse_file(&file, &self.path)?;
-        let opened = file.metadata().with_context(|| {
-            format!(
-                "failed to inspect opened snapshot destination {}",
-                self.path.display()
-            )
-        })?;
-        require_regular_destination(&opened, &self.path)?;
-        require_destination_size(opened.len(), limit, &self.path)?;
         let existing = read_existing_bounded(file, limit, &self.path)?;
         if !graph_snapshot_files_are_equivalent(&existing, bytes) {
             bail!(
@@ -215,42 +162,6 @@ fn read_existing_bounded(reader: impl Read, limit: u64, path: &Path) -> Result<V
         .with_context(|| format!("failed to read snapshot destination {}", path.display()))?;
     require_destination_size(u64::try_from(existing.len())?, limit, path)?;
     Ok(existing)
-}
-
-#[cfg(windows)]
-fn validate_volume_root(root: &Dir) -> Result<()> {
-    // cap-std resolves the parent from the already opened handle, not the
-    // caller's drive spelling. A SUBST root below a volume has a different
-    // parent and cannot bypass the protected-directory walk.
-    let parent = root
-        .open_parent_dir(ambient_authority())
-        .context("cannot verify snapshot drive root")?;
-    if same_file::Handle::from_file(root.try_clone()?.into_std_file())?
-        != same_file::Handle::from_file(parent.into_std_file())?
-    {
-        bail!(
-            "snapshot destination drive is not a volume root; drive aliases such as SUBST are unsupported; pass the real volume path instead"
-        );
-    }
-    Ok(())
-}
-
-fn ancestor_open_context(parent: &Dir, name: &std::ffi::OsStr, path: &Path) -> String {
-    if parent
-        .symlink_metadata(name)
-        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-    {
-        ancestor_refusal(path)
-    } else {
-        format!("cannot open snapshot ancestor {}", path.display())
-    }
-}
-
-fn ancestor_refusal(path: &Path) -> String {
-    format!(
-        "cannot bind snapshot ancestor {}: the entire destination path must use real directories, without symlinks or reparse points (including system links, linked homes and cloud placeholders); pass the resolved real directory path instead",
-        path.display()
-    )
 }
 
 #[cfg(windows)]
@@ -321,64 +232,6 @@ fn destination_components(path: &Path) -> Result<(PathBuf, Vec<OsString>)> {
         }
     }
     Ok((root, names))
-}
-
-fn validate_directory(directory: &Dir, protected: &same_file::Handle, path: &Path) -> Result<()> {
-    #[cfg(windows)]
-    reject_reparse_directory(directory, path)?;
-    let identity = directory
-        .try_clone()
-        .and_then(|copy| same_file::Handle::from_file(copy.into_std_file()))
-        .with_context(|| format!("cannot identify snapshot ancestor {}", path.display()))?;
-    if identity == *protected {
-        bail!("snapshot destination must be outside Engram's project stores");
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn reject_reparse_directory(directory: &Dir, path: &Path) -> Result<()> {
-    use std::os::windows::fs::MetadataExt;
-    let file = directory
-        .try_clone()
-        .with_context(|| {
-            format!(
-                "cannot retain snapshot ancestor {} for inspection",
-                path.display()
-            )
-        })?
-        .into_std_file();
-    if file
-        .metadata()
-        .with_context(|| format!("cannot inspect snapshot ancestor {}", path.display()))?
-        .file_attributes()
-        & 0x400
-        != 0
-    {
-        bail!("{}", ancestor_refusal(path));
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn reject_reparse_file(file: &cap_std::fs::File, path: &Path) -> Result<()> {
-    use std::os::windows::fs::MetadataExt;
-    let metadata = file
-        .try_clone()
-        .and_then(|copy| copy.into_std().metadata())
-        .with_context(|| {
-            format!(
-                "cannot inspect snapshot destination {} for reparse attributes",
-                path.display()
-            )
-        })?;
-    if metadata.file_attributes() & 0x400 != 0 {
-        bail!(
-            "snapshot destination {} is a Windows reparse point",
-            path.display()
-        );
-    }
-    Ok(())
 }
 
 trait Publication {

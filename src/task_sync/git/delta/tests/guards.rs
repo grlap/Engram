@@ -200,7 +200,7 @@ fn aggregate_payload_limit_counts_real_selected_blob_bytes() {
     assert_eq!(
         read_documents(
             &reader,
-            changes(),
+            &changes(),
             &fixture.tree.project.project_id,
             false,
             total
@@ -212,13 +212,80 @@ fn aggregate_payload_limit_counts_real_selected_blob_bytes() {
     );
     let error = read_documents(
         &reader,
-        changes(),
+        &changes(),
         &fixture.tree.project.project_id,
         false,
         total - 1,
     )
     .unwrap_err();
     assert_eq!(code(&error), "task_sync_destination_tree_limit");
+}
+
+fn changes_between(fixture: &Fixture, prior: &str, incoming: &str) -> Vec<Change> {
+    parse_changes(&fixture.git(&[
+        "diff-tree",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-commit-id",
+        "--no-renames",
+        "--no-abbrev",
+        prior,
+        incoming,
+        "--",
+        ".engram",
+    ]))
+    .unwrap()
+}
+
+#[test]
+fn a_document_over_its_file_limit_is_named_even_when_it_also_outgrows_the_byte_budget() {
+    let fixture = Fixture::new(1);
+    let prior = fixture.commit();
+    let relative = Fixture::relative(fixture.tree.tasks[0].id);
+    fs::write(fixture.root.join(&relative), vec![b'x'; 1024 * 1024 + 1]).unwrap();
+    let incoming = fixture.commit();
+    let project = &fixture.tree.project.project_id;
+    // A cold reader has more time left than one Git process may take, so the
+    // size check after a batch overrun must keep to the per-process bound too.
+    let cold = Reader::cold(&fixture.root, project).unwrap();
+    // The remaining byte budget is far below the one document, so the batch
+    // output overruns it before that document's header can be checked.
+    let error = read_documents(
+        &cold,
+        &changes_between(&fixture, &prior, &incoming),
+        project,
+        false,
+        1024,
+    )
+    .unwrap_err();
+    assert_eq!(code(&error), "task_sync_destination_file_limit");
+    assert!(error.to_string().contains(&relative));
+}
+
+#[test]
+fn a_reader_out_of_time_refuses_document_reads_as_a_failed_git_query() {
+    let fixture = Fixture::new(1);
+    let prior = fixture.commit();
+    let mut edited = fixture.tree.tasks[0].clone();
+    edited.title = "Changed task".into();
+    fixture.write(&edited);
+    let incoming = fixture.commit();
+    let changes = changes_between(&fixture, &prior, &incoming);
+    let reader = Reader {
+        repository: &fixture.root,
+        started: Instant::now(),
+        total_bound: std::time::Duration::ZERO,
+    };
+    let error = read_documents(
+        &reader,
+        &changes,
+        &fixture.tree.project.project_id,
+        false,
+        MAX_DELTA_BYTES,
+    )
+    .unwrap_err();
+    assert_eq!(code(&error), "task_sync_git_query_failed");
 }
 
 #[test]

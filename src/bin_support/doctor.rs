@@ -681,8 +681,7 @@ fn bounded_doctor_snapshot_text(text: &str) -> String {
 }
 
 /// The database path as readiness and doctor report it, through the shared
-/// store path formatter a serving control connection would also use, should
-/// it ever be able to prove which file it opened.
+/// store path formatter.
 pub(crate) fn canonical_database_path(database: &Path) -> Result<String> {
     engram::storage::canonical_store_path(database)
         .with_context(|| format!("failed to canonicalize {}", database.display()))

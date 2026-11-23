@@ -1,6 +1,5 @@
 //! Decode the saved attempt object from one bounded read of one open handle.
 
-use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::Path;
 
@@ -16,16 +15,7 @@ fn read(path: &Path) -> Result<SourceId> {
 }
 
 fn open(path: &Path) -> Result<std::fs::File> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        // FILE_SHARE_READ: keep replacement, deletion and writes excluded while
-        // the saved object is consumed. The producer owns pathname immutability.
-        options.share_mode(1);
-    }
-    options.open(path).context("cannot open source_id file")
+    std::fs::File::open(path).context("cannot open source_id file")
 }
 
 fn decode(reader: impl Read) -> Result<SourceId> {
@@ -96,21 +86,6 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         let error = read(&path).unwrap_err().to_string();
         assert_eq!(error, "cannot open source_id file");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn an_open_source_file_allows_readers_and_excludes_writes_and_deletion() {
-        let directory = crate::test_support::temp_home().unwrap();
-        let path = directory.path().join("saved-source.json");
-        std::fs::write(&path, b"{}").unwrap();
-        let held = open(&path).unwrap();
-        let concurrent_reader = open(&path).unwrap();
-        assert!(OpenOptions::new().write(true).open(&path).is_err());
-        assert!(std::fs::remove_file(&path).is_err());
-        drop(concurrent_reader);
-        drop(held);
-        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

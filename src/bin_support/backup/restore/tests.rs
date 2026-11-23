@@ -963,11 +963,10 @@ fn only_the_recorded_own_staging_file_is_taken_for_removal() {
             .is_none()
     );
     fs::write(&own, b"staged").unwrap();
-    let settings = RestoreSettings::new(ReadSettings::new(Duration::from_secs(1)));
     owned_staging(fixture.home.path(), &fixture.project, &own)
         .unwrap()
         .expect("its own staging file")
-        .remove(&settings)
+        .remove()
         .unwrap();
     assert!(!own.exists());
     fs::write(&own, b"staged").unwrap();
@@ -1058,64 +1057,6 @@ fn a_staging_file_reached_through_a_linked_store_directory_or_projects_is_refuse
     remove_dir_link(&fixture.home.path().join("projects"));
 }
 
-/// Between the check and the removal, moves the store's directory aside and
-/// puts a link to a directory elsewhere, holding a file of the same name, in
-/// its place, where the operating system allows that.
-fn swap_store_directory_for_a_link(name: &Path) {
-    let home = SWAPPED_HOME.with(|home| home.borrow().clone()).unwrap();
-    let directory =
-        StagingHome::store_directory_of(&home, &ProjectId("staging-unit-project".into()));
-    let elsewhere = home.join("elsewhere");
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::write(elsewhere.join(name), b"not the restore's").unwrap();
-    let moved = home.join("moved-store-directory");
-    // Windows: the held directory cannot be renamed while it is open.
-    let swapped = fs::rename(&directory, &moved).is_ok();
-    if swapped {
-        make_dir_link(&elsewhere, &directory);
-    }
-    SWAP.with(|swap| *swap.borrow_mut() = Some(swapped));
-}
-
-thread_local! {
-    static SWAPPED_HOME: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
-    static SWAP: std::cell::RefCell<Option<bool>> = const { std::cell::RefCell::new(None) };
-}
-
-#[test]
-fn a_store_directory_swapped_for_a_link_after_the_check_never_redirects_the_removal() {
-    let fixture = StagingHome::new();
-    let own = fixture.own();
-    fs::write(&own, b"staged").unwrap();
-    SWAPPED_HOME.with(|home| *home.borrow_mut() = Some(fixture.home.path().to_path_buf()));
-    let mut settings = RestoreSettings::new(ReadSettings::new(Duration::from_secs(1)));
-    settings.before_removal = Some(swap_store_directory_for_a_link);
-    let owned = owned_staging(fixture.home.path(), &fixture.project, &own)
-        .unwrap()
-        .expect("its own staging file");
-    owned.remove(&settings).unwrap();
-    let swapped = SWAP.with(|swap| *swap.borrow()).expect("the hook ran");
-    // Windows: the held handles deny the rename; Unix allows it.
-    assert_eq!(swapped, cfg!(unix));
-    let elsewhere = fixture.home.path().join("elsewhere").join(&fixture.name);
-    // The file elsewhere, behind the link, is never the one removed.
-    assert_eq!(fs::read(&elsewhere).unwrap(), b"not the restore's");
-    if swapped {
-        // Unix: the removal went through the held directory, now moved.
-        let moved = fixture
-            .home
-            .path()
-            .join("moved-store-directory")
-            .join(&fixture.name);
-        assert!(!moved.exists());
-        remove_dir_link(&fixture.store_directory());
-    } else {
-        // Windows: the directory could not be moved, and the file in it is
-        // the one removed.
-        assert!(!own.exists());
-    }
-}
-
 #[test]
 fn a_retry_whose_copy_does_not_hold_the_pending_bytes_keeps_the_earlier_staging_file() {
     use engram::backup::{
@@ -1183,11 +1124,10 @@ fn a_staging_file_under_a_network_home_is_removed_where_it_stands() {
         .join(engram::project_digest(&fixture.project))
         .join(&fixture.name);
     fs::write(fixture.own(), b"staged").unwrap();
-    let settings = RestoreSettings::new(ReadSettings::new(Duration::from_secs(1)));
     owned_staging(&home, &fixture.project, &staging)
         .unwrap()
         .expect("its own staging file")
-        .remove(&settings)
+        .remove()
         .unwrap();
     // Removed where it stands, through the network path, not under a path
     // relative to the working directory.

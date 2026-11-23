@@ -40,32 +40,17 @@ fn task_materialize_large_code_policies_are_unchanged_across_data_recovery() {
         } else {
             None
         };
-        let linked = boundary.map(|_| {
-            [".gitignore", ".gitattributes"].map(|name| {
-                file_identity(&fs::File::open(fixture.root.join(".engram").join(name)).unwrap())
-                    .unwrap()
-            })
-        });
         assert!(child(&fixture, None, boundary.is_none()).status.success());
         let result = response(&fixture);
         assert!(result.get("error").is_none(), "{result}");
         if let Some(operation) = operation {
             assert_eq!(result["receipt"]["operation"], operation);
         }
-        for (index, edit) in setup.basis.edits.iter().enumerate() {
+        for edit in &setup.basis.edits {
             assert_eq!(
                 fs::read(fixture.root.join(".engram").join(&edit.path)).unwrap(),
                 edit.after
             );
-            if let Some(ids) = linked {
-                assert_eq!(
-                    file_identity(
-                        &fs::File::open(fixture.root.join(".engram").join(&edit.path)).unwrap()
-                    )
-                    .unwrap(),
-                    ids[index]
-                );
-            }
         }
         fixture.assert_output();
         for name in [".gitignore", ".gitattributes"] {
@@ -130,7 +115,6 @@ fn task_materialize_reserves_shared_capacity_during_empty_tasks_recovery_and_rep
     fixture.interrupt("journal-published");
     let tasks = fixture.root.join(".engram/tasks");
     fs::create_dir(&tasks).unwrap();
-    let identity = Directory::open(&tasks).unwrap().identity().unwrap();
     assert!(fixture.private().exists());
     let receipt = assert_capacity_boundary(
         &fixture,
@@ -140,10 +124,7 @@ fn task_materialize_reserves_shared_capacity_during_empty_tasks_recovery_and_rep
     );
     assert!(receipt.recovered);
     assert!(receipt.equal_unowned_empty_tasks);
-    assert_eq!(
-        Directory::open(&tasks).unwrap().identity().unwrap(),
-        identity
-    );
+    assert!(fs::read_dir(&tasks).unwrap().next().is_none());
 }
 
 fn assert_capacity_boundary(

@@ -5,6 +5,63 @@ fn snapshot(fixture: &Fixture, commit: &str) -> Result<crate::task_sync::git::Co
     read_task_snapshot(&fixture.root, &fixture.tree.project.project_id, commit)
 }
 
+/// `run`'s result and how many `git cat-file` processes it started.
+fn cat_file_launches<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    let count = std::rc::Rc::new(std::cell::Cell::new(0));
+    let seen = std::rc::Rc::clone(&count);
+    let previous = crate::task_sync::git::BEFORE_QUERY.with(|hook| {
+        hook.replace(Some(Box::new(move |verb| {
+            if verb == "cat-file" {
+                seen.set(seen.get() + 1);
+            }
+        })))
+    });
+    let result = run();
+    crate::task_sync::git::BEFORE_QUERY.with(|hook| hook.replace(previous));
+    (result, count.get())
+}
+
+#[test]
+fn task_documents_are_read_with_the_same_git_launches_for_two_or_two_hundred_tasks() {
+    let mut launches = Vec::new();
+    for count in [2, 200] {
+        let fixture = Fixture::new(count);
+        let base = fixture.commit();
+        let prior = fixture.commit();
+        for original in &fixture.tree.tasks {
+            let mut document = original.clone();
+            document.title = "Changed task".into();
+            fixture.write(&document);
+        }
+        let incoming = fixture.commit();
+        let (cold, cold_launches) = cat_file_launches(|| snapshot(&fixture, &incoming).unwrap());
+        assert_eq!(cold.tree.tasks.len(), count);
+        // The first exchange without a basis reads the same full snapshot
+        // under its own deadline, with the same processes as the cold audit.
+        let (bounded, bounded_launches) = cat_file_launches(|| {
+            crate::task_sync::git::read_task_snapshot_bounded(
+                &fixture.root,
+                &fixture.tree.project.project_id,
+                &incoming,
+                std::time::Duration::from_secs(60),
+            )
+            .unwrap()
+        });
+        assert_eq!(bounded.tree, cold.tree);
+        assert_eq!(bounded_launches, cold_launches);
+        // A delta with no changed document starts every query but the
+        // document read, so the changed documents add exactly one process.
+        let (unchanged, baseline) = cat_file_launches(|| fixture.read(&base, &prior).unwrap());
+        assert!(unchanged.upserts.is_empty());
+        let (delta, delta_launches) =
+            cat_file_launches(|| fixture.read(&prior, &incoming).unwrap());
+        assert_eq!(delta.upserts.len(), count);
+        assert_eq!(delta_launches, baseline + 1);
+        launches.push((cold_launches, delta_launches));
+    }
+    assert_eq!(launches[0], launches[1]);
+}
+
 #[test]
 fn bounded_snapshot_refuses_exhausted_budget_and_reads_the_selected_commit_without_writes() {
     let fixture = Fixture::new(2);

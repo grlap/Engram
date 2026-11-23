@@ -5,95 +5,21 @@ mod process;
 #[test]
 fn task_materialize_admitted_replacement_plans_are_bound_before_any_public_edit() {
     for index in 0..2 {
-        for changed in [
-            "bytes",
-            "plan-identity",
-            "pending-identity",
-            "directory-identity",
-        ] {
-            let fixture = Fixture::new(false, 1);
-            fixture.interrupt("journal-published");
-            let attempt = fixture.private().join(format!("replace-{index}"));
-            match changed {
-                "bytes" => fs::write(attempt.join("plan"), b"changed plan").unwrap(),
-                "plan-identity" | "pending-identity" => {
-                    let name = if changed == "plan-identity" {
-                        "plan"
-                    } else {
-                        ".plan.pending"
-                    };
-                    let bytes = fs::read(attempt.join(name)).unwrap();
-                    fs::rename(
-                        attempt.join(name),
-                        fixture.owned.path().join("preserved-plan"),
-                    )
-                    .unwrap();
-                    fs::write(attempt.join(name), bytes).unwrap();
-                }
-                "directory-identity" => {
-                    let preserved = fixture.owned.path().join("preserved-attempt");
-                    fs::rename(&attempt, &preserved).unwrap();
-                    fs::create_dir(&attempt).unwrap();
-                    for name in ["plan", ".plan.pending"] {
-                        fs::hard_link(preserved.join(name), attempt.join(name)).unwrap();
-                    }
-                }
-                _ => unreachable!(),
-            }
-            fixture.disable();
-            let before = snapshot(fixture.owned.path());
-            let error = fixture
-                .service
-                .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
-                .unwrap_err();
-            assert!(
-                error.to_string().contains("replacement"),
-                "{index}/{changed}: {error:#}"
-            );
-            assert_eq!(snapshot(fixture.owned.path()), before);
-        }
-    }
-}
-
-#[test]
-fn task_materialize_completion_repair_refuses_unknown_prefixes_and_replaced_sources() {
-    for changed in [
-        "pending",
-        "source-prefix",
-        "source-identity",
-        "directory-identity",
-    ] {
-        let fixture = Fixture::new(true, 1);
-        fixture.interrupt("public-checked");
-        let private = fixture.private();
-        fs::write(private.join(".complete.pending"), b"").unwrap();
-        let source = private.join("completion-recovery/source");
-        match changed {
-            "pending" => fs::write(private.join(".complete.pending"), b"wrong prefix").unwrap(),
-            "source-prefix" => fs::write(&source, b"wrong prefix").unwrap(),
-            "source-identity" => {
-                fs::rename(&source, fixture.owned.path().join("preserved-source")).unwrap();
-                fs::write(&source, b"").unwrap();
-            }
-            "directory-identity" => {
-                fs::rename(
-                    private.join("completion-recovery"),
-                    fixture.owned.path().join("preserved-recovery"),
-                )
-                .unwrap();
-                fs::create_dir(private.join("completion-recovery")).unwrap();
-                fs::write(&source, b"").unwrap();
-            }
-            _ => unreachable!(),
-        }
+        let fixture = Fixture::new(false, 1);
+        fixture.interrupt("journal-published");
+        let attempt = fixture.private().join(format!("replace-{index}"));
+        fs::write(attempt.join("plan"), b"changed plan").unwrap();
         fixture.disable();
         let before = snapshot(fixture.owned.path());
         let error = fixture
             .service
             .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
             .unwrap_err();
-        assert!(error.to_string().contains("completion"), "{error:#}");
-        assert_eq!(snapshot(fixture.owned.path()), before, "{changed}");
+        assert!(
+            error.to_string().contains("replacement"),
+            "{index}: {error:#}"
+        );
+        assert_eq!(snapshot(fixture.owned.path()), before);
     }
 }
 

@@ -284,7 +284,7 @@ pub fn read_task_delta(
     let changes = parse_changes(&raw)?;
     let (upserts, removed) = read_documents(
         &reader,
-        changes,
+        &changes,
         project,
         new.profile.include_notes,
         MAX_DELTA_BYTES,
@@ -301,14 +301,15 @@ pub fn read_task_delta(
 
 pub(super) fn read_documents(
     reader: &Reader<'_>,
-    changes: Vec<Change>,
+    changes: &[Change],
     project: &ProjectId,
     include_notes: bool,
     byte_limit: usize,
 ) -> Result<(BTreeMap<WorkId, TaskDocument>, BTreeSet<WorkId>)> {
     let mut upserts = BTreeMap::new();
     let mut removed = BTreeSet::new();
-    let mut total_bytes = 0_usize;
+    let mut wanted = Vec::new();
+    let mut ids = Vec::new();
     for change in changes {
         if change.path == ".engram/project.json"
             || policy_path(&change.path)
@@ -321,25 +322,42 @@ pub(super) fn read_documents(
         if change.status == "D" {
             removed.insert(id);
         } else {
-            let bytes = reader.blob(&change.new_oid, &change.path)?;
-            total_bytes = total_bytes.checked_add(bytes.len()).ok_or_else(|| {
-                TaskSyncRefusal::DestinationTreeLimit
-                    .invalid("task commit delta exceeds byte bound")
-            })?;
-            if total_bytes > byte_limit {
-                return Err(TaskSyncRefusal::DestinationTreeLimit
-                    .invalid("task commit delta exceeds byte bound")
-                    .into());
-            }
-            let task: TaskDocument = task_sync::parse(&bytes)
-                .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-            if task.id != id {
-                return Err(TaskSyncRefusal::InvalidGraph
-                    .invalid("task filename/id mismatch")
-                    .into());
-            }
-            upserts.insert(id, task);
+            wanted.push((change.new_oid.as_str(), change.path.as_str()));
+            ids.push(id);
         }
+    }
+    // Every document through one Git process per batch, so the number of
+    // processes does not grow with the number of tasks.
+    let blobs = reader.batch(
+        &wanted,
+        directory::MAX_FILE_BYTES,
+        byte_limit,
+        super::QueryStderrPolicy::ErrorOnly,
+        &|refusal| match refusal {
+            BatchRefusal::Output | BatchRefusal::Total => TaskSyncRefusal::DestinationTreeLimit
+                .invalid("task documents exceed byte bound")
+                .into(),
+            BatchRefusal::Missing(path) => TaskSyncRefusal::GitQueryFailed
+                .invalid(format!(
+                    "local Git cat-file document {path} read failed: its object is not in the local repository"
+                ))
+                .into(),
+            BatchRefusal::File(path) => TaskSyncRefusal::DestinationFileLimit
+                .invalid(format!(
+                    "local Git cat-file document {path} read failed: it exceeds the per-file limit"
+                ))
+                .into(),
+        },
+    )?;
+    for (id, bytes) in ids.into_iter().zip(blobs) {
+        let task: TaskDocument = task_sync::parse(&bytes)
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+        if task.id != id {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task filename/id mismatch")
+                .into());
+        }
+        upserts.insert(id, task);
     }
     let document = task_sync::ProjectDocument {
         format: task_sync::FORMAT.into(),
@@ -547,8 +565,7 @@ impl<'a> Reader<'a> {
             &|refusal| match refusal {
                 BatchRefusal::Output => TaskSyncRefusal::DestinationTreeLimit
                     .invalid(format!(
-                        "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes, or one of them exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
-                        directory::MAX_FILE_BYTES
+                        "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes; import the complete folder with `--rebuild`"
                     ))
                     .into(),
                 BatchRefusal::Missing(path) => TaskSyncRefusal::GitQueryFailed
@@ -616,16 +633,12 @@ impl<'a> Reader<'a> {
                 input.extend_from_slice(oid.as_bytes());
                 input.push(b'\n');
             }
-            let remaining = self
-                .total_bound
-                .checked_sub(self.started.elapsed())
-                .filter(|left| !left.is_zero())
-                .ok_or(super::QueryFailure::Deadline)?;
             let args = ["cat-file", "--batch-check"];
+            let remaining = self.batch_time(&args)?;
             let output = super::query::batch_blobs_observed(
                 self.repository,
                 &input,
-                remaining.min(BOUND),
+                remaining,
                 u64::try_from(chunk.len() * 128)?,
                 stderr_policy,
                 true,
@@ -681,34 +694,39 @@ impl<'a> Reader<'a> {
                 input.extend_from_slice(oid.as_bytes());
                 input.push(b'\n');
             }
-            let remaining = self
-                .total_bound
-                .checked_sub(self.started.elapsed())
-                .filter(|left| !left.is_zero())
-                .ok_or(super::QueryFailure::Deadline)?;
             let args = ["cat-file", "--batch"];
+            let remaining = self.batch_time(&args)?;
             // The remaining byte budget and a header per object.
             let limit = u64::try_from(total_limit.saturating_sub(total) + chunk.len() * 128)?;
-            let output = super::query::batch_blobs_observed(
+            let output = match super::query::batch_blobs_observed(
                 self.repository,
                 &input,
-                remaining.min(BOUND),
+                remaining,
                 limit,
                 stderr_policy,
                 false,
-            )
-            .map_err(|error| {
+            ) {
+                Ok(output) => output,
                 // The batch output outgrew what the remaining bound admits
-                // before its headers could be checked one by one.
-                if matches!(
-                    error.downcast_ref::<super::QueryFailure>(),
-                    Some(super::QueryFailure::OutputLimit)
-                ) {
-                    refuse(BatchRefusal::Output)
-                } else {
-                    query_error(&args, &error, None)
+                // before its headers could be checked one by one. Read the
+                // sizes alone to name the file over its limit, if one is.
+                Err(error)
+                    if matches!(
+                        error.downcast_ref::<super::QueryFailure>(),
+                        Some(super::QueryFailure::OutputLimit)
+                    ) =>
+                {
+                    self.check_sizes(
+                        chunk,
+                        per_file,
+                        total_limit.saturating_sub(total),
+                        stderr_policy,
+                        refuse,
+                    )?;
+                    return Err(refuse(BatchRefusal::Output));
                 }
-            })?;
+                Err(error) => return Err(query_error(&args, &error, None)),
+            };
             let mut rest = output.as_slice();
             for &(oid, path) in chunk {
                 let malformed = || malformed_batch(path);
@@ -738,6 +756,17 @@ impl<'a> Reader<'a> {
             }
         }
         Ok(blobs)
+    }
+
+    /// The time one batch process may take: what the reader has left, at most
+    /// the one-process bound every Git query has, refused as a failed Git
+    /// query when nothing is left.
+    fn batch_time(&self, args: &[&str]) -> Result<Duration> {
+        self.total_bound
+            .checked_sub(self.started.elapsed())
+            .filter(|left| !left.is_zero())
+            .map(|left| left.min(BOUND))
+            .ok_or_else(|| query_error(args, &super::QueryFailure::Deadline.into(), None))
     }
 
     /// Every entry below `tree`, trees included, through one Git process:

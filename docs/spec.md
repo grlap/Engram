@@ -1008,7 +1008,7 @@ A separate host-private transport, `engram control --work-session`, exposes
 the §2.7 protocol as JSON lines:
 
 ```text
-work_session_read   control_connection_read
+work_session_read
 named_root_bind   named_root_read   named_root_sighting_read
 execution_observe   verification_record
 remote_verification_record

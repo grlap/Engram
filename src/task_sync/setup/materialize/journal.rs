@@ -1,8 +1,11 @@
-//! Complete private operation record and physically pinned publication sources.
+//! Complete private operation record and its retained publication sources.
+//!
+//! A journal written while physical file identities were still recorded is
+//! read as before: those extra fields are ignored, never compared.
 
 use super::super::{
     Attribution, Basis,
-    files::{Directory, MAX_PRIVATE_BYTES, PhysicalId, file_identity},
+    files::{Directory, MAX_PRIVATE_BYTES},
     repository,
 };
 use super::{
@@ -18,34 +21,12 @@ use std::{io::Write, path::Path};
 const FORMAT: &str = "engram-task-sync-materialize-v3";
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct Completion {
-    operation: uuid::Uuid,
-    public: PhysicalId,
-    tasks: PhysicalId,
-    project: PhysicalId,
+    pub operation: uuid::Uuid,
     pub equal_unowned_empty_tasks: bool,
 }
 
-impl Completion {
-    pub fn observe(
-        root: &Directory,
-        operation: uuid::Uuid,
-        equal_unowned_empty_tasks: bool,
-    ) -> Result<Self> {
-        let public = root.child(Path::new(".engram"))?;
-        Ok(Self {
-            operation,
-            public: public.identity()?,
-            tasks: public.child(Path::new("tasks"))?.identity()?,
-            project: file_identity(&public.open_file(Path::new("project.json"), false, false)?)?,
-            equal_unowned_empty_tasks,
-        })
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct Record {
     pub format: String,
     pub operation: uuid::Uuid,
@@ -53,16 +34,9 @@ pub(super) struct Record {
     pub basis: Basis,
     pub attribution: Attribution,
     pub index: Vec<u8>,
-    pub root: PhysicalId,
-    pub admin: PhysicalId,
-    pub private: PhysicalId,
-    pub completion_recovery: PhysicalId,
-    pub completion_source: PhysicalId,
-    pub existing_engram: Option<PhysicalId>,
-    pub stage: PhysicalId,
-    pub stage_tasks: PhysicalId,
-    pub before: Vec<Option<PhysicalId>>,
-    pub replacements: Vec<replacement::PlanBinding>,
+    /// Whether a private `.engram` directory existed at admission.
+    #[serde(deserialize_with = "present")]
+    pub existing_engram: bool,
     pub displaced_paths: Vec<Option<String>>,
     pub documents_fingerprint: String,
     pub omissions: NoteOmissions,
@@ -74,7 +48,6 @@ pub(super) struct Record {
 pub(super) fn initialize(
     private: &Directory,
     root: &Directory,
-    admin: &Directory,
     basis: Basis,
     selection: MaterializeSelection,
     attribution: Attribution,
@@ -84,8 +57,8 @@ pub(super) fn initialize(
     checkpoint: &mut impl FnMut(&str) -> Result<()>,
 ) -> Result<Record> {
     let existing_engram = match root.dir().symlink_metadata(".engram") {
-        Ok(_) => Some(root.child(Path::new(".engram"))?.identity()?),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(error) => return Err(error.into()),
     };
     let raw = private.create_child(Path::new("raw"))?;
@@ -99,9 +72,9 @@ pub(super) fn initialize(
     let completion_recovery = private.create_child(Path::new("completion-recovery"))?;
     let completion_source = completion_recovery.open_file(Path::new("source"), true, true)?;
     completion_source.sync_all()?;
-    let mut before_ids = Vec::new();
+    drop(completion_source);
     let shared = existing_engram
-        .map(|_| root.child(Path::new(".engram")))
+        .then(|| root.child(Path::new(".engram")))
         .transpose()?;
     for edit in &basis.edits {
         ensure!(
@@ -123,21 +96,15 @@ pub(super) fn initialize(
                 .context("setup policy parent missing")?
                 .dir()
                 .hard_link(&edit.path, before.dir(), &edit.path)?;
-            let file = before.open_file(Path::new(&edit.path), false, false)?;
-            before_ids.push(Some(file_identity(&file)?));
             ensure!(
                 before.read(Path::new(&edit.path))? == edit.before,
-                "setup before bytes changed while pinning"
+                "setup before bytes changed while retaining them"
             );
-        } else {
-            before_ids.push(None);
         }
     }
-    let replacements = before_ids
-        .iter()
-        .enumerate()
-        .map(|(index, before)| replacement::prepare(private, index, *before, checkpoint))
-        .collect::<Result<Vec<_>>>()?;
+    for index in 0..basis.edits.len() {
+        replacement::prepare(private, index, checkpoint)?;
+    }
     let worktrees = repository::git(&basis.repository, &["worktree", "list", "--porcelain"])?;
     let omitted_worktrees = worktrees
         .split(|byte| *byte == b'\n')
@@ -161,16 +128,7 @@ pub(super) fn initialize(
         basis,
         attribution,
         index,
-        root: root.identity()?,
-        admin: admin.identity()?,
-        private: private.identity()?,
-        completion_recovery: completion_recovery.identity()?,
-        completion_source: file_identity(&completion_source)?,
         existing_engram,
-        stage: stage.identity()?,
-        stage_tasks: stage.child(Path::new("tasks"))?.identity()?,
-        before: before_ids,
-        replacements,
         displaced_paths,
         documents_fingerprint: candidate::fingerprint(&prepared.documents),
         omissions: prepared.provenance.omissions,
@@ -200,17 +158,10 @@ pub(super) fn read(private: &Directory, private_path: &Path) -> Result<Record> {
     let bytes = private
         .read(Path::new("journal.json"))?
         .with_context(|| incomplete_attempt_guidance(private_path))?;
-    let pending = private.open_file(Path::new(".journal.json.pending"), false, false)?;
-    let final_file = private.open_file(Path::new("journal.json"), false, false)?;
-    ensure!(
-        file_identity(&pending)? == file_identity(&final_file)?,
-        "private journal publication identity changed"
-    );
     let record: Record = crate::task_sync::parse(&bytes)?;
     ensure!(
         record.format == FORMAT
-            && record.before.len() == 2
-            && record.replacements.len() == 2
+            && record.basis.edits.len() == 2
             && record.displaced_paths
                 == record
                     .basis
@@ -222,28 +173,31 @@ pub(super) fn read(private: &Directory, private_path: &Path) -> Result<Record> {
                             .as_ref()
                             .map(|_| format!("replace-{index}/displaced"))
                     })
-                    .collect::<Vec<_>>()
-            && record.private == private.identity()?,
+                    .collect::<Vec<_>>(),
         "invalid materialization journal binding"
     );
     Ok(record)
 }
 
-pub(super) fn is_complete(
-    private: &Directory,
-    root: &Directory,
-    operation: uuid::Uuid,
-) -> Result<bool> {
+/// Reads `existing_engram` as written now, a flag, and as an older journal
+/// wrote it, the directory's identity or null.
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Bool(present) => present,
+        serde_json::Value::Null => false,
+        _ => true,
+    })
+}
+
+pub(super) fn is_complete(private: &Directory, operation: uuid::Uuid) -> Result<bool> {
     let Some(bytes) = private.read(Path::new("complete"))? else {
         return Ok(false);
     };
     let completed: Completion = crate::task_sync::parse(&bytes)?;
     ensure!(
-        completed == Completion::observe(root, operation, completed.equal_unowned_empty_tasks)?,
-        "completed public directory or file identity changed"
+        completed.operation == operation,
+        "completion record belongs to another materialization"
     );
-    let final_file = private.open_file(Path::new("complete"), false, false)?;
-    super::completion::check_published(private, &bytes, file_identity(&final_file)?)?;
     Ok(true)
 }
 
@@ -277,7 +231,7 @@ pub(super) fn check_sources(
     documents: &Documents,
 ) -> Result<()> {
     check_inventory(private)?;
-    super::completion::check_source(private, record)?;
+    super::completion::check_source(private)?;
     ensure!(
         candidate::read_publication(&private.child(Path::new("pins"))?)? == *documents,
         "publication source bytes changed; preserve public and private state"
@@ -304,23 +258,23 @@ pub(super) fn check_sources(
         "setup before-source inventory changed"
     );
     for (index, edit) in record.basis.edits.iter().enumerate() {
-        replacement::check_attempt(private, record, index)?;
+        replacement::check_attempt(private, index)?;
         ensure!(
             after.read(Path::new(&edit.path))?.as_ref() == Some(&edit.after),
             "setup after-source bytes changed"
         );
-        if let Some(id) = record.before[index] {
+        if edit.before.is_some() {
             ensure!(
-                file_identity(&before.open_file(Path::new(&edit.path), false, false)?)? == id,
-                "setup before-source identity changed"
+                before.read(Path::new(&edit.path))? == edit.before,
+                "setup before-source bytes changed"
             );
         }
     }
     Ok(())
 }
 
-/// Files stay inside an exclusively created, physically bound operation directory.
-/// The pending source remains as the no-replace publication identity witness.
+/// Files stay inside the exclusively created operation directory. The pending
+/// source is linked to its final name, so publication never replaces a file.
 fn publish_bytes(
     directory: &Directory,
     name: &str,

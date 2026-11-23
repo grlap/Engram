@@ -327,7 +327,6 @@ pub(super) fn label(value: &str) -> &'static str {
         "search",
         "shutdown",
         "work_session_read",
-        "control_connection_read",
         "named_root_bind",
         "named_root_read",
         "named_root_sighting_read",

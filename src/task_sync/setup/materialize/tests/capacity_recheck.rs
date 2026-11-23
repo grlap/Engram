@@ -1,4 +1,3 @@
-use super::super::super::files::{PhysicalId, file_identity};
 use super::*;
 
 const SIBLING: &str = "unrelated-private";
@@ -69,9 +68,9 @@ fn assert_refusal(existing: bool, shared: usize, boundary: &str, reason: &str) {
                 assert_eq!(public.names(100_000).unwrap(), expected);
                 // Earlier setup edits and, for the fresh branch, the public
                 // rename already happened. Preserve state from this boundary.
-                before = Some((
-                    snapshot_with_lock_metadata(fixture.owned.path(), Some(&lock)),
-                    public_identities(&fixture),
+                before = Some(snapshot_with_lock_metadata(
+                    fixture.owned.path(),
+                    Some(&lock),
                 ));
             }
             Ok(())
@@ -87,10 +86,7 @@ fn assert_refusal(existing: bool, shared: usize, boundary: &str, reason: &str) {
         );
     }
     assert_eq!(
-        (
-            snapshot_with_lock_metadata(fixture.owned.path(), Some(&lock)),
-            public_identities(&fixture),
-        ),
+        snapshot_with_lock_metadata(fixture.owned.path(), Some(&lock)),
         before.unwrap()
     );
     assert_eq!(fs::read(&lock).unwrap(), lock_bytes);
@@ -107,7 +103,6 @@ fn assert_permitted(existing: bool, shared: usize, boundary: &str) {
     let lock_bytes = fs::read(&lock).unwrap();
     let store = fs::read(&fixture.store).unwrap();
     let mut injected = 0;
-    let mut sibling_id = None;
     let mut checkpoints = Vec::new();
     let capacity = DirectoryCapacity {
         root: 100_000,
@@ -125,12 +120,6 @@ fn assert_permitted(existing: bool, shared: usize, boundary: &str) {
             if point == boundary {
                 injected += 1;
                 insert_sibling(&fixture);
-                sibling_id = Some(
-                    file_identity(
-                        &fs::File::open(fixture.root.join(".engram").join(SIBLING)).unwrap(),
-                    )
-                    .unwrap(),
-                );
             }
             Ok(())
         },
@@ -147,11 +136,7 @@ fn assert_permitted(existing: bool, shared: usize, boundary: &str) {
     assert_eq!(fs::read(&fixture.store).unwrap(), store);
     let sibling = fixture.root.join(".engram").join(SIBLING);
     assert_eq!(fs::read(&sibling).unwrap(), SIBLING_BYTES);
-    assert_eq!(
-        file_identity(&fs::File::open(&sibling).unwrap()).unwrap(),
-        sibling_id.unwrap()
-    );
-    let before = (snapshot(fixture.owned.path()), public_identities(&fixture));
+    let before = snapshot(fixture.owned.path());
     let mut repeated_checkpoints = Vec::new();
     let repeated = super::super::run_with_capacity(
         &fixture.marker,
@@ -172,40 +157,11 @@ fn assert_permitted(existing: bool, shared: usize, boundary: &str) {
         repeated_checkpoints.last().map(String::as_str),
         Some("public-checked")
     );
-    assert_eq!(
-        (snapshot(fixture.owned.path()), public_identities(&fixture)),
-        before
-    );
+    assert_eq!(snapshot(fixture.owned.path()), before);
 }
 
 fn insert_sibling(fixture: &Fixture) {
     let path = fixture.root.join(".engram").join(SIBLING);
     assert!(!path.exists());
     fs::write(path, SIBLING_BYTES).unwrap();
-}
-
-fn public_identities(fixture: &Fixture) -> BTreeMap<&'static str, PhysicalId> {
-    [
-        ".engram",
-        ".engram/private.db",
-        ".engram/unrelated-private",
-        ".engram/tasks",
-        ".engram/project.json",
-        ".engram/.gitignore",
-        ".engram/.gitattributes",
-    ]
-    .into_iter()
-    .filter_map(|relative| {
-        let path = fixture.root.join(relative);
-        if !path.exists() {
-            return None;
-        }
-        let id = if path.is_dir() {
-            Directory::open(&path).unwrap().identity().unwrap()
-        } else {
-            file_identity(&fs::File::open(path).unwrap()).unwrap()
-        };
-        Some((relative, id))
-    })
-    .collect()
 }

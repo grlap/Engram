@@ -97,21 +97,19 @@ and no size limit.
   bullets for their own pushes only, and the task-sync data-branch bullet
   for its own commits and pushes only; none covers a rebase, force-push or
   history rewrite.
-- Standing approval: once all of these hold, land the changeset without
-  asking (commit it on master, or fast-forward master to its gated candidate
-  commit), push and install it as described below, and report the landed
-  commit to Greg afterwards:
-  - the full gate's required checks pass on the exact commit being landed
-    (for the staged-tree lane, the exact tree being committed); its
-    completion input check confirms equal complete `source_id` values at
+- Standing approval: once all of these hold, fast-forward master to the
+  gated candidate commit without asking. Push and install it as described
+  below and report the landed commit to Greg afterwards:
+  - the full gate's required checks pass on the exact clean candidate commit
+    being landed. Its input check confirms equal complete `source_id` values at
     admission, before execution and after execution. Any difference,
     including a new non-ignored untracked file, fails that check. No input
     has changed since the run; a changeset touching only `.md` files instead
-    passes the link check on that tree, with its input
+    passes the link check on that commit, with its input
     `source_id` checked at completion;
   - the latest review round from two independent read-only reviewers of
-    different vendors, Codex and Claude, on a verified freeze of that same
-    tree, has no outstanding in-scope finding of Medium or higher, and every
+    different vendors, Codex and Claude, on that same clean candidate commit,
+    has no outstanding in-scope finding of Medium or higher, and every
     in-scope finding of Medium or higher from earlier rounds was fixed and
     reviewed again; a Low or a Note need not be fixed before the landing,
     and a Low left unfixed is filed as its own item; while Codex or Claude is
@@ -187,8 +185,8 @@ and no size limit.
   the current master, and gated again. A candidate that fails is superseded
   by a new candidate commit, never amended, rebased or force-pushed. Each
   new candidate is committed on a new branch or a detached HEAD at the
-  current master, and the earlier candidate is left as it is. The
-  staged-tree lane remains available.
+  current master, and the earlier candidate is left as it is. Staged inputs
+  remain available for focused correction checks only.
 - Greg's word "commit" for a presented changeset also authorizes pushing
   it and installing its build. `readiness` checks only schema
   and policy admission, so first judge the changeset itself. When it
@@ -274,59 +272,39 @@ and no size limit.
   Installing is not deploying: running processes keep their build until they
   restart by the supported routes above; the landing report says whether
   running sessions need the new build, with its build hash and reason.
-- Test refs for remote runs. A test ref is a merge-ready patch, not scratch,
-  and Mac and Windows gates carry equal weight. As an exception to the
-  previous bullet, to give a remote
-  runner an exact input, Engram::Merger may commit a merge-ready input tree
-  and push it as `refs/heads/test/<item>-<fingerprint8>`, where `<item>` is
-  the item's short work ref and `<fingerprint8>` is the first eight hex digits
-  of the frozen input's review-freeze fingerprint. Only a merge-ready input is
-  pushed: every required review is complete with no outstanding
-  Medium-or-higher finding, and a fresh focused compile and tests covering its
-  changes and new tests have passed on that exact input. Before committing,
-  Engram::Merger records on the item, beside the freeze fingerprint and while
-  that fingerprint still verifies, the tree id of the complete frozen input,
-  including any untracked files it contains. The commit's parent is the master
-  commit the input was frozen on, its tree is that recorded tree id, and its
-  message follows the "Commit messages" section. The commit is created
-  detached, and no local branch adopts it. Engram::Merger pushes only that
-  commit, to origin, with the explicit refspec
-  `<commit>:refs/heads/test/<item>-<fingerprint8>`: never master or another
-  branch, another remote, a force-push, rebase or merge, and never a ref whose
-  tree differs from the recorded tree id. The runner fetches the ref into its
-  own clone, checks the commit out in a fresh worktree whose index and tracked
-  files equal that commit and which holds no untracked files, records that
-  state, runs the standard launcher, and requires that the commit's tree id
-  equals the tree id recorded before the push and that its own review-freeze
-  fingerprint is the same before and after its run. The runner pushes nothing
-  back; it returns its evidence through the existing channels, never through
-  Git. A focused run on a test ref is evidence only. A full gate run by the
-  standard launcher on the exact test ref counts as the landing gate for that
-  tree on any host, with the same weight as one run on Windows, when its
-  results record equal complete `source_id` values before and after and the
-  integration owner has recorded on the item the run id, host, commit, tree id
-  and the launcher's admitted, before and after `source_id` values from that
-  run's records; it gates
-  only a landing whose master commit has that tree id, and until then it is
-  evidence only. A test-ref commit is also a candidate commit for the
-  candidate-commits bullet's fast-forward landing: apart from an author test
-  ref of the same commit under the next bullet, its push under this bullet is
-  the only push such a candidate receives. A full gate run on the ref pushed
-  under this bullet, with the records above, is then the candidate's final
-  full gate and gates only fast-forwarding master to that
-  same commit, so the test-ref commit and the landed commit are identical.
-  Another commit with the same tree, such as a fresh candidate on a moved
-  master, is gated afresh as that bullet describes. A change that touches
-  Windows-only code or tests also needs the
-  relevant gate on Windows. In this remote flow, reviews finish before the
-  push and the gate runs on the pushed ref, so review and gate never run in
-  parallel on an unpublished candidate; a failed remote gate sends the input
-  back to its owner, like any failed gate. Landing still follows the standing
-  approval on master, including installing a binary built from that exact
-  tree. Engram::Merger deletes the ref once the run's evidence is recorded,
-  and at the latest when the input's items close, and records the push and the
-  deletion (commit id, tree id, fingerprint, times) on the item. This grants
-  no other commit, push, install or restart.
+- Test refs for remote runs. As an exception to the previous bullet, the
+  integration owner (Engram::Merger) may push a merge-ready candidate commit
+  to origin as `refs/heads/test/<item>-<commit8>` (the item's short work ref
+  and the first eight hex digits of the commit id), so that a remote runner
+  tests exactly that commit:
+  - Merge-ready means every required review is complete with no outstanding
+    Medium-or-higher finding, and a focused compile and tests covering the
+    change have passed on that commit.
+  - The commit is detached, on no local branch, with the master commit it
+    was prepared on as its parent and an ordinary commit message.
+  - Before pushing, the integration owner records the commit's complete
+    `source_id` on the item. It is the only identity of the input. It must
+    equal the reviewed candidate's recorded `source_id`, or, after a clean
+    carry under `/review-changes` section 6a, the carried candidate's recorded
+    `source_id`.
+  - Push only that commit, only with the refspec
+    `<commit>:refs/heads/test/<item>-<commit8>`; never master, another branch
+    or remote, a force-push, rebase or merge.
+  - The runner checks the commit out in a fresh, clean worktree, runs the
+    standard launcher and pushes nothing back.
+  - A focused run is evidence only. A full gate counts as the landing gate
+    for that commit on any host, with equal weight, when the launcher
+    observes that same `source_id` at admission, before and after execution
+    and the run id, host and those values are recorded on the item. A
+    missing or incomparable value does not count. A change to Windows-only
+    code or tests also needs a Windows gate.
+  - A failed gate returns the input to its
+    owner. Landing follows the standing approval, including installing the
+    binary built from that commit.
+  - Delete the ref once its evidence is recorded, and at the latest when the
+    item closes. Record the push and the deletion (commit id, `source_id`,
+    times) on the item. This grants no other commit, push, install or
+    restart.
 - Author test refs. So that remote runners test the exact commit at any
   stage, the session that wrote a candidate commit may, as a further
   exception, push
@@ -393,7 +371,7 @@ and no size limit.
 ### Commit messages
 Use a short imperative subject naming the concrete change and its purpose or observable effect. It must make sense without opening a hash or tracker item. An optional type/scope prefix or work reference may appear in the subject; a hash, fingerprint, work ref or vague "updates" alone is not a subject. A combined landing describes its actual combined changes. Merge/revert messages identify the change they merge or revert.
 Add a body only when it explains a non-obvious reason or constraint. Work references belong in the subject, not the body. Keep gate run ids and validation results on the work item and in its retained evidence; do not require a future gate result in a commit created before that gate.
-Commits the Merger pushes under the Test refs bullet use the same meaningful subject and include the complete review-freeze fingerprint in a body trailer: `Review-Freeze: <fingerprint>`. The test-ref name, recorded tree identity and all other review/gate/landing requirements stay unchanged.
+Commits the Merger pushes under the Test refs bullet follow the ordinary commit message format above. The commit id determines the test-ref name.
 This rule is prospective: do not amend, rebase or force-push existing history or repeat a review/gate just to change a message. It adds no formatting gate and grants no new Git authority.
 
 ### Cross-project feedback
@@ -539,12 +517,12 @@ Run the applicable checks below before handing off changes:
 
 The launcher has two modes, for two different jobs:
 
-- **Full landing validation:** `node scripts/test-launcher.mjs full` runs
+- **Full landing validation:** `node scripts/test-launcher.mjs full --input commit` runs
   this whole sequence, with full logs on disk and metadata-only completion
   in context; diagnostics require explicit bounded inspection. It runs on
-  the frozen tree that is to be committed, or on the candidate commit to
-  be landed, beside that tree's reviews; for any changeset with a non-`.md`
-  path, only its pass counts toward landing. The launcher's input check uses
+  the clean candidate commit to be landed, beside that commit's reviews.
+  A changeset with a non-`.md` path needs this pass for landing.
+  The launcher's input check uses
   complete `source_id` equality; there is no separate untracked-debris outcome.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
   COMMAND ARGS...` runs one command, typically the tests that cover what a
@@ -560,7 +538,7 @@ cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
+node --test scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
@@ -573,8 +551,8 @@ phases without the Unix-only file-descriptor-limit adjustment.
 
 A changeset touching only `.md` files (docs, AGENTS.md, CLAUDE.md, skills,
 commands) runs the link check instead of this sequence: no build step or
-test reads Markdown except the link checker. Run it through
-`node scripts/test-launcher.mjs focused -- …`, so that its complete `source_id`
+test reads Markdown except the link checker. Run it on the clean candidate through
+`node scripts/test-launcher.mjs focused --input commit -- …` so that its complete `source_id`
 is checked at completion; `/review-changes` gives the command. Both
 reviewers still review it.
 
@@ -585,8 +563,8 @@ change must be edited twice; where a test is needed, it verifies observable
 behavior.
 
 No test reads a Markdown file to check that it contains given phrases.
-General-purpose checks that process Markdown uniformly,
-such as link validation or review input fingerprinting, are not such tests.
+General-purpose link validation and Git input identity checks may process
+Markdown alongside other files.
 
 Choose landing validation by changed file type:
 
@@ -657,9 +635,8 @@ authority.
    Give that work a host owner and evidence. Do not add those probes to every
    Engram packet or to `/review-code`. An outstanding host test blocks an Engram
    review only when there is a concrete connection to the review's required
-   access or integrity. Required independent freeze and source checks still
-   belong to the review; a parent's result cannot replace a missing reviewer
-   check.
+   access or integrity. The reviewers' read-only boundary checks belong
+   to the review.
 2. **One parent owns each review input.** For Engram: implement corrections,
    run required project tests, freeze the current input, obtain exactly two
    independent read-only reviews from different vendors — Codex and Claude,

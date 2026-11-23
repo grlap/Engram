@@ -118,8 +118,10 @@ fn run_with_capacity(
     );
     let root = Directory::open(&setup.basis.repository)?;
     check_disk_names(&root, capacity)?;
+    // Hard links into the private attempt need one filesystem; refuse before
+    // creating an attempt that could not finish.
     ensure!(
-        root.identity()?.same_device(admin.identity()?),
+        root.same_device(&admin)?,
         "materialization requires repository and Git administration on the same filesystem"
     );
     let (private, record, recovered) = admission::select(
@@ -131,12 +133,6 @@ fn run_with_capacity(
         attribution,
         checkpoint,
     )?;
-    ensure!(
-        root.identity()? == record.root
-            && admin.identity()? == record.admin
-            && private.identity()? == record.private,
-        "recorded materialization directory identity changed"
-    );
     repository::recheck(&record.basis, &record.index)?;
     let documents = candidate::read(&private.child(Path::new("raw"))?)?;
     ensure!(
@@ -148,8 +144,8 @@ fn run_with_capacity(
     // document gains the folder exchange envelope required by Git readers.
     let documents = candidate::publication_documents(&documents, &record.basis.assertions)?;
     journal::check_sources(&private, &record, &documents)?;
-    let complete = journal::is_complete(&private, &root, record.operation)?;
-    if record.existing_engram.is_some() {
+    let complete = journal::is_complete(&private, record.operation)?;
+    if record.existing_engram {
         let policy = root.child(Path::new(".engram"))?;
         for (index, edit) in record.basis.edits.iter().enumerate() {
             replacement::apply(
@@ -185,20 +181,22 @@ fn run_with_capacity(
     )?;
     repository::recheck(&record.basis, &record.index)?;
     let policy = root.child(Path::new(".engram"))?;
-    let after = private.child(Path::new("after"))?;
     for edit in &record.basis.edits {
         ensure!(
-            replacement::owned(&policy, Path::new(&edit.path), &after, &edit.after)?,
-            "published data policy lost its retained identity"
+            replacement::owned(&policy, Path::new(&edit.path), &edit.after)?,
+            "published data policy is missing"
         );
     }
     super::attributes::materialized(&record.basis, &documents)?;
     checkpoint("public-checked")?;
     if !complete {
-        let completion = journal::Completion::observe(&root, record.operation, equal_empty)?;
+        let completion = journal::Completion {
+            operation: record.operation,
+            equal_unowned_empty_tasks: equal_empty,
+        };
         let mut bytes = serde_json::to_vec(&completion)?;
         bytes.push(b'\n');
-        completion::publish(&private, &record, &bytes, checkpoint)?;
+        completion::publish(&private, &bytes, checkpoint)?;
         checkpoint("complete-published")?;
     }
     Ok(receipt(record, complete, recovered, equal_empty))

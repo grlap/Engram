@@ -169,14 +169,13 @@ whenever another writable session's working directory is the checkout the
 check ran in, which is what the shared main checkout is to every other
 session, so a credited run there cannot succeed whatever its timing.
 
-A linked worktree's launcher runs and freeze manifest live in its Git admin
-directory, and its own `target/tmp` scratch is Git-ignored; `git worktree
+A linked worktree's launcher runs, including their input manifests, live in
+its Git admin directory, and its own `target/tmp` scratch is Git-ignored; `git worktree
 remove` deletes all of them, ignored files included, even without `--force`.
 Evidence that must outlive the worktree is retained in the main checkout's
 Git-ignored `.evidence/<full landed commit>/<worktree name>/`, the directory
 the repository rule in "Work only in the repository folder" names: launcher
-runs under `review-runs/<run id>/`, the freeze manifest as
-`engram-review-freeze.json`, scratch under `target-tmp/`, and any other
+runs under `review-runs/<run id>/`, scratch under `target-tmp/`, and any other
 cited path under its worktree-relative path, each copied with its relative
 structure and the protocol, harness, seed and configuration files it needs,
 not only the result. The main checkout is resolved explicitly, never taken
@@ -212,21 +211,17 @@ pending. Before removing it, the lander first quotes into Engram whatever
 a decision rests on, in a note or gate on the item it concerns, so that no
 raw file is the only record; then it copies, never moves, into the archive
 only what is still needed once the landed item has closed: each path under
-the worktree, run directory or freeze manifest that an OPEN task's notes or
-gate references cite (`show --notes --gates`, following continuations), or
+the worktree, its own Git administrative directory or a run directory that
+an OPEN task's notes or gate references cite (`show --notes --gates`, following continuations), or
 that a recorded concrete retention need names. A citation in a closed item's
 old note creates no retention by itself, and nothing is archived merely to
 be removed at once. For what is retained, the lander resolves each path and
-follows no link out of the worktree; compares each copied file's size and
-content bytes with the source before anything is deleted (a per-file hash
-of both sides, for example; `git diff --no-index` inside a repository may
-apply end-of-line conversion and is not a byte check), not only the list of
-names; adds missing files to an archive that already exists for the same
-commit and worktree but never replaces a file already there, and a byte
+follows no link out of those roots; compares the size and raw bytes of each
+copied file with the source before deleting anything; adds missing files to
+an archive that already exists for the same commit and worktree but never replaces a file already there, and a byte
 mismatch stops the removal: the worktree is kept and the mismatch reported
-to the coordinator; keeps request, results and freeze bytes unchanged,
-because an archived freeze is evidence of the original input, not a freeze
-of the archive; and records on the landing item the landed commit and each
+to the coordinator; keeps original request, input and result records
+unchanged; and records on the landing item the landed commit and each
 old path or run id with its archive path, or that nothing was retained,
 stating the scope checked (this item and the items it knows to cite the
 worktree), never a global absence. It then adds an attributed note with the
@@ -283,12 +278,19 @@ worker notifying a different session still uses `--detach --notify SESSION`.
 Delegation children run checks in the foreground, since the host refuses their
 run waits. Standalone foreground execution remains available.
 
+Reviews cite the parent's complete `source_id` for their diff scope. For a
+remote landing gate, follow the Test refs bullet in AGENTS.md. The Merger
+records the candidate's complete `source_id` before pushing
+`refs/heads/test/<item>-<commit8>`. The first eight hex digits of the commit
+id supply `<commit8>`. The Merger compares the runner's admitted, before and
+after `source_id` values with the pre-push record.
+
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
+node --test scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs

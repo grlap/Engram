@@ -1,49 +1,38 @@
 //! Completion repair retains partial bytes inside the admitted private operation.
 
-use super::super::files::{PhysicalId, file_identity};
-use super::{Directory, Path, Result, ensure, journal::Record};
+use super::{Directory, Path, Result, ensure};
 use std::io::{Read, Seek, SeekFrom, Write};
 
-pub(super) fn check_source(private: &Directory, record: &Record) -> Result<Directory> {
+pub(super) fn check_source(private: &Directory) -> Result<Directory> {
     let recovery = private.child(Path::new("completion-recovery"))?;
     ensure!(
-        recovery.identity()? == record.completion_recovery
-            && recovery.names(1)? == [std::ffi::OsString::from("source")]
-            && file_identity(&recovery.open_file(Path::new("source"), false, false)?)?
-                == record.completion_source,
-        "completion recovery source identity or inventory changed; preserve it"
+        recovery.names(1)? == [std::ffi::OsString::from("source")],
+        "completion recovery inventory changed; preserve it"
     );
     Ok(recovery)
 }
 
 pub(super) fn publish(
     private: &Directory,
-    record: &Record,
     bytes: &[u8],
     checkpoint: &mut impl FnMut(&str) -> Result<()>,
 ) -> Result<()> {
-    let recovery = check_source(private, record)?;
+    let recovery = check_source(private)?;
     let pending_name = Path::new(".complete.pending");
-    if let Some(partial) = private.read(pending_name)? {
-        ensure!(
-            bytes.starts_with(&partial),
-            "completion pending bytes differ; preserve them"
-        );
-        // The first interrupted source remains untouched, including its identity.
-        // The journal already binds this empty recovery file before publication.
+    if private.read(pending_name)?.is_some() {
+        // The first interrupted record remains untouched, whatever it holds:
+        // an older build wrote the record with more fields. The recovery file,
+        // created empty with the journal and never published, takes the
+        // complete bytes; a prefix of them is kept, anything else rewritten.
         let mut source = recovery.open_file(Path::new("source"), true, false)?;
-        ensure!(
-            file_identity(&source)? == record.completion_source,
-            "completion recovery source identity changed"
-        );
         let mut prefix = Vec::new();
         Read::by_ref(&mut source)
             .take(bytes.len() as u64 + 1)
             .read_to_end(&mut prefix)?;
-        ensure!(
-            bytes.starts_with(&prefix),
-            "completion recovery prefix differs; preserve it"
-        );
+        if !bytes.starts_with(&prefix) {
+            source.set_len(0)?;
+            prefix.clear();
+        }
         checkpoint("complete-repair-started")?;
         source.seek(SeekFrom::End(0))?;
         let remaining = &bytes[prefix.len()..];
@@ -80,20 +69,4 @@ pub(super) fn publish(
             .hard_link(pending_name, private.dir(), "complete")?;
     }
     Ok(())
-}
-
-pub(super) fn check_published(
-    private: &Directory,
-    bytes: &[u8],
-    identity: PhysicalId,
-) -> Result<()> {
-    let recovery = private.child(Path::new("completion-recovery"))?;
-    for (directory, name) in [(private, ".complete.pending"), (&recovery, "source")] {
-        if directory.read(Path::new(name))?.as_deref() == Some(bytes)
-            && file_identity(&directory.open_file(Path::new(name), false, false)?)? == identity
-        {
-            return Ok(());
-        }
-    }
-    anyhow::bail!("materialization completion publication identity changed")
 }

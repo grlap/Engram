@@ -122,46 +122,19 @@ Inspect the completion receipt; late evidence does not reopen its seal.
 
 ### Freeze a review input
 
-The parent records one identity for the selected worktree and holds the input
-fixed. Give each read-only reviewer that identity to check at start and end.
-Use the consuming project's review rules to choose the method.
+Follow the consuming project's review and landing rules. The parent uses its
+gate runner's complete `source_id` for the exact input when available, or
+obtains it with `engram source --root ABSOLUTE_WORKTREE --json`. Give each
+reviewer that record's locator and the exact diff scope. Use
+`git diff --submodule=diff BASE COMMIT` for a committed diff.
 
-- For ordinary Git review, the parent stages the entire input, including new
-  files, and records `HEAD` and the tree from `git write-tree`. Reviewers run
-  these commands separately in the selected worktree, using the recorded `TREE`:
-
-  ```text
-  git rev-parse HEAD
-  git diff --cached --quiet --ignore-submodules=none TREE --
-  git diff --quiet --ignore-submodules=none --
-  git ls-files --others --exclude-standard
-  ```
-
-  Require zero exit statuses, matching `HEAD` and an empty untracked listing.
-  Use `git ls-tree -r TREE` to find mode `160000` entries and their pinned
-  commits. Run each nested command with the submodule as its working directory.
-  Require `git rev-parse --show-toplevel` to identify that directory and
-  `git rev-parse HEAD` to match its pin. Repeat the
-  clean checks using its `HEAD` in place of `TREE`, and use `git ls-tree -r HEAD`
-  there to find any deeper gitlinks. A missing or unreadable checkout, or a
-  refused working directory, leaves a coverage gap.
-- For a raw review inventory in TermAl, use `termal_review_identity` directly.
-  The parent calls `operation: capture` with `schemaVersion: 1` for the
-  selected root. Reviewers call `operation: check` with `schemaVersion: 1`,
-  the captured fingerprint as `expectedFingerprint`, and the captured
-  `platformProfile`. Require `complete: true` for capture and checks, and
-  `verified: true` for checks. For submodules, confirm coverage in
-  `counts.repositories` and the inventory. The reviewer follows
-  `inventory.nextCursor` as `cursor` on further `check` calls, keeping the
-  parent's fingerprint and platform profile and using the worktree TermAl
-  selected for the reviewer. Find each gitlink and initialized checkout, and
-  report missing coverage to the TermAl maintainers as a fix request.
-
-Compare values only within their own schema. Git checks normalized content.
-TermAl v1 checks its raw review inventory. A project digest covers the input
-its project defines, and the launcher's `source_id` binds test execution to its
-admitted source. Report a mismatch, refusal or coverage gap before claiming
-the review covered the parent's input.
+At the start and end, reviewers cite the parent's `source_id` record and
+report their root, diff scope and read-only Git checks. For a clean
+candidate, confirm that HEAD equals the record's commit and the checkout
+is clean. Follow the project's boundary checks for any other review lane
+it permits. Use the same recorded identity for validation under that
+project's rules. Report any mismatch, refusal or coverage gap before
+claiming the review covered the parent's input.
 
 For completion and review handoffs, see [Wait for a result](../../../.agents/skills/coder-test-execution/SKILL.md#wait-for-a-result).
 

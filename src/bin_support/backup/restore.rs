@@ -61,11 +61,6 @@ pub(crate) struct RestoreSettings {
     /// Where a test stops the restore, as a process that ended there would.
     #[cfg(test)]
     pub stop: Option<Stop>,
-    /// Runs between the check that a staging file is the restore's own and
-    /// its removal, with the checked path, so a test can change what stands
-    /// there.
-    #[cfg(test)]
-    pub before_removal: Option<fn(&Path)>,
 }
 
 impl RestoreSettings {
@@ -74,8 +69,6 @@ impl RestoreSettings {
             read,
             #[cfg(test)]
             stop: None,
-            #[cfg(test)]
-            before_removal: None,
         }
     }
 }
@@ -323,7 +316,7 @@ fn switch_staging(
     written.map_err(|failure| removing_staging(failure, staging))?;
     // Only now that the record names the copy fetched again is the earlier
     // run's staging file, which held the same checked copy, removed.
-    remove_own_staging(home, project, &earlier, settings);
+    remove_own_staging(home, project, &earlier);
     Ok(())
 }
 
@@ -820,16 +813,11 @@ fn removing_staging(mut failure: ReadFailure, staging: &Path) -> ReadFailure {
 
 /// Removes an earlier run's staging file, but only one [`owned_staging`]
 /// takes for this restore's own; anything else is named in a warning.
-fn remove_own_staging(
-    home: &Path,
-    project: &ProjectId,
-    staging: &Path,
-    settings: &RestoreSettings,
-) {
+fn remove_own_staging(home: &Path, project: &ProjectId, staging: &Path) {
     match owned_staging(home, project, staging) {
         Ok(None) => {}
         Ok(Some(owned)) => {
-            if let Err(error) = owned.remove(settings) {
+            if let Err(error) = owned.remove() {
                 eprintln!(
                     "warning: the earlier restore's staging file {} could not be removed: {error}",
                     staging.display()
@@ -841,12 +829,10 @@ fn remove_own_staging(
 }
 
 /// A restore's own staging file, checked and ready to remove: its name in
-/// the store's directory, held open from the Engram home through real
-/// directories only. On Unix the removal is made through the held directory
-/// itself. On Windows the held directories deny delete sharing, so neither
-/// they nor the directories above them can be renamed or replaced while the
-/// file is removed, and the removal names the file by the directory's full
-/// path, which was checked to lead to the directory held.
+/// the store's directory, opened from the Engram home through real
+/// directories only. On Unix the removal is made through the opened
+/// directory. On Windows the removal names the file by the directory's full
+/// path.
 struct OwnedStaging {
     _projects: Dir,
     directory: Dir,
@@ -856,19 +842,12 @@ struct OwnedStaging {
 }
 
 impl OwnedStaging {
-    /// Removes the file by its name in the held store directory, never by a
-    /// path resolved again.
-    fn remove(self, settings: &RestoreSettings) -> io::Result<()> {
-        #[cfg(test)]
-        if let Some(hook) = settings.before_removal {
-            hook(Path::new(&self.name));
-        }
-        #[cfg(not(test))]
-        let _ = settings;
+    /// Removes the file by its name in the store directory.
+    fn remove(self) -> io::Result<()> {
         // On Windows cap-std removes by a path it rebuilds from the held
         // handle, which drops the `\\?\` of a network path and so turns
         // `\\?\UNC\…` into a path relative to the working directory; the
-        // full path checked against the held handle is used instead.
+        // store directory's resolved full path is used instead.
         #[cfg(windows)]
         let remove = || std::fs::remove_file(self.full_directory.join(&self.name));
         #[cfg(not(windows))]
@@ -1011,29 +990,12 @@ fn owned_staging(
         }
     }
     #[cfg(windows)]
-    let full_directory = {
-        let full_directory = std::fs::canonicalize(&expected).map_err(|error| {
-            refused(format!(
-                "lies in {}, whose full path cannot be resolved: {error}",
-                expected.display()
-            ))
-        })?;
-        let held = directory
-            .try_clone()
-            .and_then(|copy| same_file::Handle::from_file(copy.into_std_file()));
-        let named = same_file::Handle::from_path(&full_directory);
-        match (held, named) {
-            (Ok(held), Ok(named)) if held == named => {}
-            _ => {
-                return Err(refused(format!(
-                    "lies in {}, whose full path {} does not lead to the directory held",
-                    expected.display(),
-                    full_directory.display()
-                )));
-            }
-        }
-        full_directory
-    };
+    let full_directory = std::fs::canonicalize(&expected).map_err(|error| {
+        refused(format!(
+            "lies in {}, whose full path cannot be resolved: {error}",
+            expected.display()
+        ))
+    })?;
     Ok(Some(OwnedStaging {
         _projects: projects,
         directory,
@@ -1210,7 +1172,7 @@ fn archive_pending(
         if settings.stop == Some(Stop::FailCleanup) {
             return Err(io::Error::other("stopped by a test"));
         }
-        owned.remove(settings)
+        owned.remove()
     };
     if !cleanup_after_archive && let Some(owned) = owned.take() {
         remove(owned).map_err(|source| {

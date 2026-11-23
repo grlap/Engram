@@ -1343,10 +1343,6 @@ pub enum StoreError {
     HostPathIdentityUnresolved,
     #[error("host control connection for session {0:?} was superseded")]
     ControlConnectionSuperseded(String),
-    /// The serving connection cannot prove which store file it holds open,
-    /// which no platform can yet do, so it shows no path. Never a match.
-    #[error("the control connection cannot show which store it opened: {0}")]
-    ControlConnectionIdentityUnavailable(String),
     #[error("control operation {operation} key {key:?} was reused for a different intent")]
     ControlOperationIdempotencyConflict { operation: String, key: String },
     #[error("work binding for {work:?} is stale; reread the current claim association")]

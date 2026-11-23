@@ -232,71 +232,19 @@ fn windows_destination_syntax_is_explicitly_bounded() {
 
 #[cfg(any(unix, windows))]
 #[test]
-fn ancestor_swap_after_binding_cannot_publish_into_project_stores() {
-    struct Swap {
-        ancestor: PathBuf,
-        moved: PathBuf,
-        projects: PathBuf,
-        called: Cell<bool>,
-    }
-    impl Publication for Swap {
-        fn bound(&self) -> Result<()> {
-            self.called.set(true);
-            match fs::rename(&self.ancestor, &self.moved) {
-                Ok(()) => directory_link(&self.projects, &self.ancestor),
-                #[cfg(windows)]
-                Err(error) if matches!(error.raw_os_error(), Some(5 | 32)) => (),
-                Err(error) => return Err(error.into()),
-            }
-            Ok(())
-        }
-    }
-    let directory = crate::test_support::temp_home().unwrap();
-    let (database, output) = fixture(directory.path());
-    let swap = Swap {
-        ancestor: directory.path().join("exports"),
-        moved: directory.path().join("original-exports"),
-        projects: directory.path().join("projects"),
-        called: Cell::new(false),
-    };
-    write_with(&database, &output, SNAPSHOT, &swap).unwrap();
-    assert!(swap.called.get());
-    assert!(!swap.projects.join("nested").exists());
-    assert_eq!(fs::read(&database).unwrap(), b"store-before");
-    assert_eq!(
-        fs::read(database.with_extension("db-wal")).unwrap(),
-        b"wal-before"
-    );
-    let actual = if swap.moved.exists() {
-        swap.moved.join("nested/snapshot.json")
-    } else {
-        output
-    };
-    assert_eq!(fs::read(actual).unwrap(), SNAPSHOT);
-}
-
-#[cfg(any(unix, windows))]
-#[test]
-fn existing_ancestor_link_is_refused_before_staging() {
+fn an_ancestor_resolving_into_project_stores_is_refused_before_staging() {
     let directory = crate::test_support::temp_home().unwrap();
     let (database, output) = fixture(directory.path());
     directory_link(
         &directory.path().join("projects"),
         &directory.path().join("exports"),
     );
+    // An ancestor that resolves into the project stores is refused before
+    // any directory is created there.
     let error = write_graph_snapshot_file(&database, &output, SNAPSHOT).unwrap_err();
     let message = format!("{error:#}");
-    let ancestor = std::path::absolute(directory.path().join("exports")).unwrap();
     assert!(
-        message.contains("cannot bind snapshot ancestor"),
-        "{message}"
-    );
-    assert!(
-        message.contains(&ancestor.display().to_string()),
-        "{message}"
-    );
-    assert!(
-        message.contains("pass the resolved real directory path instead"),
+        message.contains("outside Engram's project stores"),
         "{message}"
     );
     assert!(!directory.path().join("projects/nested").exists());
@@ -417,23 +365,6 @@ fn unix_parent_components_are_refused_instead_of_resolved_lexically() {
 
 #[cfg(windows)]
 #[test]
-fn opened_drive_alias_below_projects_is_not_a_volume_root() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let (database, _) = fixture(directory.path());
-    let alias = Dir::open_ambient_dir(database.parent().unwrap(), ambient_authority()).unwrap();
-    let error = validate_volume_root(&alias).unwrap_err();
-    assert!(error.to_string().contains("drive alias"));
-    assert!(error.to_string().contains("real volume path"));
-    let real = fs::canonicalize(directory.path()).unwrap();
-    let root =
-        Dir::open_ambient_dir(real.ancestors().last().unwrap(), ambient_authority()).unwrap();
-    validate_volume_root(&root).unwrap();
-    assert_eq!(fs::read(&database).unwrap(), b"store-before");
-    assert_eq!(fs::read_dir(database.parent().unwrap()).unwrap().count(), 2);
-}
-
-#[cfg(windows)]
-#[test]
 fn raw_windows_names_are_refused_before_normalization_or_staging() {
     let directory = crate::test_support::temp_home().unwrap();
     let (database, _) = fixture(directory.path());
@@ -471,7 +402,6 @@ fn ordinary_ancestor_error_does_not_prescribe_a_link_remedy() {
     let error = write_graph_snapshot_file(&database, &output, SNAPSHOT).unwrap_err();
     let message = format!("{error:#}");
     assert!(message.contains("cannot open snapshot ancestor"));
-    assert!(!message.contains("pass the resolved real directory"));
     assert!(message.contains(&directory.path().join("exports").display().to_string()));
 }
 
@@ -626,37 +556,20 @@ fn final_component_link_into_project_stores_is_refused_before_staging() {
 
 #[cfg(unix)]
 #[test]
-fn fifo_destination_and_fifo_swap_after_inspection_are_refused_without_a_writer() {
-    for swap_after_inspection in [false, true] {
-        let directory = crate::test_support::temp_home().unwrap();
-        let real = fs::canonicalize(directory.path()).unwrap();
-        let (database, output) = fixture(&real);
-        fs::create_dir_all(output.parent().unwrap()).unwrap();
-        let make_fifo = || {
-            nix::unistd::mkfifo(
-                &output,
-                nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
-            )
-            .unwrap();
-        };
-        let error = if swap_after_inspection {
-            fs::write(&output, SNAPSHOT).unwrap();
-            Destination::open(&database, &output)
-                .unwrap()
-                .existing_after_inspection(SNAPSHOT, || {
-                    fs::remove_file(&output)?;
-                    make_fifo();
-                    Ok(())
-                })
-                .unwrap_err()
-        } else {
-            make_fifo();
-            write_graph_snapshot_file(&database, &output, SNAPSHOT).unwrap_err()
-        };
-        assert!(format!("{error:#}").contains("not a regular file"));
-        assert_eq!(fs::read_dir(output.parent().unwrap()).unwrap().count(), 1);
-        assert_eq!(fs::read(&database).unwrap(), b"store-before");
-    }
+fn fifo_destination_is_refused_without_a_writer() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let real = fs::canonicalize(directory.path()).unwrap();
+    let (database, output) = fixture(&real);
+    fs::create_dir_all(output.parent().unwrap()).unwrap();
+    nix::unistd::mkfifo(
+        &output,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let error = write_graph_snapshot_file(&database, &output, SNAPSHOT).unwrap_err();
+    assert!(format!("{error:#}").contains("not a regular file"));
+    assert_eq!(fs::read_dir(output.parent().unwrap()).unwrap().count(), 1);
+    assert_eq!(fs::read(&database).unwrap(), b"store-before");
 }
 
 #[test]

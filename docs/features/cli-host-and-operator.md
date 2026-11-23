@@ -805,13 +805,11 @@ removes only the staging file the record names, and only once it has
 checked that the file is a regular file named
 `.backup-restore-<uuid>.staging`, spelled through no `..`, directly in
 `<home>/projects/<project digest>/` as this home spells it. That directory
-and `projects` are opened from the home without following a link and are
-held open while the file is removed by its name in them, so neither can be
-redirected in between: a link or reparse point there, at the file, or a path
-that cannot be examined, is refused (`backup_restore_staging_unowned`) and
-nothing is removed. On Windows the file is removed by the store directory's
-full path, once that path is checked to lead to the directory held, which
-also serves a home on a network share. A staging file already gone is allowed, and a removal
+and `projects` are opened from the home without following a link: a link or
+reparse point there, at the file, or a path that cannot be examined, is
+refused (`backup_restore_staging_unowned`) and nothing is removed. On Windows
+the file is removed by the store directory's full resolved path, which also
+serves a home on a network share. A staging file already gone is allowed, and a removal
 that fails leaves the restore pending. Then it archives the pending record
 beside it as `store.restore-abandoned-<UTC time>Z.json`, or under the next
 free `-N` suffix, written whole to a temporary file first and moved there

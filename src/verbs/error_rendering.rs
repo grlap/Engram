@@ -477,7 +477,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::NamedRootSightingReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlConnectionSuperseded(_)
-        | StoreError::ControlConnectionIdentityUnavailable(_)
         | StoreError::ControlOperationIdempotencyConflict { .. }
         | StoreError::ControlWorkBindingStale { .. }
         | StoreError::DifferentBuildSchema

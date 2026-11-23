@@ -43,7 +43,6 @@ impl Frame {
                 Some(operation_key)
             }
             HostControlRequest::WorkSessionRead {}
-            | HostControlRequest::ControlConnectionRead {}
             | HostControlRequest::NamedRootRead { .. }
             | HostControlRequest::NamedRootSightingRead { .. }
             | HostControlRequest::AcceptanceBindingRead { .. }

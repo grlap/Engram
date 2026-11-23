@@ -31,12 +31,6 @@ const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 pub enum HostControlRequest {
     /// Read the ordinary host channel context and supported evidence protocol.
     WorkSessionRead {},
-    /// Asks which store this serving connection opened. It needs no routing
-    /// token, grant or bind and writes nothing to the store. It refuses a
-    /// superseded connection, and otherwise always refuses with
-    /// `control_connection_identity_unavailable`: no platform can yet prove
-    /// which file the connection holds, so it never returns a path.
-    ControlConnectionRead {},
     NamedRootBind {
         claim_id: WorkClaimId,
         claim_fence: i64,
@@ -124,7 +118,6 @@ impl HostControlRequest {
     pub const fn operation(&self) -> &'static str {
         match self {
             Self::WorkSessionRead {} => "work_session_read",
-            Self::ControlConnectionRead {} => "control_connection_read",
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
             Self::NamedRootSightingRead { .. } => "named_root_sighting_read",
@@ -481,7 +474,6 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
-            HostControlRequest::ControlConnectionRead {} => self.control_connection_read(),
             HostControlRequest::NamedRootBind {
                 claim_id,
                 claim_fence,
@@ -834,20 +826,6 @@ impl HostControlServer {
         }
     }
 
-    /// Which store this serving connection opened. It first checks, on one
-    /// read snapshot, that the connection is still the session's current one.
-    /// No platform can yet prove that the file at the store's path is the
-    /// file SQLite holds: a path observed around the open can be redirected
-    /// during it. So it then always refuses, rather than return a path that
-    /// might name another file. It writes nothing to the store.
-    fn control_connection_read(&self) -> Result<Value, StoreError> {
-        self.store
-            .verify_current_control_connection(&self.session_id, &self.connection_token)?;
-        Err(StoreError::ControlConnectionIdentityUnavailable(
-            "no platform can yet prove which file this connection opened".to_owned(),
-        ))
-    }
-
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
         value["capabilities"] = serde_json::json!([
@@ -1129,9 +1107,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlConnectionSuperseded(_) => "control_connection_superseded",
-        StoreError::ControlConnectionIdentityUnavailable(_) => {
-            "control_connection_identity_unavailable"
-        }
         StoreError::ControlOperationIdempotencyConflict { .. } => {
             "control_operation_idempotency_conflict"
         }

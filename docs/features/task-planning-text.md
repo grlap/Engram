@@ -814,24 +814,24 @@ without temporarily writing it to a worktree. Case aliases, nested policy files,
 unsafe attributes, ignored task paths or unowned occupancy refuse.
 
 An exclusive private Git-admin operation directory retains raw candidate bytes,
-separate publication sources, a bounded immutable journal and physical ownership
-identities. Publication sources contain the derived project envelope with the
+separate publication sources and a bounded immutable journal. Publication sources contain the derived project envelope with the
 selected disclosure profile and canonical planning-content basis, while the raw
 candidate keeps its original project and task bytes and preparation fingerprint.
-Retries derive the same public envelope and check its retained publication link;
+Retries derive the same public envelope and check it against the retained publication bytes;
 they never substitute it for the raw candidate. Complete records and public files are linked without replacement;
 unsupported filesystems refuse. Git administration and checkout must share a
-filesystem supporting hard links. Windows identities use volume plus a 64-bit
-file index; wider filesystem identities such as ReFS may collide. Equal bytes
-and inventory are checked too, but an equal-byte identity collision can still
-misreport ownership. No power-loss guarantee beyond the recorded sync/rename
-operations is promised.
+filesystem supporting hard links. A public file counts as this
+materialization's when it holds the bytes it publishes; file and directory
+identities are not compared. No power-loss guarantee beyond the recorded
+sync/rename operations is promised. A journal written while identities were
+still recorded is read as before; its identity fields are ignored.
 
 An admitted journal can finish after opt-out and without its original candidate
-or source store. Exact repeats require the original public and retained objects;
-equal independently replaced files are not adopted. A new unowned empty tasks
-directory is accepted only for an empty candidate, reported as unowned and never
-cleaned up. Existing private siblings are preserved. A pre-journal interruption
+or source store. Exact repeats require the published bytes and the retained
+sources; a public file holding other bytes refuses. A tasks directory that
+already existed before this materialization moved its staged one is accepted
+only empty and for an empty candidate, reported as unowned and never cleaned
+up. Existing private siblings are preserved. A pre-journal interruption
 is not adopted: the refusal names the whole private attempt. Preserve it and any
 unrelated edits, relocate it within Git administration, then repeat preparation
 on the unchanged basis and materialize a fresh attempt. No automatic deletion
@@ -847,7 +847,7 @@ Managed policies are hard links to the retained `after` sources. Correct a
 separate unsafe override while leaving them intact; an in-place policy edit
 also changes that retained source, so restore the exact journaled bytes before
 retrying. Preserve an independently replaced public file before explicitly
-restoring the retained link; never overwrite it blindly. These operations do not
+restoring the retained bytes; never overwrite it blindly. These operations do not
 change SQLite, Git index/configuration/branch or commits, run a network relay,
 or initialize a worktree. `data-init` is the separate explicit operation above.
 Disabling sync removes no shared files or persistent worktree.

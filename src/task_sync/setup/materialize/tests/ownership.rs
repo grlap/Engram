@@ -1,40 +1,7 @@
 use super::*;
 
 #[test]
-fn task_materialize_refuses_equal_independent_and_edited_public_files() {
-    for path in [
-        ".engram/.gitignore",
-        ".engram/.gitattributes",
-        ".engram/project.json",
-        ".engram/tasks",
-    ] {
-        let fixture = Fixture::new(false, 1);
-        fixture.run();
-        let path = if path.ends_with("tasks") {
-            fixture.root.join(
-                fixture
-                    .documents
-                    .keys()
-                    .find(|name| name.starts_with("tasks/"))
-                    .map(|name| format!(".engram/{name}"))
-                    .unwrap(),
-            )
-        } else {
-            fixture.root.join(path)
-        };
-        let bytes = fs::read(&path).unwrap();
-        // Move the linked file aside; recreate the same bytes as a different inode.
-        fs::rename(&path, fixture.owned.path().join("retained-public-file")).unwrap();
-        fs::write(&path, bytes).unwrap();
-        let before = snapshot(fixture.owned.path());
-        assert!(
-            fixture
-                .service
-                .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
-                .is_err()
-        );
-        assert_eq!(snapshot(fixture.owned.path()), before);
-    }
+fn task_materialize_refuses_edited_public_files() {
     let fixture = Fixture::new(false, 1);
     fixture.run();
     fs::write(
@@ -62,10 +29,6 @@ fn task_materialize_preserves_equal_unowned_empty_tasks_and_refuses_nonempty_exp
         let fixture = Fixture::new(true, count);
         fixture.interrupt("journal-published");
         fs::create_dir(fixture.root.join(".engram/tasks")).unwrap();
-        let id = Directory::open(&fixture.root.join(".engram/tasks"))
-            .unwrap()
-            .identity()
-            .unwrap();
         let result = fixture
             .service
             .materialize_task_sync_setup(&fixture.marker, &fixture.selection);
@@ -76,13 +39,6 @@ fn task_materialize_preserves_equal_unowned_empty_tasks_and_refuses_nonempty_exp
         } else {
             assert!(result.is_err());
         }
-        assert_eq!(
-            Directory::open(&fixture.root.join(".engram/tasks"))
-                .unwrap()
-                .identity()
-                .unwrap(),
-            id
-        );
         assert!(
             fs::read_dir(fixture.root.join(".engram/tasks"))
                 .unwrap()
@@ -90,24 +46,6 @@ fn task_materialize_preserves_equal_unowned_empty_tasks_and_refuses_nonempty_exp
                 .is_none()
         );
     }
-}
-
-#[test]
-fn task_materialize_completed_empty_directory_observation_refuses_recreation() {
-    let fixture = Fixture::new(true, 0);
-    fixture.interrupt("journal-published");
-    let public = fixture.root.join(".engram/tasks");
-    fs::create_dir(&public).unwrap();
-    assert!(fixture.run().equal_unowned_empty_tasks);
-    fs::rename(&public, fixture.owned.path().join("observed-empty-tasks")).unwrap();
-    fs::create_dir(&public).unwrap();
-    let before = snapshot(fixture.owned.path());
-    let error = fixture
-        .service
-        .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
-        .unwrap_err();
-    assert!(error.to_string().contains("identity changed"), "{error:#}");
-    assert_eq!(snapshot(fixture.owned.path()), before);
 }
 
 #[test]
