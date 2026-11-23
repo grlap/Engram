@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Restored real SourceId beyond-cut and wrong-source admission coverage across the service and MCP, including the matching citable record and first-512-byte message checks.",
+    "completed_at": "2026-11-23T00:36:06.927302Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

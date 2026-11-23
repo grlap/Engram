@@ -1,0 +1,24 @@
+{
+  "id": "01a205cd-05d4-7f33-a956-ec6e28b09586",
+  "external_ref": null,
+  "title": "Exercise post-cut supersession in wrong-source citation recovery",
+  "outcome": "Exercise post-cut supersession in wrong-source citation recovery",
+  "acceptance": [
+    "Exercise post-cut supersession in wrong-source citation recovery is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a205db-3546-7be3-ace8-da1b2430f244",
+  "external_ref": null,
+  "title": "Read task-sync snapshot and delta documents through the batched cat-file reader, not one Git process per document",
+  "outcome": "Read task-sync snapshot and delta documents through the batched cat-file reader, not one Git process per document",
+  "acceptance": [
+    "task_sync::git::delta::tests::snapshot::complete_cold_snapshot_reads_two_thousand_documents_and_keeps_unverified_envelope passes in a focused `cargo test --lib` run on Central (Windows), under the same -j1 and 4-thread load in which it failed in test-0018b7a5",
+    "delta::read_documents reads task document blobs through the existing batched `cat-file --batch` reader (Reader::blobs), so a cold snapshot or delta of N documents starts a number of Git processes that does not grow with N, keeping each blob's per-file limit and the total byte bound and refusing missing or oversized blobs with the same typed reasons",
+    "The test is not loosened, skipped or given a longer deadline"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
