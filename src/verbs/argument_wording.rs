@@ -176,6 +176,22 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         HANDOFF_LABEL_TARGET,
         GATE_NEEDS_TARGET,
         EVALUATE_NEEDS_TARGET,
+        Twin {
+            cli: ", or declare the intended complete identity with --source-id-file",
+            mcp: ", or declare the intended complete identity in source_id",
+        },
+        Twin {
+            cli: "run a check on the intended current source, then evaluate declaring its complete identity with --source-id-file",
+            mcp: "run a check on the intended current source, then evaluate declaring its complete identity in source_id",
+        },
+        Twin {
+            cli: "run a check under the current named root, then evaluate again declaring that check's complete source with --source-id-file",
+            mcp: "run a check under the current named root, then evaluate again declaring that check's complete source in source_id",
+        },
+        Twin {
+            cli: "run a check on the intended input, then evaluate again citing it and declaring its complete source with --source-id-file",
+            mcp: "run a check on the intended input, then evaluate again citing it and declaring its complete source in source_id",
+        },
         MULTIPLE_BLOCKERS_REFUSAL,
         UNKNOWN_BLOCKER_REFUSAL,
         crate::storage::REVISE_NEEDS_KEY_REFUSAL,
@@ -193,7 +209,6 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         crate::work_service::ASSESSMENT_CONTINUATION_REFUSAL,
         crate::work_service::UNKNOWN_EVALUATION_REFUSAL,
         crate::work_service::READ_RUN_EVIDENCE_REMEDY,
-        crate::work_service::MEASURE_SOURCE_REMEDY,
         crate::work_service::MEASURE_SOURCE_ID_REMEDY,
         crate::verbs::error_rendering::remedies::CATALOG_CURSOR_REMEDY,
         crate::verbs::error_rendering::remedies::SHOW_CURSOR_REMEDY,
@@ -219,10 +234,9 @@ pub(super) fn registered() -> &'static [(String, String)] {
 /// listing hint or a completion refusal's remedy. A receipt is fitted to its
 /// byte budget before it is respelled, so none of these may grow when
 /// respelled; every other registered sentence ends refusals only.
-pub(super) const RECEIPT_SENTENCES: [Twin; 4] = [
+pub(super) const RECEIPT_SENTENCES: [Twin; 3] = [
     CLIPPED_STATUS,
     PAGE_LIMIT_HINT,
-    crate::work_service::MEASURE_SOURCE_REMEDY,
     crate::work_service::MEASURE_SOURCE_ID_REMEDY,
 ];
 

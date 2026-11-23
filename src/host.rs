@@ -1118,7 +1118,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidHostContext(_) => "invalid_host_context",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
-        StoreError::SourceBasisTextRefused { .. } => "source_basis_text_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::ExecutionObservationInvalid(_) => "execution_observation_invalid",
         StoreError::ExecutionObservationBasisMismatch(_) => "execution_observation_basis_mismatch",

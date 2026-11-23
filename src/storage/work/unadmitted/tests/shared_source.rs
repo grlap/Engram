@@ -197,6 +197,10 @@ fn new_legacy_sources_are_refused_but_retained_records_replay_and_import_unchang
     for (input, field) in cases {
         let before = footprint(&f.store);
         let error = observe(&mut f, input.clone(), 7).unwrap_err();
+        assert_eq!(
+            crate::host::store_error_code(&error),
+            "execution_observation_invalid"
+        );
         assert!(
             matches!(error, StoreError::ExecutionObservationInvalid(ref reason)
             if reason.contains(field) && reason.contains("retired")

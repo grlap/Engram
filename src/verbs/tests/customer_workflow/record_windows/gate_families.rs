@@ -94,8 +94,6 @@ fn note_window_family_index_avoids_observation_and_restored_body_probes() {
         !verbs
             .done(
                 DoneInput {
-                    source_fingerprint: None,
-
                     source_id: None,
                     landing: None,
                     links: Vec::new(),
@@ -378,8 +376,6 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
     let completed = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

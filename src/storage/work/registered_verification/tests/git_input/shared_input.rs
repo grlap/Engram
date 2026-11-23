@@ -76,8 +76,7 @@ fn finish(f: &mut Fixture, check: &ObjectId) -> Result<CompletionSeal, StoreErro
         13,
         std::slice::from_ref(check),
     );
-    let mut request = completion_request(&work, &held, "runner", check, "shared-done", 14);
-    request.source_fingerprint = None;
+    let request = completion_request(&work, &held, "runner", check, "shared-done", 14);
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
 }
 
@@ -148,7 +147,7 @@ fn shared_evaluation_cites_dirty_checks_and_completion_compares_the_complete_obj
         assert!(
             error
                 .to_string()
-                .contains("declare the intended complete source with --source-id-file"),
+                .contains("declare the complete source_id before evaluating"),
             "{error}"
         );
         assert_eq!(f.snapshot(), before);
@@ -192,7 +191,6 @@ fn shared_evaluation_cites_dirty_checks_and_completion_compares_the_complete_obj
         let mut request =
             completion_request(&work, &held, "runner", &check, "evaluated-shared-done", 14);
         request.acceptance.clear();
-        request.source_fingerprint = None;
         request.source_id = Some(other);
         let before = f.snapshot();
         assert!(
@@ -444,25 +442,6 @@ fn shared_input_completion_checks_both_declarations_for_cited_and_selected_check
         );
         let mut request = completion_request(&work, &held, "runner", &citation, "declare", 14);
         request.evidence = evidence;
-        for declaration in [
-            "content-v1:unrelated".to_owned(),
-            format!("git-commit:{}", source_id.commit),
-        ] {
-            request.source_fingerprint = Some(declaration);
-            let before = f.snapshot();
-            let error = f
-                .store
-                .complete_work(&request, &DevelopmentNoopRedactor)
-                .unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .contains("source_fingerprint cannot declare a source_id input"),
-                "{error}"
-            );
-            assert_eq!(f.snapshot(), before);
-        }
-        request.source_fingerprint = None;
         let mut other = source_id.clone();
         other.git_delta.as_mut().unwrap().sha256 = "f".repeat(64);
         request.source_id = Some(other);

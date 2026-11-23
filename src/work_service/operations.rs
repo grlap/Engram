@@ -324,17 +324,14 @@ pub struct WorkCompleteInput {
     /// Shared note used only when `acceptance` is omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Host-measured source fingerprint at completion time; required when the
-    /// project policy requires acceptance-evaluation source freshness.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at completion time; required
+    /// when the project policy requires acceptance-evaluation source freshness.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::source::present_source_id"
     )]
-    #[schemars(with = "Option<crate::source::SourceId>")]
+    #[schemars(with = "crate::source::SourceId")]
     pub source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -385,16 +382,13 @@ pub struct WorkEvaluateInput {
     /// under the same key refuses. Omit to derive the key from the content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt: Option<String>,
-    /// Host-measured source fingerprint at evaluation time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at evaluation time.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::source::present_source_id"
     )]
-    #[schemars(with = "Option<crate::source::SourceId>")]
+    #[schemars(with = "crate::source::SourceId")]
     pub source_id: Option<crate::source::SourceId>,
     /// `PROVIDER/MODEL[@VERSION]`, recorded as structured metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]

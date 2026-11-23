@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { observeSource } from "../work-session-fixture.mjs";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { after } from "node:test";
@@ -206,12 +206,16 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.deepEqual({ ...cliCitationDetails, remedy: null }, { ...refused.details, remedy: null });
     assert.match(cliCitationDetails.remedy, /^read this run.s show --notes --gates and cite/u);
     assert.match(refused.details.remedy, /^read this run.s show with notes and gates and cite/u);
-    const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
+    const treeA = { commit: "a".repeat(40), tree: "a".repeat(40), submodules: [], changes: [] };
+    const treeB = { ...treeA, tree: "b".repeat(40) };
+    const treeAFile = join(engramHome, "tree-a.json");
+    writeFileSync(treeAFile, JSON.stringify(treeA));
+    const evaluated = receipt(await client.call("evaluate", { ...base, source_id: treeA, verdicts: verdicts([gate.locator]) }));
     assert.equal(evaluated.evaluation.passed, 1);
     assert.match(evaluated.evaluation.evaluation, /^[0-9a-f]{32}(?:[0-9a-f]{32})?$/u);
     assert.equal(evaluated.evaluation.hash, undefined);
-    assert.equal(evaluated.evaluation.source_fingerprint, "sha256:tree-a");
-    const replayedEvaluation = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
+    assert.equal(evaluated.evaluation.source_id_summary.commit, treeA.commit);
+    const replayedEvaluation = receipt(await client.call("evaluate", { ...base, source_id: treeA, verdicts: verdicts([gate.locator]) }));
     assert.equal(replayedEvaluation.evaluation.replayed, true);
     assert.equal(replayedEvaluation.evaluation.evaluation, evaluated.evaluation.evaluation);
     assert.equal(replayedEvaluation.evaluation.hash, undefined);
@@ -224,7 +228,7 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     const currentEvaluation = receipt(await client.call("show", { work_ref: ref }));
     assert.equal(currentEvaluation.acceptance_evaluation.evaluation, evaluated.evaluation.evaluation);
     assert.equal(currentEvaluation.acceptance_evaluation.hash, undefined);
-    assert.equal(currentEvaluation.acceptance_evaluation.source_fingerprint, "sha256:tree-a");
+    assert.equal(currentEvaluation.acceptance_evaluation.source_id_summary.commit, treeA.commit);
     for (const full of [false, true]) {
       const cliShown = cliJson(engramHome, holder, "show", ref, ...(full ? ["--full"] : []));
       const projected = full ? cliShown.work.evaluation : cliShown.acceptance_evaluation;
@@ -235,34 +239,32 @@ test("evaluated acceptance policy over the real transports: locators, source fre
       "--mode", "same-session", "--acceptance-basis", String(base.acceptance_basis),
       "--evidence-basis", String(base.evidence_basis), "--verdict", "1=pass:asserted",
       "--rationale", "1=the gate passed", "--evidence", `1=${gate.locator}`,
-      "--source-fingerprint", "sha256:tree-a");
+      "--source-id-file", treeAFile);
     assert.equal(cliReplayed.evaluation.replayed, true);
     assert.equal(cliReplayed.evaluation.evaluation, evaluated.evaluation.evaluation);
     assert.equal(cliReplayed.evaluation.hash, undefined);
-    assert.equal(cliReplayed.evaluation.source_fingerprint, "sha256:tree-a");
+    assert.equal(cliReplayed.evaluation.source_id_summary.commit, treeA.commit);
     assert.match(cliWord(engramHome, holder, "show", ref).stdout, /evaluation: same_session [0-9a-f]{12}/u);
     assert.equal(evaluated.evaluation.verdicts_total, 1);
     const unmeasured = receipt(await client.call("done", { work_ref: ref, summary: "Delivered" }));
     assert.equal(unmeasured.code, "acceptance_evaluation_stale");
     assert.deepEqual(unmeasured.recovery.cause, { kind: "acceptance_evaluation_stale", reason: "source" });
     assert.equal(unmeasured.recovery.source.mismatch, "completion_measurement_missing");
-    assert.equal(unmeasured.recovery.source.remedy, "measure_source_and_retry");
+    assert.equal(unmeasured.recovery.source.remedy, "measure_source_id_and_retry");
     assert.equal(unmeasured.recovery.source.evaluation, evaluated.evaluation.evaluation);
-    assert.match(unmeasured.remedy, /fresh source measurement/u);
+    assert.match(unmeasured.remedy, /fresh complete source_id measurement/u);
     const unmeasuredShow = receipt(await client.call("show", { work_ref: ref }));
     assert.equal(unmeasuredShow.acceptance_evaluation.source_recovery, undefined);
-    assert.ok(unmeasured.reminders.some((line) => line.includes("retry done with it (source_fingerprint)")), JSON.stringify(unmeasured.reminders));
-    const changed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_fingerprint: "sha256:tree-b" }));
+    assert.ok(unmeasured.reminders.some((line) => line.includes("retry done with source_id")), JSON.stringify(unmeasured.reminders));
+    const changed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_id: treeB }));
     assert.equal(changed.code, "acceptance_evaluation_stale");
     assert.equal(changed.recovery.source.mismatch, "completion_fingerprint_mismatch");
     assert.equal(changed.recovery.source.remedy, "evaluate_current_source");
-    assert.equal(changed.recovery.source.expected_fingerprint, "sha256:tree-a");
-    assert.equal(changed.recovery.source.presented_fingerprint, "sha256:tree-b");
     assert.match(changed.remedy, /new acceptance evaluation/u);
     assert.match(changed.remedy, /copying.*insufficient/u);
     assert.ok(changed.reminders.some((line) => line.includes("(source)")), JSON.stringify(changed.reminders));
     assert.equal(receipt(await client.call("show", { work_ref: ref })).status.work.lifecycle, "open");
-    const sealed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_fingerprint: "sha256:tree-a" }));
+    const sealed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_id: treeA }));
     assert.equal(sealed.work.lifecycle, "completed");
     assert.equal(sealed.acceptance.provenance, "evaluated");
     assert.equal(sealed.acceptance.mode, "same_session");
@@ -275,7 +277,7 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.equal(completedShow.acceptance.evaluation, evaluated.evaluation.evaluation);
 
     // CLI: an independent peer evaluates over the CLI; the holder's done
-    // refuses without a fingerprint and seals with --source-fingerprint.
+    // refuses without a measurement and seals with --source-id-file.
     const cliRef = cliJson(engramHome, holder, "add", "Evaluated over CLI", "--accept", "the build passes").work.short_ref;
     cliJson(engramHome, holder, "claim", cliRef);
     cliJson(engramHome, holder, "gate", "cargo-test", "--work-ref", cliRef);
@@ -287,15 +289,15 @@ test("evaluated acceptance policy over the real transports: locators, source fre
       "--acceptance-basis", String(cliShown.acceptance_basis),
       "--evidence-basis", String(cliShown.evidence_basis),
       "--verdict", "1=pass:asserted", "--rationale", "1=the gate passed",
-      "--evidence", `1=${cliGate.locator}`, "--source-fingerprint", "sha256:tree-c");
+      "--evidence", `1=${cliGate.locator}`, "--source-id-file", treeAFile);
     assert.equal(cliEvaluated.evaluation.passed, 1);
     const cliRefused = cliWord(engramHome, holder, "done", cliRef, "Delivered", "--json");
     assert.equal(cliRefused.status, 2, cliRefused.stderr);
     assert.equal(JSON.parse(cliRefused.stdout).code, "acceptance_evaluation_stale");
     assert.equal(JSON.parse(cliRefused.stdout).recovery.source.mismatch, "completion_measurement_missing");
-    assert.equal(JSON.parse(cliRefused.stdout).recovery.source.remedy, "measure_source_and_retry");
+    assert.equal(JSON.parse(cliRefused.stdout).recovery.source.remedy, "measure_source_id_and_retry");
     runRecovery(JSON.parse(cliRefused.stdout), "acceptance_evaluation_stale");
-    const cliSealed = cliJson(engramHome, holder, "done", cliRef, "Delivered", "--source-fingerprint", "sha256:tree-c");
+    const cliSealed = cliJson(engramHome, holder, "done", cliRef, "Delivered", "--source-id-file", treeAFile);
     assert.equal(cliSealed.work.lifecycle, "completed");
     assert.equal(cliSealed.acceptance.provenance, "evaluated");
     assert.equal(cliSealed.acceptance.mode, "independent_session");

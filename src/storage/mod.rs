@@ -1290,14 +1290,6 @@ pub enum StoreError {
     InvalidHostContext(String),
     #[error("named-root binding refused: {0}")]
     NamedRootBindingRefused(String),
-    /// New host-supplied source text (a workspace id or source revision)
-    /// holds a control character or a bidirectional formatting control.
-    /// The whole request is refused and nothing is recorded; the field is
-    /// named, never echoed.
-    #[error(
-        "host source text refused: {field} holds a control or bidirectional formatting character"
-    )]
-    SourceBasisTextRefused { field: String },
     /// The requested run and claim are unknown or do not belong together;
     /// never a named-root state.
     #[error("named-root read refused: {0}")]
@@ -2178,6 +2170,6 @@ pub struct SqliteStore {
 #[cfg(test)]
 pub(crate) use work::{
     AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
-    admission_transport_fixture, long_declared_source, long_presented_source,
-    sealed_source_transport_fixture, source_recovery_transport_fixture,
+    admission_transport_fixture, long_declared_source, sealed_source_transport_fixture,
+    source_recovery_transport_fixture,
 };

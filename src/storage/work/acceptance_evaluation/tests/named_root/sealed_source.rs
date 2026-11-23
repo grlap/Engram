@@ -208,7 +208,7 @@ fn prepared_with_prior_root(
         &claim,
         "runner",
         &fixture.evidence,
-        Some("A"),
+        None,
         "done",
         50,
     )

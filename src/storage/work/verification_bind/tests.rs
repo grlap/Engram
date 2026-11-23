@@ -768,12 +768,12 @@ fn a_bound_check_keeps_the_same_source_exception_and_supports_a_cited_pass() {
             25,
         );
         store
-            .record_acceptance_evaluation(&before, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&before, &DevelopmentNoopRedactor)
             .expect("the evaluation records");
         let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
         let receipt = store_bound(&mut store, &input, 30);
         let stale = store
-            .acceptance_evaluation_status(b.work.work_id, None)
+            .acceptance_evaluation_status(b.work.work_id)
             .expect("status")
             .expect("an evaluation")
             .stale;
@@ -802,7 +802,7 @@ fn a_bound_check_keeps_the_same_source_exception_and_supports_a_cited_pass() {
             40,
         );
         store
-            .record_acceptance_evaluation(&cited, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&cited, &DevelopmentNoopRedactor)
             .expect("a pass citing the bound record records");
     }
 }

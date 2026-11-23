@@ -163,12 +163,7 @@ fn evaluation(
     }
 }
 
-fn complete(
-    f: &mut Fixture,
-    evidence: &ObjectId,
-    input: &str,
-    key: &str,
-) -> Result<CompletionSeal, StoreError> {
+fn complete(f: &mut Fixture, evidence: &ObjectId, key: &str) -> Result<CompletionSeal, StoreError> {
     let work = f
         .store
         .get_work_item(f.request.association.binding.work_id)
@@ -191,7 +186,6 @@ fn complete(
     {
         request.acceptance.clear();
     }
-    request.source_fingerprint = Some(input.into());
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
 }
 
@@ -390,7 +384,7 @@ fn remote_verification_a_later_live_change_moves_the_evaluation_basis() {
         assert!(
             matches!(
                 f.store
-                    .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor),
+                    .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor),
                 Err(StoreError::AcceptanceEvaluationBasisMoved {
                     moved: crate::storage::EvaluationBasisMove::SourceChanged,
                     ..
@@ -419,7 +413,7 @@ fn remote_verification_cut_guards_hold_around_a_live_change() {
         let before = f.snapshot();
         assert!(
             f.store
-                .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+                .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
                 .is_err(),
             "{kind:?}: a citation beyond the cut"
         );
@@ -427,7 +421,7 @@ fn remote_verification_cut_guards_hold_around_a_live_change() {
         // The run really finished after the change, so at the head it counts.
         let input = evaluation(&f, id, &revision);
         f.store
-            .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
             .unwrap();
     }
 }
@@ -467,13 +461,13 @@ fn remote_verification_cross_host_order_assumes_comparable_clocks() {
     wrong.recorded_at = at(70);
     assert!(
         f.store
-            .record_acceptance_evaluation(&wrong, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&wrong, &DevelopmentNoopRedactor)
             .is_err()
     );
     let mut right = evaluation(&f, id, &revision);
     right.recorded_at = at(70);
     f.store
-        .record_acceptance_evaluation(&right, &DevelopmentNoopRedactor)
+        .seed_historical_acceptance_evaluation(&right, &DevelopmentNoopRedactor)
         .unwrap();
 
     // A clock running behind only withholds: this run really followed the change.
@@ -515,10 +509,22 @@ fn remote_verification_admits_evaluation_and_completion_with_no_sighting() {
                 let revision = f.request.association.intended_use.revision();
                 let input = evaluation(&f, id, &revision);
                 f.store
-                    .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+                    .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
                     .unwrap();
-                let sealed = complete(&mut f, id, &revision, "complete").unwrap();
-                assert!(sealed.acceptance[0].satisfied);
+                let completed = complete(&mut f, id, "complete");
+                if revision.starts_with("git-tree:") {
+                    // Nothing can present a stored tree declaration.
+                    let Err(StoreError::WorkCompletionRecoveryRequired { context, .. }) = completed
+                    else {
+                        panic!("a stored tree declaration cannot complete");
+                    };
+                    assert_eq!(
+                        context.source.unwrap().remedy,
+                        crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource
+                    );
+                } else {
+                    assert!(completed.unwrap().acceptance[0].satisfied);
+                }
                 assert_eq!(f.count("execution_observation"), 0);
                 assert_eq!(f.count("turn_grant"), 0);
                 f.assert_healthy();
@@ -566,7 +572,7 @@ fn remote_verification_a_different_judged_input_refuses_without_effects() {
         let before = f.snapshot();
         assert!(
             f.store
-                .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+                .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
                 .is_err()
         );
         assert_eq!(f.snapshot(), before);
@@ -654,7 +660,7 @@ fn remote_verification_cut_and_later_mutation_guards_hold() {
     let before = f.snapshot();
     assert!(
         f.store
-            .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
             .is_err()
     );
     assert_eq!(f.snapshot(), before);
@@ -669,7 +675,7 @@ fn remote_verification_cut_and_later_mutation_guards_hold() {
     let before = f.snapshot();
     assert!(matches!(
         f.store
-            .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor),
+            .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor),
         Err(StoreError::AcceptanceEvaluationBasisMoved {
             moved: crate::storage::EvaluationBasisMove::SourceChanged,
             ..
@@ -694,7 +700,7 @@ fn remote_verification_committed_input_accepts_clean_local_root_at_expected_comm
             let input = evaluation(&f, check, &revision);
             let recorded = f
                 .store
-                .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+                .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
                 .unwrap();
             assert_eq!(
                 recorded
@@ -705,7 +711,7 @@ fn remote_verification_committed_input_accepts_clean_local_root_at_expected_comm
                     .verification,
                 *check
             );
-            let seal = complete(&mut f, check, &revision, "current-remote-done").unwrap();
+            let seal = complete(&mut f, check, "current-remote-done").unwrap();
             assert!(seal.acceptance[0].satisfied);
             assert_eq!(
                 f.store.completion_seal_evaluation(&seal).unwrap(),
@@ -722,21 +728,29 @@ fn remote_verification_focused_committed_pass_is_cited_by_evaluation_and_complet
         for fresh in [false, true] {
             let mut f = prepared(bound, fresh);
             let _source = real_git_root(&mut f, committed(RemoteVerificationPurpose::Verification));
+            let source = crate::source::inspect(
+                std::path::Path::new(&f.request.association.root.workspace_id),
+                crate::source::MAX_BUDGET,
+            )
+            .source_id
+            .unwrap();
+            f.request.completion.input = RemoteRunInput::SourceId(Box::new(
+                RemoteSourceIdInput::new(Some(source.clone()), Some(source.clone())),
+            ));
             f.request.completion.mode = RemoteRunMode::Focused;
             let receipt = f.record().unwrap();
             assert!(receipt.qualification.credited, "{receipt:?}");
             let check = &receipt.verifications[0].record_id;
             let revision = f.request.association.intended_use.revision();
             // An independent observed evaluation cites the focused remote test.
+            let mut input = evaluation(&f, check, &revision);
+            input.source_basis = AcceptanceSourceBasis::from_declaration(Some(source));
             let recorded = f
                 .store
-                .record_acceptance_evaluation(
-                    &evaluation(&f, check, &revision),
-                    &DevelopmentNoopRedactor,
-                )
+                .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
                 .unwrap();
             assert!(recorded.record.all_pass());
-            let seal = complete(&mut f, check, &revision, "focused-remote-done").unwrap();
+            let seal = complete(&mut f, check, "focused-remote-done").unwrap();
             assert!(seal.acceptance[0].satisfied);
             assert!(seal.evidence.contains(check));
             assert_eq!(f.count("execution_observation"), 0);
@@ -780,7 +794,7 @@ fn remote_verification_committed_input_uses_git_after_reports_and_real_changes()
                 let mut baseline = evaluation(&f, check, &revision);
                 baseline.recorded_at = at(10);
                 f.store
-                    .record_acceptance_evaluation(&baseline, &DevelopmentNoopRedactor)
+                    .seed_historical_acceptance_evaluation(&baseline, &DevelopmentNoopRedactor)
                     .unwrap();
             }
             match state {
@@ -817,7 +831,7 @@ fn remote_verification_committed_input_uses_git_after_reports_and_real_changes()
                 input.attempt_key = Some("after-endpoint-change".into());
                 let result = f
                     .store
-                    .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor);
+                    .seed_historical_acceptance_evaluation(&input, &DevelopmentNoopRedactor);
                 if let Some(reason) = refusal {
                     let error = result.unwrap_err();
                     assert!(
@@ -829,7 +843,7 @@ fn remote_verification_committed_input_uses_git_after_reports_and_real_changes()
                     result.unwrap_or_else(|error| panic!("{state}: {error}"));
                 }
             }
-            let result = complete(&mut f, check, &revision, "remote-endpoint-done");
+            let result = complete(&mut f, check, "remote-endpoint-done");
             if let Some(reason) = refusal {
                 let error = result.unwrap_err();
                 assert!(

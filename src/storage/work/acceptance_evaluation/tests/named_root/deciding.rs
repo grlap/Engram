@@ -8,7 +8,7 @@ fn status_observation(
     work: &WorkItem,
 ) -> Option<crate::storage::DecidingObservation> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation")
         .stale_observation

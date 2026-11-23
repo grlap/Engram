@@ -106,8 +106,9 @@ fn task_sync_notes_exclude_each_stored_evidence_family_and_path_form() {
         )
         .unwrap();
     let work = source.get_work_item(work.work_id).unwrap();
+    // Export must also exclude an evaluation stored before legacy input retirement.
     source
-        .record_acceptance_evaluation(
+        .seed_historical_acceptance_evaluation(
             &RecordAcceptanceEvaluationRequest {
                 supersedes: None,
                 project_id: work.project_id.clone(),

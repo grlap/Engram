@@ -347,7 +347,7 @@ impl LocalWorkService {
                 && store.acceptance_evaluation_policy()?.is_evaluated()
             {
                 store
-                    .acceptance_evaluation_status(item.work_id, None)?
+                    .acceptance_evaluation_status(item.work_id)?
                     .map(|status| WorkAuthoredEvaluation {
                         hash: status.evaluation.as_str().to_owned(),
                         mode: status.record.mode.word(),

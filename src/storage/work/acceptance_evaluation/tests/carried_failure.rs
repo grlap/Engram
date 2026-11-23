@@ -66,7 +66,7 @@ fn criteria_no_revision_explains_are_a_damaged_projection() {
         )
         .expect("lose the revision's run-feed entry");
     assert_eq!(removed, 1);
-    let status = store.acceptance_evaluation_status(work.work_id, None);
+    let status = store.acceptance_evaluation_status(work.work_id);
     assert!(
         matches!(
             &status,
@@ -136,7 +136,7 @@ fn a_host_check_after_the_revision_does_not_end_the_carry() {
         20,
     );
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status")
         .expect("newest evaluation");
     assert_eq!(status.evaluation, failed.evaluation);
@@ -266,7 +266,7 @@ fn a_reorder_after_a_failed_evaluation_carries_the_failure() {
     assert_eq!(reordered.revision, typed.revision + 1);
     assert_eq!(reordered.acceptance, vec!["Alpha holds", "Zeta holds"]);
     let carried = store
-        .acceptance_evaluation_status(reordered.work_id, None)
+        .acceptance_evaluation_status(reordered.work_id)
         .expect("status")
         .expect("newest evaluation")
         .carried_failure

@@ -204,7 +204,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     .expect("the evaluator judged the revision the host later reported");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((recorded.evaluation, None))
@@ -222,7 +222,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     );
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.stale),
         Some(None)
@@ -251,7 +251,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     .expect("the re-read resubmission records");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((resubmitted.evaluation, None))
@@ -262,7 +262,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     host.install_checks(store, true, None, 30);
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.stale),
         Some(Some(AcceptanceStaleReason::Mutation))
@@ -316,7 +316,7 @@ fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change()
     host.install_checks(store, true, None, 36);
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((recorded.evaluation, None))
@@ -704,7 +704,7 @@ fn freshness(
     work: &WorkItem,
 ) -> Option<(ObjectId, Option<AcceptanceStaleReason>)> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .map(|status| (status.evaluation, status.stale))
 }
@@ -1443,7 +1443,7 @@ fn a_flagged_move_and_revert_after_the_cut_leave_the_evaluation_void() {
             host.install_source_records(store, &[(true, Some("content-revision-a"))], 35);
         }
         let status = store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .expect("an evaluation");
         assert_eq!(status.evaluation, recorded.evaluation);

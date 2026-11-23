@@ -660,8 +660,8 @@ enum WorkCommand {
         acceptance_basis: i64,
         /// The run-feed position the evaluator read through, as printed by show.
         /// A host check after it asks for a resubmission, unless it passed on
-        /// the revision given as --source-fingerprint; a source change after
-        /// it voids the evaluation, unless it is to that revision.
+        /// the identity given with --source-id-file; a source change after
+        /// it voids the evaluation, unless it is to that identity.
         #[arg(long, value_name = "POSITION")]
         evidence_basis: i64,
         /// POSITION=VERDICT[:BASIS]; repeatable, one per criterion. VERDICT is pass, fail,
@@ -695,11 +695,8 @@ enum WorkCommand {
         /// Explicit attempt key; identical resends replay, contradicting content refuses.
         #[arg(long, value_name = "KEY")]
         attempt: Option<String>,
-        /// Host-measured source fingerprint at evaluation time.
-        #[arg(long, value_name = "FINGERPRINT", conflicts_with = "source_id_file")]
-        source_fingerprint: Option<String>,
         /// Read one complete host-captured `SourceId` from an immutable attempt file.
-        #[arg(long, value_name = "PATH", conflicts_with = "source_fingerprint")]
+        #[arg(long, value_name = "PATH")]
         source_id_file: Option<std::path::PathBuf>,
         /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
         #[arg(long, value_name = "PROVIDER/MODEL")]
@@ -807,11 +804,8 @@ enum WorkCommand {
         /// Shared acceptance note; does not link evidence to individual criteria.
         #[arg(long)]
         note: Option<String>,
-        /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
-        #[arg(long, value_name = "FINGERPRINT", conflicts_with = "source_id_file")]
-        source_fingerprint: Option<String>,
         /// Read one complete host-captured `SourceId` from an immutable attempt file.
-        #[arg(long, value_name = "PATH", conflicts_with = "source_fingerprint")]
+        #[arg(long, value_name = "PATH")]
         source_id_file: Option<std::path::PathBuf>,
         /// Record where the work landed: the pushed commit (with --remote, --branch and --pushed-at).
         #[arg(long, value_name = "COMMIT", requires_all = ["remote", "branch", "pushed_at"])]
@@ -1902,7 +1896,6 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             rationales,
             evidence,
             attempt,
-            source_fingerprint,
             source_id_file,
             model,
             execution_identity,
@@ -1919,7 +1912,6 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                         evidence_basis,
                         verdicts,
                         attempt,
-                        source_fingerprint,
                         source_id,
                         model,
                         execution_identity,
@@ -2004,7 +1996,6 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             note,
             links,
             link_basis,
-            source_fingerprint,
             source_id_file,
             landed,
             remote,
@@ -2058,7 +2049,6 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                         work_ref,
                         summary,
                         note,
-                        source_fingerprint,
                         source_id,
                         landing,
                     },

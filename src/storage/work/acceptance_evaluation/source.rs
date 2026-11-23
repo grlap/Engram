@@ -786,13 +786,13 @@ impl StaleCitation {
             }
             (StaleCause::RegisteredGit { checked, naming }, _) => match naming {
                 Some(mismatch) => format!(
-                    "criterion {criterion} selected registered verification {citation} ran on {}, but {}; run a check under the current named root, then evaluate again declaring that check's exact git-commit:<full commit> or git-tree:<full tree> input with --source-fingerprint",
+                    "criterion {criterion} selected registered verification {citation} ran on {}, but {}; run a check under the current named root, then evaluate again declaring that check's complete source with --source-id-file",
                     checked.identity,
                     mismatch.describe(),
                 ),
                 None => format!(
-                    "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}; declare that exact Git input with --source-fingerprint {} if it is the input being judged, otherwise run a check on the intended input and cite it with its exact Git declaration",
-                    checked.identity, checked.workspace_id, checked.identity,
+                    "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}; run a check on the intended input, then evaluate again citing it and declaring its complete source with --source-id-file",
+                    checked.identity, checked.workspace_id,
                 ),
             },
             (StaleCause::Applicability(mismatch), _) => format!(
@@ -865,28 +865,6 @@ impl StaleCitation {
 /// waived is never matched to the run's latest change), so record admission
 /// (R5) applies this rule, and completion applies it again to the record it
 /// consumes, which covers a record admitted before the rule existed.
-pub(super) fn stale_bound_citation<'a>(
-    connection: &Connection,
-    item: &WorkItem,
-    run_id: WorkRunId,
-    judged: Option<&JudgedSource>,
-    through: i64,
-    passes: impl IntoIterator<Item = (usize, &'a [ObjectId], bool)>,
-    root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<StaleCitation>, StoreError> {
-    stale_bound_citation_live(
-        connection,
-        item,
-        run_id,
-        judged,
-        through,
-        passes,
-        root,
-        &super::LiveCurrency::default(),
-        false,
-    )
-}
-
 #[allow(
     clippy::too_many_arguments,
     reason = "live currency augments the existing citation context"
@@ -899,7 +877,7 @@ pub(super) fn stale_bound_citation_live<'a>(
     through: i64,
     passes: impl IntoIterator<Item = (usize, &'a [ObjectId], bool)>,
     root: Option<&NamedEvaluationRoot>,
-    currency: &super::LiveCurrency,
+    live_check: impl Fn(&ObjectId) -> Result<bool, StoreError>,
     recorded_current: bool,
 ) -> Result<Option<StaleCitation>, StoreError> {
     for (criterion, citations, observed) in passes {
@@ -991,11 +969,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                 };
                 let cause = match cause {
                     Some(cause) => Some(cause),
-                    None if recorded_current
-                        || (currency.active() && currency.check_on(connection, citation)?) =>
-                    {
-                        None
-                    }
+                    None if recorded_current || live_check(citation)? => None,
                     None => moved_after_check(
                         connection,
                         run_id,

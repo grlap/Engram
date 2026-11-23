@@ -16,13 +16,13 @@ identity. A commit id is not tree identity.
 `execution_observe` records source sightings and observed checks; it does not
 mint native verification. `verification_record` creates native evidence from
 registered terminal checks. Its current request has no `applicability` member,
-and the evidence it creates has no applicability restriction. A `commit` input
-has no tree field in its source basis, even for a clean checkout. A new
-`staged_tree` input is refused; on evidence an earlier build stored from one,
-`source_basis.git_tree` holds its declared `tree`. Eligibility requires
-`post_run.clean_before` and `clean_after`, a clean input outcome and no dirty
-paths. These describe the registered input; they do not require porcelain status
-to be empty.
+and the evidence it creates has no applicability restriction. A new `commit` or
+`staged_tree` input is refused. On evidence an earlier build stored from a
+`commit` input, the source basis has no tree field, even for a clean checkout;
+from a `staged_tree` input, `source_basis.git_tree` holds its declared `tree`.
+Those stored inputs were eligible only with `post_run.clean_before` and
+`clean_after`, a clean input outcome and no dirty paths. These describe the
+registered input; they do not require porcelain status to be empty.
 
 Historical restricted evidence retains its stored restriction and canonical
 bytes; see [records from earlier builds](execution-observability.md#records-from-earlier-builds).

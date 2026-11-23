@@ -181,11 +181,19 @@ pub(super) fn fixture_in(
 }
 
 impl Fixture {
+    /// The commit and fingerprint input is history: only the seed writes one
+    /// now, so its readers stay covered without keeping the retired ingress.
     pub(super) fn record_at(
         &mut self,
         second: i64,
     ) -> Result<RemoteVerificationReceipt, StoreError> {
-        self.store.record_remote_verification(
+        let record = if matches!(self.request.completion.input, RemoteRunInput::Legacy(_)) {
+            SqliteStore::seed_historical_remote_verification
+        } else {
+            SqliteStore::record_remote_verification
+        };
+        record(
+            &mut self.store,
             &self.project,
             &self.session,
             &self.connection,
@@ -845,9 +853,19 @@ fn remote_verification_exact_retry_replays_after_scope_moves_and_changed_intent_
         .unwrap();
     let snapshot = f.snapshot();
     assert_eq!(
-        f.record_at(12).unwrap(),
+        f.store
+            .record_remote_verification(
+                &f.project,
+                &f.session,
+                &f.connection,
+                crate::storage::HostSessionAuthority::Work,
+                &actor("runner"),
+                &f.request,
+                at(12),
+            )
+            .unwrap(),
         receipt,
-        "replay precedes authority"
+        "production replay precedes legacy input retirement and authority checks"
     );
     assert_eq!(f.snapshot(), snapshot);
 
@@ -951,7 +969,7 @@ fn remote_verification_a_later_holder_associates_the_existing_origin_under_its_o
     f.request.association.root.workspace_id = "workspace-later".into();
     let receipt = f
         .store
-        .record_remote_verification(
+        .seed_historical_remote_verification(
             &f.project,
             &later,
             &connection,
@@ -1017,6 +1035,10 @@ fn remote_verification_malformed_values_are_refused_without_effects() {
         ),
         (
             |r| {
+                // Only a new delivery is held to the test-ref lane, and only a
+                // shared-endpoint input is still new.
+                r.completion.input =
+                    RemoteRunInput::SourceId(Box::new(RemoteSourceIdInput::new(None, None)));
                 r.association.intended_use = RemoteVerificationUse::AuthorizedTestRef {
                     ref_name: "refs/heads/author-test/remote-work-0a1b2c3d".into(),
                     expected_tree: tested_tree(),
@@ -1038,6 +1060,29 @@ fn remote_verification_malformed_values_are_refused_without_effects() {
         }
         assert_eq!(f.snapshot(), before, "{expected}");
     }
+}
+
+#[test]
+fn remote_verification_new_commit_and_fingerprint_input_is_refused_without_effects() {
+    let mut f = fixture();
+    let before = f.snapshot();
+    let error = f
+        .store
+        .record_remote_verification(
+            &f.project,
+            &f.session,
+            &f.connection,
+            crate::storage::HostSessionAuthority::Work,
+            &actor("runner"),
+            &f.request,
+            at(10),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&error, StoreError::RemoteVerificationInvalid { field, .. } if field == "input"),
+        "{error}"
+    );
+    assert_eq!(f.snapshot(), before);
 }
 
 #[test]

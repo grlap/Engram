@@ -72,7 +72,6 @@ fn finish(verbs: &AgentVerbs, reference: &str, count: usize, evaluated: bool) {
                         })
                         .collect(),
                     attempt: None,
-                    source_fingerprint: None,
                     source_id: None,
                     model: None,
                     execution_identity: None,

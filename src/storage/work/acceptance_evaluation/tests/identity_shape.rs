@@ -34,7 +34,7 @@ fn malform(
 /// The newest record status reads, and why it is stale.
 fn newest(store: &SqliteStore, work: &WorkItem) -> (ObjectId, Option<AcceptanceStaleReason>) {
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("newest evaluation");
     (status.evaluation, status.stale)
@@ -134,8 +134,7 @@ fn completion_does_not_compare_source_formats_when_freshness_is_optional() {
         pass_judgment(&note),
         9,
     );
-    evaluation.source_basis =
-        AcceptanceSourceBasis::from_declaration(None, Some(legacy.clone())).unwrap();
+    evaluation.source_basis = AcceptanceSourceBasis::from_declaration(Some(legacy.clone()));
     let receipt = record(store, &evaluation).unwrap();
     let record: AcceptanceEvaluation = store.get(&receipt.evaluation).unwrap().unwrap();
     let current = SourceId {
@@ -159,7 +158,7 @@ fn completion_does_not_compare_source_formats_when_freshness_is_optional() {
             &policy,
             &receipt.evaluation,
             &record,
-            super::super::SourceCheck::AtSharedCompletion(&current),
+            super::super::SourceCheck::AtCompletion(Some(&current)),
             None,
             &super::super::LiveCurrency::default(),
         )
@@ -536,7 +535,8 @@ fn a_missing_session_reads_after_earlier_reasons_and_before_later_ones() {
     );
     // Later: a source fingerprint that does not match.
     let fresh_source = policy(&[Mode::SameSession], MechanicalBasis::Asserted, true);
-    let presented = SourceCheck::AtCompletion(Some("another-revision"));
+    let elsewhere = measured_elsewhere();
+    let presented = SourceCheck::AtCompletion(Some(&elsewhere));
     assert_eq!(
         assess(
             &work,
@@ -548,13 +548,7 @@ fn a_missing_session_reads_after_earlier_reasons_and_before_later_ones() {
         Some(AcceptanceStaleReason::Source)
     );
     assert_eq!(
-        assess(
-            &work,
-            held.run_id,
-            &fresh_source,
-            &missing,
-            SourceCheck::AtCompletion(Some("another-revision"))
-        ),
+        assess(&work, held.run_id, &fresh_source, &missing, presented),
         Some(AcceptanceStaleReason::Identity)
     );
 }
@@ -1072,7 +1066,7 @@ mod shared_source {
             ));
             let status = f
                 .store
-                .acceptance_evaluation_status(f.work.work_id, None)
+                .acceptance_evaluation_status(f.work.work_id)
                 .unwrap()
                 .unwrap();
             assert!(

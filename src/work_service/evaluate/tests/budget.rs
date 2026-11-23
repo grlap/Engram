@@ -163,7 +163,6 @@ fn many_short_criteria_return_a_bounded_result_with_exact_omissions() {
                 .resolve_work_ref(&project, &work_ref)
                 .expect("resolve")
                 .work_id,
-            None,
         )
         .expect("status")
         .expect("newest evaluation");
@@ -186,8 +185,6 @@ fn a_large_blocking_criterion_and_a_large_rationale_still_fit() {
     let result = service
         .work_evaluate_on(
             &WorkEvaluateInput {
-                source_fingerprint: Some("f".repeat(256)),
-
                 source_id: None,
                 model: Some(format!(
                     "{}/{}@{}",
@@ -235,10 +232,6 @@ fn a_large_blocking_criterion_and_a_large_rationale_still_fit() {
         blocking.criterion.len()
     );
     assert!(blocking.criterion.starts_with("a: the build passes"));
-    assert_eq!(
-        projection.source_fingerprint.as_deref().map(str::len),
-        Some(256)
-    );
     // The projected key is the recorded one: explicit keys are scoped to the
     // item.
     assert!(

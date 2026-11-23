@@ -31,8 +31,8 @@ model itself.
 ## Complete shared source identities
 
 New host evaluation and completion declarations can carry the existing complete
-`source_id`. CLI `evaluate` and `done` read it with `--source-id-file PATH`,
-exclusive with `--source-fingerprint`; MCP and service inputs use `source_id`.
+`source_id`. CLI `evaluate` and `done` read it with `--source-id-file PATH`; MCP and service
+inputs use `source_id`.
 The file contains one UTF-8 JSON SourceId, at most 1 MiB, read once from a bounded
 open handle. The host publishes a unique immutable file for its saved attempt,
 keeps it through uncertain submission and concurrent retries, and removes it only
@@ -103,28 +103,40 @@ its immutable file; this imposes no new core mode restriction.
 
 A native, item-bound check from the
 [registered verification producer](execution-observability.md#registered-verification)
-names an exact `git-commit:<full commit>`. From this producer, a
-`git-tree:<full tree>` check exists only on a record an earlier build stored from
-a staged input, whose base commit is provenance; a legacy remote
-`authorized_test_ref` delivery still names a tree. Equal trees do not make different commits interchangeable.
+names its complete `source_id`. Commit and staged inputs are refused for new
+checks. Records an earlier build stored may still name an exact
+`git-commit:<full commit>` or `git-tree:<full tree>`; a staged input's base commit
+is provenance. Stored legacy remote `authorized_test_ref` deliveries also name
+a tree. Equal trees do not make different commits interchangeable.
 A revision string alone supplies no registered provenance.
 
-For a new passing evaluation on a run carrying registered committed-input evidence,
-Engram reads the named root itself, outside its SQLite write transaction.
-The evaluator must declare a commit. A genuine passed registered check at the
-evaluated cut must have tested that commit, and Git must report the root clean
-at exactly that commit now. This includes prose-only judgments citing notes.
-Completion consumes the evaluation with another live Git read. A test-bound
+For a new passing evaluation on a run carrying registered evidence, Engram reads
+the named root itself, outside its SQLite write transaction. The evaluator must
+declare a complete `source_id`. A genuine passed registered check at the evaluated
+cut must have tested that source, and the root must measure as that source now.
+This includes prose-only judgments citing notes. A run holding only committed-input
+checks needs a check with a `source_id` input first. Completion consumes the
+evaluation with another live read; a stored evaluation that declared a commit keeps
+that read. A test-bound
 criterion, including a direct registered-check citation, also takes this path
 when evaluations are off. Unevaluated completion without a test-bound criterion
 makes no new Git read or refusal. A completion declaration, when supplied,
 must match; it never replaces Engram's measurement.
 
 Fail, insufficient-evidence and needs-human verdicts remain recordable without a
-current passing check. They earn no passing decision proof or completion credit.
-An explicit registered `git-tree:` declaration keeps the staged lane even if the
-same run contains an earlier commit check; missing or content declarations do not
-fall back. Read-only status and history do not read Git and disclose that current
+current passing check. If the run's retained source is a legacy revision,
+every new evaluation must explicitly declare a complete `source_id`; an omitted
+declaration refuses without recording, including for these non-pass verdicts.
+They earn no passing decision proof or completion credit. At the storage API,
+exact retries of an evaluation or completion already stored by an earlier build
+replay its original receipt, including after completion; the retirement applies
+to new records. The CLI, MCP and service front doors refuse the retired
+`source_fingerprint` argument before replay. Stored evaluations and their receipts
+remain readable through `show` and the evaluations window; completed seals remain
+readable through `show`.
+A stored `git-tree:` declaration keeps the staged lane even if the same run
+contains an earlier commit check, and at completion it is evaluated afresh; missing
+or content declarations do not fall back. Read-only status and history do not read Git and disclose that current
 currency is checked at done.
 
 Accounted turn reports remain history in this committed lane. Their fingerprints,
@@ -251,7 +263,7 @@ existing immutable authority/epoch/compare-and-swap path with a new
 acceptance_evaluation {
   allowed_modes: [same_session | sub_agent | independent_session]  # empty = self-asserted path
   mechanical_basis: asserted | observed     # minimum evidence for a pass on an observed-type basis
-  require_source_freshness: bool            # completion must present a matching source fingerprint
+  require_source_freshness: bool            # completion must verify the evaluated source is current
 }
 ```
 
@@ -722,23 +734,26 @@ stale reason named.
   is fresh only while the root's newest sighting, through the run feed's head,
   is at that revision (R3b). Registered checks instead follow
   [Registered Git-input evidence](#registered-git-input-evidence), where the
-  exact `git-commit:` or `git-tree:` declaration replaces this sighting rule.
-- **F4 source declaration.** Shared declarations compare the completion
-  `source_id` with the complete evaluated identity; a legacy declaration compares
-  the legacy fingerprint. When policy `require_source_freshness` is on, the
-  completion attempt presents a `source_fingerprint` measured by the host at
-  completion time (`done --source-fingerprint F`) that equals
-  `source_basis.fingerprint`; a missing or different fingerprint refuses with
-  reason `source`, and a record without a source basis can never match. A
-  read (`show`, `next`) measures nothing: it reports the recorded fingerprint
-  as checked when `done` presents one, rather than calling the record stale.
+  complete `source_id` declaration replaces this sighting rule for new
+  evaluations. Stored `git-commit:` decisions retain their live Git read;
+  stored `git-tree:` evaluations require a fresh evaluation at completion.
+- **F4 source declaration.** A completion's `source_id` is compared with the
+  complete evaluated identity. When policy `require_source_freshness` is on, the
+  completion attempt presents a `source_id` measured by the host at completion
+  time (`done --source-id-file PATH`) that equals the evaluated identity; a
+  missing or different identity refuses with reason `source`, and a record
+  without a source basis can never match. An evaluation stored with a fingerprint
+  can't be presented again: it refuses with reason `source` and is evaluated
+  afresh, unless it holds a registered input decision, which reads Git at `done`.
+  A read (`show`, `next`) measures nothing: it reports the recorded source as
+  checked at `done`, rather than calling the record stale.
   Equality of two caller-supplied strings is asserted freshness, not
   independent verification; under the host channel the observation's source
   basis is authoritative.
-  A new registered committed-input decision instead reads Git at `done`;
+  A stored registered committed-input decision instead reads Git at `done`;
   it does not require a caller-supplied fingerprint (see
   [Registered Git-input evidence](#registered-git-input-evidence)). Records
-  without that decision retain the fingerprint requirement above.
+  without that decision need an evaluation declaring the complete `source_id`.
 - **F5 policy.** Every effective requirement is re-read from the current
   policy at completion: the evaluation's mode is still allowed and, when the
   task selects a mode, still equals it; under `mechanical_basis: observed` no
@@ -914,10 +929,9 @@ read exposes the same assessment as `acceptance_evaluation.source_recovery`.
 The context names the minted evaluation id, run and evaluated cut. The deciding
 snapshot supplies the root binding, workspace, declared/reported revisions and
 expected/presented fingerprints only when available. Agent receipts preserve
-`expected_fingerprint` exactly: it is the newest evaluation's required
-`--source-fingerprint` comparison value, not evidence of a fresh measurement.
-This includes registered `git-commit:` and `git-tree:` declarations, which
-completion must match even when optional content-source freshness is off.
+`expected_fingerprint` exactly: it is the fingerprint the newest evaluation was
+stored with, including a registered `git-commit:` or `git-tree:` declaration, not
+evidence of a fresh measurement. No completion can present it now.
 Other descriptive source strings are bounded at 128 bytes with their stored
 length; raw errors keep them whole. CLI JSON keeps the locked-store phrase escaped without changing decoded
 fields. No durable record, schema or acceptance predicate changes.
@@ -926,7 +940,7 @@ fields. No durable record, schema or acceptance predicate changes.
 | --- | --- | --- |
 | `unconfirmed_declaration` | `end_turn_read_and_retry` | End the turn, read the same run again, then retry `done`. Matching host confirmation can preserve the judgment; the current snapshot makes no promise that another report will arrive. |
 | `unconfirmed_evaluated_revision` | `read_source_and_evaluate` | Read the named root's current source and request a new evaluation. This defensive assessment fallback does not make an unsighted root admissible. |
-| `completion_measurement_missing` | `measure_source_and_retry` | Obtain a fresh host measurement and present it at `done`; copying the evaluated fingerprint is not a measurement. |
+| `completion_measurement_missing` | `measure_source_id_and_retry`, or `evaluate_current_source` for a stored fingerprint | Obtain a fresh complete `source_id` measurement and present it at `done`; copying the evaluated identity is not a measurement. A stored fingerprint can't be presented, so request a new evaluation. |
 | `completion_fingerprint_mismatch` | `evaluate_current_source` | Evaluate the current source with its host-measured source basis, then retry; copying an earlier fingerprint is insufficient. |
 | `evaluation_source_basis_missing` | `evaluate_current_source` | Obtain a new evaluation with a host-measured source basis; a completion measurement alone cannot supply the missing evaluated basis. |
 
@@ -1065,7 +1079,7 @@ tests cite the row identifier in a nearby comment.
 | B18 | verdict list missing a criterion, duplicate position, or `acceptance_basis` behind the current revision | refuse at write with "re-read show" |
 | B19 | criteria revised after a passing evaluation | `done` refuses `AcceptanceEvaluationStale { revision }` |
 | B20 | a turn's admitted `source_changed` observation after the evaluation to another revision than the judged one, or the newest execution observation after it that carries a revision shows another revision than the judged one, even when it reports no change / an accounted change the host observed without admission after the evaluation, whatever revision it reports | `done` refuses `AcceptanceEvaluationStale { mutation }` / refuses `AcceptanceEvaluationStale { unadmitted_change }`, naming the observation and both revisions |
-| B21 | `require_source_freshness`; `done` without fingerprint / with a different fingerprint / with the same fingerprint | refuse (missing) / refuse `AcceptanceEvaluationStale { source }` / seal |
+| B21 | `require_source_freshness` without a live registered decision; `done` without `source_id` / with a different `source_id` / with the matching complete `source_id` | refuse (missing) / refuse `AcceptanceEvaluationStale { source }` / seal |
 | B22 | holder note, a gate the pass did not cite, and non-holder observation appended after a passing evaluation | still fresh; `done` seals |
 | B23 | new run generation after reopen (a recovery claim keeps the run and its evaluation) | evaluation of the old run is absent for the new run; `done` refuses `MissingAcceptanceEvaluation`; the same payload records a fresh object on the new run rather than replaying |
 | B24 | attempt identity: same key + same payload; same key + changed payload; new key + same payload; keyless identical resend; the same explicit key on another item | replay / refuse / new object / replay / a separate attempt |
@@ -1086,7 +1100,7 @@ tests cite the row identifier in a nearby comment.
 | B39 | `set-acceptance-evaluation` with an empty mode list and non-default other fields, from self-asserted and from an evaluated policy | normalizes to the self-asserted policy; requested, stored (bytes omit the field), and read policies agree; `changed: false` when already self-asserted |
 | B40 | `work_run_evidence.verification_result` disagrees with the canonical `VerificationEvidence` | `evaluate` refuses with an invalid-projection error; nothing is admitted from the column |
 | B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full ids / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
-| B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | without a registered committed-input decision, `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint`; a new registered decision instead reads Git at `done` and needs no caller fingerprint |
+| B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | without a registered committed-input decision, `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy asks for a new evaluation; a registered decision instead reads Git at `done` and needs no caller fingerprint |
 | B43 | self-asserted and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted` in `done` and `show` text with `provenance: self_asserted` in both `done` and completed `show` JSON / `acceptance: evaluated (same_session; recorded under asserted identity) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
 | B44 | `update --evaluation-mode same_session`, then `--clear-evaluation-mode`, then a clear on the already unpinned item | `show` history and a peer's `next` deltas carry two `revised` entries naming `evaluation mode` and one reading `no planning change` |
 | B45 | `add` with an empty or whitespace `--evaluation-mode` for a root and for a `--under` child; omitted; a valid word | refused before any effect (no item, project feed and focus unchanged) / created without a pin / created pinned |
@@ -1135,7 +1149,7 @@ counts in every contract file move with it.
 ```text
 engram work evaluate [REF] --mode MODE --acceptance-basis N --evidence-basis M \
   --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT \
-  [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] \
+  [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-id-file PATH] \
   [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION] \
   [--supersedes RECORD_ID]
 ```
@@ -1145,13 +1159,10 @@ revision from `show` (exactly as `done --link`), `--evidence-basis` the
 run-feed position `show` prints beside it under an evaluated policy, which the
 evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 --gates` or the full id of host-minted verification or environment evidence
-(R7). `--source-fingerprint F` declares the host's source revision the
-evaluator judged (F3); a value in another form, such as a Git commit id, voids
-the evaluation at the host's next sighting of the source, and a pass on a
-bound criterion declared that way is refused at once, since no check ran at
-that revision (R5). This describes legacy observation evidence; for registered
-checks use the exact `git-commit:` or `git-tree:` declaration described in
-[Registered Git-input evidence](#registered-git-input-evidence).
+(R7). `--source-id-file PATH` declares the complete source the evaluator judged
+(F3). A pass on a bound criterion needs a check of that source
+([Registered Git-input evidence](#registered-git-input-evidence)). Historical
+fingerprint evaluations remain readable; new declarations use `source_id`.
 `--supersedes RECORD_ID` names the carried failing
 evaluation (R11), by the id `show` prints in
 `acceptance_evaluation.carried_failure` (`evaluation`, `revised_by`,
@@ -1256,8 +1267,8 @@ none.
 The newest whole record still decides completion. `show` and `show --full`
 keep their newest-only reads.
 
-`done [--source-fingerprint F | --source-id-file PATH]` presents the
-host-measured source identity (F4), using a complete saved `source_id` file for a shared declaration; its refusals carry the causes above, and its
+`done [--source-id-file PATH]` presents the host-measured source identity (F4)
+from a complete saved `source_id` file; its refusals carry the causes above, and its
 success line and the completed item's `show` carry the provenance (completion
 enforcement, step 5). `add --evaluation-mode MODE` pins the mode from creation
 (roots and `--under` children alike), and `update` accepts `--evaluation-mode
@@ -1725,8 +1736,8 @@ causes above, the `evaluate` word on the CLI and MCP, and the `show` and
 including historical admitted evidence as stored data. Current producers use
 `execution_observe` for Execution Observability reports and eligible source
 sightings, and `verification_record` for registered host checks and their
-verification evidence. Registered checks may use an explicit `git-commit:` or
-`git-tree:` source declaration; completion presents the same declared source.
+verification evidence. A new evaluation declares a complete `source_id`;
+`git-commit:` and `git-tree:` declarations stay readable as stored.
 The removed turn-checkpoint protocol is not an evidence producer. There is no
 current environment-evidence producer. Historical execution and environment
 record append helpers compile only for test fixtures; they are not product
@@ -1738,7 +1749,7 @@ each landed tests-first: independence rechecked at consumption (F7,
 `identity`), citations resolved through the shared locator resolver (R7), the
 shared seal-to-evaluation binding check with its doctor label and the
 authority-to-policy comparison (B36, B37), completion provenance in `done`,
-`show`, and `next` (B43), `done --source-fingerprint` with source checks at
+`show`, and `next` (B43), `done --source-id-file` with source checks at
 `done` rather than at read (F4, B42), core evaluator-model bounds (R9),
 self-asserted policy normalization (B39), the exact attempt key in the preflight and
 item-scoped explicit keys with a run-scoped content identity (R8), canonical

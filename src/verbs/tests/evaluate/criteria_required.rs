@@ -8,8 +8,6 @@ use crate::domain::{ChildRequirement, CreateWorkRequest, WorkItemKind, WorkOrigi
 fn done(verbs: &AgentVerbs, work_ref: &str, second: i64) -> Result<Receipt, VerbError> {
     verbs.done(
         DoneInput {
-            source_fingerprint: None,
-
             source_id: None,
             landing: None,
             links: Vec::new(),

@@ -100,14 +100,7 @@ impl LocalWorkService {
             execution_identity: input.execution_identity.clone(),
             parent_session: input.parent_session.clone().map(SessionId),
             evaluator_model,
-            source_basis: AcceptanceSourceBasis::from_declaration(
-                input.source_fingerprint.clone(),
-                input.source_id.clone(),
-            )
-            .map_err(|reason| StoreError::AcceptanceEvaluationRefused {
-                work: work.work_id,
-                reason: reason.into(),
-            })?,
+            source_basis: AcceptanceSourceBasis::from_declaration(input.source_id.clone()),
             verdicts,
             evaluator: self.actor("work_evaluate", "record an acceptance evaluation"),
             attempt_key: input.attempt.clone(),
@@ -579,10 +572,7 @@ pub(crate) fn validate_evaluation_words(input: &WorkEvaluateInput) -> Result<(),
 }
 
 fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation, StoreError> {
-    crate::domain::AcceptanceSourceBasis::validate_declaration(
-        input.source_fingerprint.as_deref(),
-        input.source_id.as_ref(),
-    )?;
+    crate::domain::AcceptanceSourceBasis::validate_declaration(input.source_id.as_ref())?;
     let mode = AcceptanceEvaluationMode::parse(&input.mode).ok_or_else(|| {
         StoreError::InvalidWork(format!(
             "unknown evaluation mode {:?}; use same_session, sub_agent, or independent_session",

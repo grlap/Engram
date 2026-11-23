@@ -56,12 +56,15 @@ fn kept_root_recovery_preserves_a_new_registered_input_witness() {
     );
     complete.acceptance.clear();
     complete.evidence.push(note);
-    complete.source_fingerprint = Some(f.request.input.revision());
-    let sealed = f
-        .store
-        .complete_work(&complete, &DevelopmentNoopRedactor)
-        .unwrap();
-    assert_eq!(sealed.acceptance_evaluation, Some(evaluated.evaluation));
+    asks_for_a_fresh_evaluation(f.store.complete_work(&complete, &DevelopmentNoopRedactor));
+    assert_eq!(
+        f.store
+            .acceptance_evaluation_status(original.work_id)
+            .unwrap()
+            .unwrap()
+            .evaluation,
+        evaluated.evaluation
+    );
     let report = f.store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
 }

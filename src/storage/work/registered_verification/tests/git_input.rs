@@ -100,22 +100,51 @@ fn record_evaluation(
     input: &RecordAcceptanceEvaluationRequest,
 ) -> Result<crate::storage::AcceptanceEvaluationReceipt, StoreError> {
     f.store
-        .record_acceptance_evaluation(input, &DevelopmentNoopRedactor)
+        .seed_historical_acceptance_evaluation(input, &DevelopmentNoopRedactor)
 }
 
-fn complete(
+/// Nothing can present a stored fingerprint at completion, so that evaluation
+/// is judged afresh.
+pub(super) fn asks_for_a_fresh_evaluation(result: Result<CompletionSeal, StoreError>) {
+    let Err(StoreError::WorkCompletionRecoveryRequired { cause, context, .. }) = result else {
+        panic!("a stored fingerprint evaluation cannot complete: {result:?}");
+    };
+    assert!(
+        matches!(
+            cause,
+            crate::storage::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                reason: crate::domain::AcceptanceStaleReason::Source
+            }
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(
+        context.source.unwrap().remedy,
+        crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource
+    );
+}
+
+/// Seals the way a build before the fingerprint's retirement could, by
+/// presenting the stored input revision at completion, so that tests of how
+/// stored historical seals read have one. Nothing else can present it now.
+pub(super) fn historically_sealed(
     f: &mut Fixture,
-    evidence: &ObjectId,
-    input: &str,
+    evidence: &[ObjectId],
     key: &str,
-) -> Result<CompletionSeal, StoreError> {
-    complete_with_evidence(f, std::slice::from_ref(evidence), input, key)
+) -> CompletionSeal {
+    let revision = f.request.input.revision();
+    let _presenting =
+        crate::storage::work::acceptance_evaluation::historical_completion::present(&revision);
+    complete_with_evidence(f, evidence, key).unwrap()
+}
+
+fn complete(f: &mut Fixture, evidence: &ObjectId, key: &str) -> Result<CompletionSeal, StoreError> {
+    complete_with_evidence(f, std::slice::from_ref(evidence), key)
 }
 
 fn complete_with_evidence(
     f: &mut Fixture,
     evidence: &[ObjectId],
-    input: &str,
     key: &str,
 ) -> Result<CompletionSeal, StoreError> {
     let work = f
@@ -141,7 +170,6 @@ fn complete_with_evidence(
     {
         request.acceptance.clear();
     }
-    request.source_fingerprint = Some(input.into());
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
 }
 
@@ -155,7 +183,7 @@ fn registered_git_input_off_without_sighting_admits_and_completes() {
             let revision = f.request.input.revision();
             let input = evaluation(&f, id, &revision);
             record_evaluation(&mut f, &input).unwrap();
-            let sealed = complete(&mut f, id, &revision, "complete").unwrap();
+            let sealed = complete(&mut f, id, "complete").unwrap();
             assert!(sealed.acceptance[0].satisfied);
             let observations: i64 = f.store.connection.query_row(
                 "SELECT count(*) FROM objects WHERE object_kind IN ('execution_observation','turn_grant')", [], |row| row.get(0),
@@ -206,83 +234,89 @@ fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_eff
                 // Completion preflight exposes the exact registered declaration,
                 // including when optional content freshness is disabled.
                 let before_preflight = f.snapshot();
-                for presented in [None, Some(wrong.as_str())] {
-                    let readiness = f
-                        .store
-                        .acceptance_evaluation_readiness(
-                            f.request.registration.binding.work_id,
-                            f.request.registration.binding.run_id,
-                            presented,
-                            None,
-                        )
-                        .unwrap();
-                    if !staged && presented.is_none() {
-                        assert!(matches!(
-                            readiness,
-                            crate::storage::AcceptanceEvaluationReadiness::Ready(_)
-                        ));
-                        continue;
-                    }
+                let readiness = f
+                    .store
+                    .acceptance_evaluation_readiness(
+                        f.request.registration.binding.work_id,
+                        f.request.registration.binding.run_id,
+                        None,
+                    )
+                    .unwrap();
+                if staged {
                     let crate::storage::AcceptanceEvaluationReadiness::Blocked(_, context) =
                         readiness
                     else {
-                        panic!("missing or wrong registered source must refuse")
+                        panic!("a stored staged declaration has no measurement to present")
                     };
                     assert_eq!(
                         context.source.unwrap().expected_fingerprint.as_deref(),
                         Some(revision.as_str())
                     );
-                    assert_eq!(f.snapshot(), before_preflight);
+                } else {
+                    assert!(matches!(
+                        readiness,
+                        crate::storage::AcceptanceEvaluationReadiness::Ready(_)
+                    ));
                 }
-                assert!(complete(&mut f, id, &wrong, "wrong-completion").is_err());
-                complete(&mut f, id, &revision, "right-completion").unwrap();
+                assert_eq!(f.snapshot(), before_preflight);
+                let completed = complete(&mut f, id, "right-completion");
+                if staged {
+                    asks_for_a_fresh_evaluation(completed);
+                } else {
+                    completed.unwrap();
+                }
             }
         }
     }
 }
 
 #[test]
-fn a_new_staged_tree_input_is_refused_and_a_stored_one_still_replays() {
+fn a_new_commit_or_staged_tree_input_is_refused_and_a_stored_one_still_replays() {
     let staged = RegisteredVerificationInput::StagedTree {
         tree: GitTreeId::parse(object_name("staged input")).unwrap(),
         base_commit: object_name("base"),
     };
-    let mut f = prepared(true, true);
-    f.request.input = staged.clone();
-    let before = f.snapshot();
-    let error = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(10),
-        )
-        .unwrap_err();
-    assert!(
-        matches!(&error, StoreError::RegisteredVerificationRefused { field, .. } if field == "input.kind"),
-        "{error}"
-    );
-    assert_eq!(f.snapshot(), before, "a refusal records nothing");
+    let commit = RegisteredVerificationInput::Commit {
+        commit: object_name("committed input"),
+    };
+    for input in [commit, staged] {
+        let mut f = prepared(true, true);
+        f.request.input = input;
+        let before = f.snapshot();
+        let error = f
+            .store
+            .record_registered_verification(
+                &f.project,
+                &f.session,
+                &f.connection,
+                crate::storage::HostSessionAuthority::Work,
+                &actor("runner"),
+                &f.request,
+                at(10),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&error, StoreError::RegisteredVerificationRefused { field, .. } if field == "input.kind"),
+            "{error}"
+        );
+        assert_eq!(f.snapshot(), before, "a refusal records nothing");
 
-    let stored = f.record().unwrap();
-    let replayed = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(11),
-        )
-        .unwrap();
-    assert_eq!(replayed, stored, "an exact retry of a stored input replays");
-    assert!(f.store.verify_all().unwrap().is_healthy());
+        let stored = f.record().unwrap();
+        let replayed = f
+            .store
+            .record_registered_verification(
+                &f.project,
+                &f.session,
+                &f.connection,
+                crate::storage::HostSessionAuthority::Work,
+                &actor("runner"),
+                &f.request,
+                at(11),
+            )
+            .unwrap();
+        assert_eq!(replayed, stored, "an exact retry of a stored input replays");
+        assert!(f.store.verify_all().unwrap().is_healthy());
+    }
 }
 
 #[test]
@@ -302,7 +336,7 @@ fn registered_git_input_staged_identity_ignores_base_provenance() {
     .revision();
     let input = evaluation(&f, id, &revision);
     record_evaluation(&mut f, &input).unwrap();
-    complete(&mut f, id, &revision, "complete-tree").unwrap();
+    asks_for_a_fresh_evaluation(complete(&mut f, id, "complete-tree"));
 }
 
 #[test]
@@ -365,13 +399,23 @@ fn registered_git_input_open_evaluation_replay_and_completed_seal_remain_frozen(
     let revision = f.request.input.revision();
     let input = evaluation(&f, id, &revision);
     let original = record_evaluation(&mut f, &input).unwrap();
-    let replay = record_evaluation(&mut f, &input).unwrap();
+    let before = f.snapshot();
+    let replay = f
+        .store
+        .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+        .unwrap();
     assert!(replay.replayed);
     assert_eq!(original.evaluation, replay.evaluation);
-    let seal = complete(&mut f, id, &revision, "complete-window").unwrap();
-    let replay = record_evaluation(&mut f, &input).unwrap();
+    assert_eq!(f.snapshot(), before);
+    let seal = complete(&mut f, id, "complete-window").unwrap();
+    let before = f.snapshot();
+    let replay = f
+        .store
+        .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+        .unwrap();
     assert!(replay.replayed);
     assert_eq!(original.record, replay.record);
+    assert_eq!(f.snapshot(), before);
     let run = f
         .store
         .get_work_run(f.request.registration.binding.run_id)
@@ -430,7 +474,7 @@ fn registered_git_input_content_observations_do_not_replace_the_judged_commit() 
             record_evaluation(&mut f, &input).unwrap();
         }
     }
-    complete(&mut f, id, &revision, "complete-content-window").unwrap();
+    complete(&mut f, id, "complete-content-window").unwrap();
 }
 
 #[test]
@@ -492,7 +536,7 @@ fn registered_git_input_late_registration_cannot_test_a_later_change() {
         .unwrap();
         let receipt = f
             .store
-            .record_registered_verification(
+            .seed_historical_registered_verification(
                 &f.project,
                 &f.session,
                 &f.connection,
@@ -541,7 +585,7 @@ fn registered_git_input_late_registration_cannot_test_a_later_change() {
 }
 
 #[test]
-fn registered_git_input_unevaluated_completion_uses_recorded_input_unless_supplied() {
+fn registered_git_input_unevaluated_completion_uses_recorded_input() {
     let mut f = unevaluated(true);
     let receipt = f.record().unwrap();
     let id = &receipt.verifications[0].record_id;
@@ -559,26 +603,7 @@ fn registered_git_input_unevaluated_completion_uses_recorded_input_unless_suppli
         13,
         std::slice::from_ref(id),
     );
-    let mut request = completion_request(&work, &held, "runner", id, "unevaluated-done", 14);
-    request.source_fingerprint = Some(format!("git-commit:{}", object_name("wrong commit")));
-    let reason = f
-        .store
-        .complete_work(&request, &DevelopmentNoopRedactor)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        reason.contains(&format!(
-            "--source-fingerprint {}",
-            f.request.input.revision()
-        )),
-        "{reason}"
-    );
-    assert!(
-        reason.contains("omit the declaration for unevaluated completion"),
-        "{reason}"
-    );
-    assert!(!reason.contains("latest source change"), "{reason}");
-    request.source_fingerprint = None;
+    let request = completion_request(&work, &held, "runner", id, "unevaluated-done", 14);
     let seal = f
         .store
         .complete_work(&request, &DevelopmentNoopRedactor)
@@ -595,12 +620,31 @@ fn registered_git_input_missing_declaration_names_the_exact_remedy_for_unbound_p
     input.source_basis = None;
     let before = f.snapshot();
     let reason = record_evaluation(&mut f, &input).unwrap_err().to_string();
+    assert!(reason.contains("only committed-input evidence"), "{reason}");
     assert!(
-        reason.contains("registered committed-input evidence"),
+        reason.contains("declare its complete source_id"),
         "{reason}"
     );
-    assert!(reason.contains("--source-fingerprint"), "{reason}");
     assert!(!reason.contains("is bound to"), "{reason}");
+    assert_eq!(f.snapshot(), before);
+
+    let note = quiet_evaluation::note(&mut f);
+    let mut input = quiet_evaluation::judgment(&f, &note);
+    f.use_shared_source();
+    let RegisteredVerificationInput::SourceId { source_id } = f.request.input.clone() else {
+        panic!("shared fixture declaration");
+    };
+    input.source_basis = AcceptanceSourceBasis::from_declaration(Some(source_id));
+    let before = f.snapshot();
+    let reason = f
+        .store
+        .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        reason.contains("passed on the declared source_id"),
+        "{reason}"
+    );
     assert_eq!(f.snapshot(), before);
 }
 
@@ -715,7 +759,7 @@ fn registered_git_input_citations_accept_late_reports_at_the_current_checked_com
                 actual_change(&mut f, unadmitted, if change_before_check { 7 } else { 11 });
                 let receipt = f
                     .store
-                    .record_registered_verification(
+                    .seed_historical_registered_verification(
                         &f.project,
                         &f.session,
                         &f.connection,
@@ -730,8 +774,7 @@ fn registered_git_input_citations_accept_late_reports_at_the_current_checked_com
                 input.recorded_at = at(13);
                 let recorded = record_evaluation(&mut f, &input).unwrap();
                 assert!(recorded.record.registered_input_decision.is_some());
-                let revision = f.request.input.revision();
-                complete(&mut f, id, &revision, "after-late-report").unwrap();
+                complete(&mut f, id, "after-late-report").unwrap();
             }
         }
     }
@@ -761,16 +804,12 @@ fn registered_git_input_post_cut_actual_edits_refuse_admission_and_consumption()
                     if after_recording {
                         let status = f
                             .store
-                            .acceptance_evaluation_status(
-                                f.request.registration.binding.work_id,
-                                Some(&revision),
-                            )
+                            .acceptance_evaluation_status(f.request.registration.binding.work_id)
                             .unwrap()
                             .unwrap();
                         assert!(status.source_checked_at_done);
                         assert_eq!(status.stale, None, "Git currency is checked at done");
-                        let error =
-                            complete(&mut f, id, &revision, "changed-after-cut").unwrap_err();
+                        let error = complete(&mut f, id, "changed-after-cut").unwrap_err();
                         assert!(error.to_string().contains("dirty"), "{error}");
                     } else {
                         let before = f.snapshot();

@@ -20,6 +20,7 @@ pub enum AcceptanceSourceMismatch {
 pub enum AcceptanceSourceRemedy {
     EndTurnReadAndRetry,
     ReadSourceAndEvaluate,
+    /// Retained for readers of historical responses.
     MeasureSourceAndRetry,
     MeasureSourceIdAndRetry,
     EvaluateCurrentSource,

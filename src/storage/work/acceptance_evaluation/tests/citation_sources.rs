@@ -871,20 +871,11 @@ fn done(
     work: &WorkItem,
     claim: &WorkClaim,
     evidence: &[ObjectId],
-    fingerprint: Option<&str>,
     key: &str,
     second: i64,
 ) -> Result<CompletionSeal, StoreError> {
     checkpoint_then_complete(
-        store,
-        work,
-        claim,
-        "runner",
-        evidence,
-        false,
-        fingerprint,
-        key,
-        second,
+        store, work, claim, "runner", evidence, false, None, key, second,
     )
 }
 
@@ -961,7 +952,7 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
     assert_eq!(cut(store, &work), before, "a refusal appends nothing");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read"),
         None
     );
@@ -982,7 +973,6 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
         &work,
         &claim,
         &[note, at_e.clone()],
-        None,
         "complete-after-rerun",
         50,
     )
@@ -1025,7 +1015,7 @@ fn the_completion_fingerprint_does_not_stand_in_for_the_citation_rule() {
     let earlier = admitted_by_an_earlier_build(store, &stale);
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, Some("revision-e"))
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((
@@ -1038,7 +1028,6 @@ fn the_completion_fingerprint_does_not_stand_in_for_the_citation_rule() {
         &work,
         &claim,
         &[note.clone(), at_d],
-        Some("revision-e"),
         "complete-on-the-old-check",
         40,
     ));
@@ -1061,16 +1050,19 @@ fn the_completion_fingerprint_does_not_stand_in_for_the_citation_rule() {
         ),
     )
     .expect("a pass on the rerun check records");
-    done(
-        store,
-        &work,
-        &claim,
-        &[note, at_e],
-        Some("revision-e"),
-        "complete-after-rerun",
-        55,
-    )
-    .expect("the rerun check seals with the measured fingerprint");
+    assert!(matches!(
+        recovery_cause(done(
+            store,
+            &work,
+            &claim,
+            &[note, at_e],
+            "complete-after-rerun",
+            55,
+        )),
+        WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: AcceptanceStaleReason::Source
+        }
+    ));
 }
 
 // B50: a record an earlier build admitted is judged again when completion
@@ -1117,7 +1109,6 @@ fn an_earlier_build_record_is_stale_at_done_and_replays_before_the_refusal() {
         &work,
         &claim,
         &[note, at_d],
-        None,
         "complete-on-the-old-check",
         40,
     ));
@@ -1172,7 +1163,6 @@ fn a_stale_citation_is_refused_at_done_when_the_binding_obligation_was_waived() 
         &work,
         &claim,
         &[note.clone(), at_d.clone()],
-        None,
         "complete-on-the-old-check",
         40,
     ));
@@ -1194,7 +1184,6 @@ fn a_stale_citation_is_refused_at_done_when_the_binding_obligation_was_waived() 
         &work,
         &claim,
         &[note.clone(), at_d],
-        None,
         "complete-on-a-declared-old-check",
         42,
     ));
@@ -1215,7 +1204,6 @@ fn a_stale_citation_is_refused_at_done_when_the_binding_obligation_was_waived() 
         &work,
         &claim,
         &[note, at_e.clone()],
-        None,
         "complete-after-rerun",
         55,
     )
@@ -1470,7 +1458,6 @@ fn a_check_stands_through_later_sightings_of_its_own_revision() {
         &work,
         &claim,
         &[note, at_d.clone()],
-        None,
         "complete-on-the-check",
         45,
     )
@@ -1545,7 +1532,7 @@ fn a_reported_move_and_revert_leave_the_check_standing() {
     .expect("a pass on the check records once the source is back where it ran");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((admitted.evaluation, None))
@@ -1555,7 +1542,6 @@ fn a_reported_move_and_revert_leave_the_check_standing() {
         &work,
         &claim,
         &[note, at_d.clone()],
-        None,
         "complete-after-revert",
         40,
     ) else {
@@ -1906,7 +1892,7 @@ fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_re
         40,
     ));
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation");
     // The barrier decides before the bound citation is judged, and it is

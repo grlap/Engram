@@ -451,7 +451,6 @@ fn an_evaluation_refused_after_input_checks_preserves_navigation() {
                     evidence: Vec::new(),
                 }],
                 attempt: Some("refused-evaluation".into()),
-                source_fingerprint: None,
                 source_id: None,
                 model: None,
                 execution_identity: None,

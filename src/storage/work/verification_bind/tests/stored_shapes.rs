@@ -157,7 +157,7 @@ fn a_record_bound_from_a_registered_run_reads_through_doctor_and_the_host_reads(
             .into(),
         };
         let receipt = store
-            .record_registered_verification(
+            .seed_historical_registered_verification(
                 &a.work.project_id,
                 &host.session_id,
                 &host.connection_token,
@@ -230,15 +230,16 @@ fn a_record_bound_from_a_credited_remote_check_reads_through_doctor_and_the_host
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .expect("delivery transaction");
-        let receipt = super::super::super::remote_verification::record_remote_verification_on(
-            &transaction,
-            &a.work.project_id,
-            &SessionId(HOLDER.into()),
-            &actor(HOLDER),
-            &delivery,
-            at(21),
-        )
-        .expect("delivery");
+        let receipt =
+            super::super::super::remote_verification::seed_historical_remote_verification_on(
+                &transaction,
+                &a.work.project_id,
+                &SessionId(HOLDER.into()),
+                &actor(HOLDER),
+                &delivery,
+                at(21),
+            )
+            .expect("delivery");
         transaction.commit().expect("commit delivery");
         assert!(receipt.qualification.credited, "{receipt:?}");
         let original = receipt.verifications[0].record_id.clone();

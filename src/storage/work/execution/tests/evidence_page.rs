@@ -95,7 +95,7 @@ fn record_checked_environment(
         .into(),
     };
     let receipt = store
-        .record_registered_verification(
+        .seed_historical_registered_verification(
             &work.project_id,
             &session,
             &token,

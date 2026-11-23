@@ -171,8 +171,6 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
     let done = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -189,8 +187,6 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .work_complete_on(
             Some(&work_ref),
             WorkCompleteInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

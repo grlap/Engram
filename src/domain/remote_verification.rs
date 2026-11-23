@@ -609,8 +609,9 @@ impl RemoteRunCompletion {
 }
 
 impl RemoteVerificationRequest {
-    /// Validate new shared endpoints without changing what stored legacy facts
-    /// or decisions mean. Null endpoints remain valid, non-qualifying reports.
+    /// Validate a new delivery: it reports shared endpoints, never the retired
+    /// commit and fingerprint input, which stored deliveries keep meaning as
+    /// stored. Null endpoints remain valid, non-qualifying reports.
     ///
     /// # Errors
     /// Names a malformed new endpoint or a malformed common request field.
@@ -629,16 +630,20 @@ impl RemoteVerificationRequest {
                 "an authorized test ref is a refs/heads/test/ ref; report an author test ref as a committed input",
             ));
         }
-        if let RemoteRunInput::SourceId(input) = &self.completion.input {
-            for (field, source) in [
-                ("input.source_id_before", &input.source_id_before),
-                ("input.source_id_after", &input.source_id_after),
-            ] {
-                if let Some(source) = source {
-                    source
-                        .validate()
-                        .map_err(|_| (field, "a valid complete source_id is required"))?;
-                }
+        let RemoteRunInput::SourceId(input) = &self.completion.input else {
+            return Err((
+                "input",
+                "the commit and fingerprint input is retired; report source_id endpoints",
+            ));
+        };
+        for (field, source) in [
+            ("input.source_id_before", &input.source_id_before),
+            ("input.source_id_after", &input.source_id_after),
+        ] {
+            if let Some(source) = source {
+                source
+                    .validate()
+                    .map_err(|_| (field, "a valid complete source_id is required"))?;
             }
         }
         Ok(())

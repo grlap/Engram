@@ -26,10 +26,17 @@ fn serve(f: Fixture, frames: &[serde_json::Value]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The fixture at the host transport's real clock.
+/// The fixture at the host transport's real clock, reporting shared endpoints:
+/// the only input a new delivery takes.
 fn current() -> Fixture {
     let offset = (chrono::Utc::now() - at(10)).num_seconds();
-    fixture_in(SqliteStore::open_in_memory().unwrap(), offset, None)
+    let mut f = fixture_in(SqliteStore::open_in_memory().unwrap(), offset, None);
+    let source = shared_input_source();
+    f.request.completion.input = RemoteRunInput::SourceId(Box::new(RemoteSourceIdInput::new(
+        Some(source.clone()),
+        Some(source),
+    )));
+    f
 }
 
 fn frame(f: &Fixture) -> serde_json::Value {
@@ -158,8 +165,7 @@ fn remote_verification_malformed_frames_answer_invalid_request() {
     malformed(&|frame| frame["completion"]["provenance"] = serde_json::json!({"toolchain": "x"}));
     malformed(&|frame| frame["completion"]["input"]["counts"] = serde_json::json!(1));
     malformed(&|frame| frame["completion"]["finished_at"] = serde_json::Value::Null);
-    malformed(&|frame| frame["completion"]["input"]["tree"] = serde_json::Value::Null);
-    malformed(&|frame| frame["completion"]["input"]["tree"] = serde_json::json!("not-a-tree"));
+    malformed(&|frame| frame["completion"]["input"]["source_id_before"] = serde_json::json!(1));
     malformed(&|frame| frame["completion"]["mode"] = serde_json::json!("whole-bin"));
     malformed(&|frame| frame["completion"]["result"]["verdict"] = serde_json::json!("pass"));
     malformed(&|frame| {
@@ -170,8 +176,13 @@ fn remote_verification_malformed_frames_answer_invalid_request() {
     });
     malformed(&|frame| frame["association"]["use"]["purpose"] = serde_json::json!("publish"));
     malformed(&|frame| frame["association"]["use"]["kind"] = serde_json::json!("staged_tree"));
-    // Well-formed JSON, malformed value: the store's own refusal, same code.
-    malformed(&|frame| frame["completion"]["input"]["commit"] = serde_json::json!("abc"));
+    // A well-formed frame of the retired commit and fingerprint input: the
+    // store's own refusal, same code, before anything is recorded.
+    malformed(&|frame| {
+        frame["completion"]["input"] = serde_json::json!({"commit": tested_commit(),
+            "tree": tested_tree(), "before_fingerprint": "f".repeat(64),
+            "after_fingerprint": "f".repeat(64)});
+    });
     let count = frames.len();
     let replies = serve(f, &frames);
     assert_eq!(replies.len(), count);
@@ -179,8 +190,5 @@ fn remote_verification_malformed_frames_answer_invalid_request() {
         assert_eq!(reply["status"], "error", "{reply}");
         assert_eq!(reply["error"]["code"], "invalid_request", "{reply}");
     }
-    assert_eq!(
-        replies[count - 1]["error"]["details"]["field"],
-        "input.commit"
-    );
+    assert_eq!(replies[count - 1]["error"]["details"]["field"], "input");
 }

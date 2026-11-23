@@ -447,11 +447,12 @@ pub struct CompleteWorkRequest {
     pub evidence: Vec<ObjectId>,
     pub acceptance: Vec<AcceptanceResult>,
     pub drain: CompletionDrainAttestation,
-    /// Host-measured source fingerprint at completion time; required when the
-    /// project policy requires source freshness.
+    /// Retained only to reproduce an earlier build's exact completion intent.
+    /// A new completion carrying this field is refused after replay lookup.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at completion time; required
+    /// when the project policy requires source freshness.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

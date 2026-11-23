@@ -30,7 +30,7 @@ fn record(
             == request.evaluated_through
     });
     let standing = store
-        .acceptance_evaluation_status(request.work_id, None)
+        .acceptance_evaluation_status(request.work_id)
         .expect("status read")
         .and_then(|status| status.reroll);
     let result = super::record(store, request);
@@ -55,7 +55,7 @@ fn record(
 /// The standing cause the status shows now.
 fn standing(store: &SqliteStore, work: &WorkItem) -> Option<Box<RerollAdmissionCause>> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .and_then(|status| status.reroll)
 }
@@ -217,7 +217,7 @@ fn a_fail_stands_until_new_evidence_lies_within_the_next_basis() {
     // Nothing was recorded by the refusals.
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.evaluation),
         Some(failed.evaluation.clone())
@@ -615,7 +615,7 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
             change.accounting
         );
         let status = store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .expect("newest evaluation");
         assert_eq!(status.evaluation, blocked.evaluation, "{case}");
@@ -667,7 +667,7 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
         )
         .unwrap_or_else(|error| panic!("{case}: the change is new evidence: {error:?}"));
         let status = store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .expect("newest evaluation");
         assert_eq!(
@@ -711,8 +711,7 @@ fn a_measured_delta_change_unlocks_reroll_after_a_legacy_evaluation() {
         "legacy-failure",
         20,
     );
-    blocked.source_basis =
-        AcceptanceSourceBasis::from_declaration(None, Some(legacy.clone())).unwrap();
+    blocked.source_basis = AcceptanceSourceBasis::from_declaration(Some(legacy.clone()));
     record(store, &blocked).expect("legacy-shaped blocking evaluation");
 
     let delta = |digit: &str| VerificationSourceIdentity::SourceId {
@@ -777,7 +776,7 @@ fn the_status_shows_the_standing_cause_and_the_record_assesses_it_again() {
     let run = work.active_run_id.expect("active run");
     assert!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .is_none(),
         "no evaluation, no status"

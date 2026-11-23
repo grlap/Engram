@@ -1571,7 +1571,7 @@ impl LocalWorkService {
                 .map(|run_id| store.work_feed_head(&crate::domain::FeedId::RunExecution(run_id)))
                 .transpose()?;
             (
-                store.acceptance_evaluation_status(status.work.work_id, None)?,
+                store.acceptance_evaluation_status(status.work.work_id)?,
                 evidence_basis,
             )
         } else {

@@ -383,7 +383,7 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
     assert_eq!(recorded.value["evaluation"]["passed"], 1);
     let record = SqliteStore::open(&database)
         .expect("store")
-        .acceptance_evaluation_status(item.work_id, None)
+        .acceptance_evaluation_status(item.work_id)
         .expect("status")
         .expect("evaluation")
         .record;
@@ -686,7 +686,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
             basis_of(&database, &item),
             SqliteStore::open(&database)
                 .expect("store")
-                .acceptance_evaluation_status(item.work_id, None)
+                .acceptance_evaluation_status(item.work_id)
                 .expect("status")
                 .map(|status| status.evaluation),
             objects,
@@ -726,7 +726,6 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
                 evidence_basis: explicit.evidence_basis,
                 verdicts: explicit.verdicts.clone(),
                 attempt: explicit.attempt.clone(),
-                source_fingerprint: None,
                 source_id: None,
                 model: None,
                 execution_identity: None,
@@ -1167,6 +1166,7 @@ fn a_blank_evaluation_mode_is_refused_at_creation() {
 #[test]
 fn the_minimal_evaluate_receipt_is_bounded() {
     let projection = crate::work_service::WorkEvaluationProjection {
+        source_fingerprint: None,
         supersedes: None,
         mode: AcceptanceEvaluationMode::IndependentSession,
         work_revision: i64::MAX,
@@ -1177,7 +1177,6 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         verdicts: Vec::new(),
         passed: usize::MAX,
         blocking: None,
-        source_fingerprint: None,
         source_id_summary: None,
         attempt_key: String::new(),
         full_detail: String::new(),
@@ -1480,7 +1479,6 @@ fn the_word_envelope_stays_within_its_reserve() {
                 evidence_basis: input.evidence_basis,
                 verdicts: input.verdicts.clone(),
                 attempt: None,
-                source_fingerprint: None,
                 source_id: None,
                 model: None,
                 execution_identity: None,
@@ -1534,6 +1532,21 @@ fn enable_with_source_freshness(database: &std::path::Path, second: i64) {
 
 // Review 6 (Medium): without a measurement the source is unknown, not stale;
 // `done` names the fingerprint remedy, and the fingerprint is checked at done.
+
+fn worktree_source(letter: &str) -> crate::source::SourceId {
+    crate::source::SourceId {
+        git_delta: Some(crate::source::GitDelta {
+            sha256: letter.repeat(64),
+            dirty: false,
+            gitlinks: vec![],
+        }),
+        commit: letter.repeat(40),
+        tree: letter.repeat(40),
+        changes: vec![],
+        submodules: vec![],
+    }
+}
+
 #[test]
 fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     let directory = crate::test_support::temp_home().expect("temp directory");
@@ -1552,9 +1565,7 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     verbs
         .evaluate(
             EvaluateInput {
-                source_fingerprint: Some("sha256:worktree-a".into()),
-
-                source_id: None,
+                source_id: Some(worktree_source("a")),
                 ..evaluate_input(
                     &item.work_ref,
                     basis(&database, &item),
@@ -1563,16 +1574,11 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
             },
             at(4),
         )
-        .expect("passing evaluation with a fingerprint");
+        .expect("passing evaluation with a complete identity");
     let shown = verbs.show(&item.work_ref, at(5)).expect("show");
     assert!(
         !shown.text().contains("stale: source"),
         "an unmeasured read is not a mismatch: {}",
-        shown.text()
-    );
-    assert!(
-        shown.text().contains("source fingerprint"),
-        "{}",
         shown.text()
     );
     let unmeasured = verbs
@@ -1585,32 +1591,24 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     );
     assert_eq!(
         unmeasured.value["recovery"]["source"]["remedy"],
-        "measure_source_and_retry"
+        "measure_source_id_and_retry"
     );
-    assert!(unmeasured.text().contains("fresh source measurement"));
-    assert_eq!(
-        unmeasured.value["recovery"]["source"]["expected_fingerprint"],
-        "sha256:worktree-a"
-    );
-    assert!(unmeasured.text().contains("sha256:worktree-a"));
     assert!(
         unmeasured
             .text()
-            .contains("comparison target, not a fresh measurement")
+            .contains("fresh complete source_id measurement")
     );
     assert_eq!(unmeasured.value["code"], "acceptance_evaluation_stale");
     assert!(
-        unmeasured.text().contains("--source-fingerprint"),
+        unmeasured.text().contains("--source-id-file"),
         "{}",
         unmeasured.text()
     );
-    // A changed fingerprint is stale source; the matching one seals.
+    // A changed identity is stale source; the matching one seals.
     let changed = verbs
         .done(
             DoneInput {
-                source_fingerprint: Some("sha256:worktree-b".into()),
-
-                source_id: None,
+                source_id: Some(worktree_source("b")),
                 ..done_input(&item.work_ref)
             },
             at(7),
@@ -1639,14 +1637,12 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     let sealed = verbs
         .done(
             DoneInput {
-                source_fingerprint: Some("sha256:worktree-a".into()),
-
-                source_id: None,
+                source_id: Some(worktree_source("a")),
                 ..done_input(&item.work_ref)
             },
             at(9),
         )
-        .expect("the matching fingerprint seals");
+        .expect("the matching identity seals");
     assert!(!sealed.owed, "{}", sealed.text());
     assert!(
         sealed
@@ -1663,9 +1659,7 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     verbs
         .evaluate(
             EvaluateInput {
-                source_fingerprint: Some("sha256:worktree-a".into()),
-
-                source_id: None,
+                source_id: Some(worktree_source("a")),
                 ..evaluate_input(
                     &second.work_ref,
                     basis(&database, &second),
@@ -1674,7 +1668,7 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
             },
             at(23),
         )
-        .expect("passing evaluation with a fingerprint");
+        .expect("passing evaluation with a complete identity");
     verbs
         .update(
             UpdateInput {

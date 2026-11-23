@@ -44,7 +44,7 @@ fn declared_pass(
 
 fn stale(store: &SqliteStore, work: &WorkItem) -> Option<AcceptanceStaleReason> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation")
         .stale

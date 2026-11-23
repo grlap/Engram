@@ -168,8 +168,7 @@ fn live_git_currency_unlocated_report_uses_git_at_evaluate_and_done() {
                     "{error}"
                 );
                 assert!(error.to_string().contains("dirty"), "{error}");
-                let error =
-                    complete(&mut f, &check, &revision, "unlocated-dirty-done").unwrap_err();
+                let error = complete(&mut f, &check, "unlocated-dirty-done").unwrap_err();
                 assert!(
                     matches!(error, StoreError::WorkCompletionRefused { .. }),
                     "{error}"
@@ -178,7 +177,7 @@ fn live_git_currency_unlocated_report_uses_git_at_evaluate_and_done() {
                 continue;
             }
             let recorded = record_evaluation(&mut f, &input).unwrap();
-            let seal = complete(&mut f, &check, &revision, "unlocated-done").unwrap();
+            let seal = complete(&mut f, &check, "unlocated-done").unwrap();
             assert_eq!(
                 f.store.completion_seal_evaluation(&seal).unwrap(),
                 Some(recorded.record)
@@ -193,8 +192,7 @@ fn live_git_currency_unlocated_report_uses_git_at_evaluate_and_done() {
     };
     let check = legacy.record().unwrap().verifications[0].record_id.clone();
     unlocated_change(&mut legacy);
-    let revision = legacy.request.input.revision();
-    let error = complete(&mut legacy, &check, &revision, "legacy-unlocated").unwrap_err();
+    let error = complete(&mut legacy, &check, "legacy-unlocated").unwrap_err();
     assert!(
         matches!(error, StoreError::WorkCompletionRefused { .. }),
         "{error}"
@@ -236,8 +234,7 @@ fn live_git_currency_nonpass_verdicts_remain_recordable_without_a_current_pass()
                 .unwrap_or_else(|error| panic!("{verdict:?}/{state}: {error}"));
             assert!(!recorded.record.all_pass());
             assert_eq!(recorded.record.registered_input_decision, None);
-            let revision = f.request.input.revision();
-            let error = complete(&mut f, &note, &revision, "nonpass-done").unwrap_err();
+            let error = complete(&mut f, &note, "nonpass-done").unwrap_err();
             assert!(
                 matches!(
                     error,
@@ -323,7 +320,6 @@ fn live_git_currency_unlocated_stock_report_is_waived_after_a_current_lint_decis
             let mut request =
                 completion_request(&work, &held, "runner", &lint, "lint-waiver-done", 17);
             request.evidence = evidence.to_vec();
-            request.source_fingerprint = Some(f.request.input.revision());
             if evaluated {
                 request.acceptance.clear();
             }
@@ -396,7 +392,6 @@ fn live_git_currency_bound_lint_consumes_input_without_a_direct_citation() {
         );
         let mut request = completion_request(&work, &held, "runner", &note, "bound-lint-done", 17);
         request.evidence = evidence.to_vec();
-        request.source_fingerprint = None;
         assert_eq!(
             request.acceptance[0].evidence.as_slice(),
             std::slice::from_ref(&note)
@@ -559,12 +554,7 @@ fn live_git_currency_replacements_follow_the_current_binding_definition() {
             } else {
                 old
             };
-            let result = complete(
-                &mut f,
-                &checked,
-                &first_input.revision(),
-                "binding-definition-done",
-            );
+            let result = complete(&mut f, &checked, "binding-definition-done");
             if fresh {
                 let seal = result.unwrap();
                 assert!(seal.acceptance[0].satisfied);
@@ -645,7 +635,7 @@ fn live_git_currency_preserves_operator_post_change_requirements() {
                     input.recorded_at = at(14);
                     record_evaluation(&mut f, &input).unwrap();
                 }
-                let result = complete(&mut f, &check, &revision, "operator-rule-done");
+                let result = complete(&mut f, &check, "operator-rule-done");
                 if fresh {
                     assert!(result.unwrap().acceptance[0].satisfied);
                 } else {
@@ -758,14 +748,16 @@ fn live_git_currency_stock_reports_do_not_gate_current_lint_or_staged_evidence()
         f.request.checks[0].started_at = Some(at(12));
         f.request.checks[0].completed_at = Some(at(12));
         let lint = another_check(&mut f, "current-lint", VerificationKind::Lint, input);
-        let revision = f.request.input.revision();
         let mut input = quiet_evaluation::judgment(&f, &note);
         input.recorded_at = at(14);
         let evaluated =
             record_evaluation(&mut f, &input).unwrap_or_else(|error| panic!("{state}: {error}"));
-        let seal =
-            complete_with_evidence(&mut f, &[lint, note], &revision, "lint-with-report-done")
-                .unwrap_or_else(|error| panic!("{state}: {error}"));
+        let completed = complete_with_evidence(&mut f, &[lint, note], "lint-with-report-done");
+        if state == "staged-lint" {
+            asks_for_a_fresh_evaluation(completed);
+            continue;
+        }
+        let seal = completed.unwrap_or_else(|error| panic!("{state}: {error}"));
         assert!(seal.acceptance[0].satisfied);
         assert_eq!(
             f.store.completion_seal_evaluation(&seal).unwrap(),
@@ -914,12 +906,7 @@ fn live_git_currency_newer_same_kind_staged_check_keeps_dirty_staged_lane() {
     let mut input = evaluation(&f, &checked, &revision);
     input.recorded_at = at(14);
     record_evaluation(&mut f, &input).unwrap();
-    assert!(
-        complete(&mut f, &checked, &revision, "same-kind-staged-done")
-            .unwrap()
-            .acceptance[0]
-            .satisfied
-    );
+    asks_for_a_fresh_evaluation(complete(&mut f, &checked, "same-kind-staged-done"));
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
 
@@ -946,12 +933,11 @@ fn live_git_currency_late_same_commit_pass_does_not_depend_on_content_sightings(
         }
         let shown = f
             .store
-            .acceptance_evaluation_status(f.request.registration.binding.work_id, None)
+            .acceptance_evaluation_status(f.request.registration.binding.work_id)
             .unwrap()
             .unwrap();
         assert_eq!(shown.stale, None);
-        let seal =
-            complete_with_evidence(&mut f, &[first, late], &revision, "late-pass-done").unwrap();
+        let seal = complete_with_evidence(&mut f, &[first, late], "late-pass-done").unwrap();
         assert!(seal.acceptance[0].satisfied);
     }
 }
@@ -1007,7 +993,7 @@ fn live_git_currency_binding_resolution_is_stale_not_corrupt_and_staged_checks_r
     let work_id = f.request.registration.binding.work_id;
     let shown = f
         .store
-        .acceptance_evaluation_status(work_id, None)
+        .acceptance_evaluation_status(work_id)
         .unwrap()
         .unwrap();
     assert_eq!(shown.stale, Some(AcceptanceStaleReason::Mutation));
@@ -1026,7 +1012,7 @@ fn live_git_currency_binding_resolution_is_stale_not_corrupt_and_staged_checks_r
         )
         .unwrap();
     assert_eq!(assessed.len(), 1);
-    let refused = complete(&mut f, &tested, &revision, "needs-new-evaluation").unwrap_err();
+    let refused = complete(&mut f, &tested, "needs-new-evaluation").unwrap_err();
     assert!(
         !matches!(refused, StoreError::InvalidWorkProjection(_)),
         "{refused}"
@@ -1039,14 +1025,7 @@ fn live_git_currency_binding_resolution_is_stale_not_corrupt_and_staged_checks_r
     current.attempt_key = Some("staged-recovery".into());
     let admitted = record_evaluation(&mut f, &current).unwrap();
     assert_eq!(admitted.record.registered_input_decision, None);
-    let stage_revision = f.request.input.revision();
-    assert!(
-        complete(&mut f, &tested, &stage_revision, "mixed-input-done")
-            .unwrap()
-            .acceptance
-            .iter()
-            .all(|value| value.satisfied)
-    );
+    asks_for_a_fresh_evaluation(complete(&mut f, &tested, "mixed-input-done"));
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
 
@@ -1055,7 +1034,6 @@ fn live_git_currency_refuses_direct_unbound_citations_with_evaluations_off() {
     for change in ["dirty", "new-commit", "missing"] {
         let (root, mut f) = live_fixture(false, false);
         let check = f.record().unwrap().verifications[0].record_id.clone();
-        let revision = f.request.input.revision();
         match change {
             "dirty" => std::fs::write(root.join("tracked"), "edited\n").unwrap(),
             "new-commit" => {
@@ -1064,7 +1042,7 @@ fn live_git_currency_refuses_direct_unbound_citations_with_evaluations_off() {
             "missing" => std::fs::rename(&root, root.with_file_name("unavailable-source")).unwrap(),
             _ => unreachable!(),
         }
-        let error = complete(&mut f, &check, &revision, "direct-off-refusal").unwrap_err();
+        let error = complete(&mut f, &check, "direct-off-refusal").unwrap_err();
         assert!(
             matches!(error, StoreError::WorkCompletionRefused { .. }),
             "{error}"
@@ -1115,8 +1093,6 @@ fn live_git_currency_service_prose_completion_does_not_read_git() {
         .work_complete_on(
             Some(&work.short_ref),
             WorkCompleteInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -1221,7 +1197,6 @@ fn live_git_currency_handoff_and_return_keep_the_original_check_and_generation()
     );
     let mut request = completion_request(&work, &held, "runner", &check, "handoff-done", 17);
     request.acceptance.clear();
-    request.source_fingerprint = Some(revision);
     f.store
         .complete_work(&request, &DevelopmentNoopRedactor)
         .unwrap();
@@ -1260,9 +1235,7 @@ fn live_git_currency_accepts_accounted_reports_and_preserves_replay_and_doctor()
             let admitted = record_evaluation(&mut f, &input).unwrap();
             assert!(admitted.record.registered_input_decision.is_some());
             assert!(admitted.record.registered_input_witness.is_none());
-            let revision = f.request.input.revision();
-            let seal =
-                complete_with_evidence(&mut f, &[check, note], &revision, "complete-live").unwrap();
+            let seal = complete_with_evidence(&mut f, &[check, note], "complete-live").unwrap();
             assert!(seal.acceptance[0].satisfied);
             std::fs::rename(&root, root.with_file_name("removed-source")).unwrap();
             let replay = record_evaluation(&mut f, &input).unwrap();
@@ -1313,7 +1286,7 @@ fn live_git_currency_refuses_dirty_new_commit_and_missing_root_at_evaluate_and_d
                     "evaluated={evaluated}, change={change}: {error}"
                 );
             }
-            let error = complete(&mut f, &check, &revision, "refuse-live")
+            let error = complete(&mut f, &check, "refuse-live")
                 .unwrap_err()
                 .to_string();
             assert!(
@@ -1352,7 +1325,7 @@ fn live_git_currency_accepts_an_edit_reverted_to_the_checked_commit() {
     let input = evaluation(&f, &check, &revision);
     record_evaluation(&mut f, &input).unwrap();
     assert!(
-        complete(&mut f, &check, &revision, "reverted-live")
+        complete(&mut f, &check, "reverted-live")
             .unwrap()
             .acceptance[0]
             .satisfied
@@ -1362,7 +1335,7 @@ fn live_git_currency_accepts_an_edit_reverted_to_the_checked_commit() {
 }
 
 #[test]
-fn live_git_currency_requires_a_commit_declaration_for_a_prose_evaluation() {
+fn live_git_currency_refuses_a_prose_evaluation_without_a_current_declaration() {
     for declared in [None, Some("content-v1:earlier-capture")] {
         let (_root, mut f) = live_fixture(false, true);
         f.record().unwrap();
@@ -1379,7 +1352,7 @@ fn live_git_currency_requires_a_commit_declaration_for_a_prose_evaluation() {
         assert!(
             error
                 .to_string()
-                .contains("declare the intended git-commit"),
+                .contains("declare its complete source_id before evaluating"),
             "{error}"
         );
         assert_eq!(before, f.snapshot());
@@ -1409,8 +1382,7 @@ fn live_git_currency_does_not_gate_unevaluated_prose_without_a_check_citation() 
     f.record().unwrap();
     let note = quiet_evaluation::note(&mut f);
     std::fs::rename(&root, root.with_file_name("unavailable-source")).unwrap();
-    let revision = f.request.input.revision();
-    let seal = complete(&mut f, &note, &revision, "prose-without-check").unwrap();
+    let seal = complete(&mut f, &note, "prose-without-check").unwrap();
     assert!(seal.acceptance[0].satisfied);
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
@@ -1456,7 +1428,6 @@ fn live_git_currency_reuses_original_evidence_after_same_generation_recovery() {
         4004,
     );
     request.acceptance.clear();
-    request.source_fingerprint = Some(revision);
     f.store
         .complete_work(&request, &DevelopmentNoopRedactor)
         .unwrap();
@@ -1524,7 +1495,6 @@ fn live_git_currency_new_generation_requires_a_new_registered_check() {
     );
     let mut request = completion_request(&work, &held, "runner", &check, "renamed-completion", 17);
     request.acceptance.clear();
-    request.source_fingerprint = Some(f.request.input.revision());
     f.store
         .complete_work(&request, &DevelopmentNoopRedactor)
         .unwrap();
@@ -1620,7 +1590,6 @@ fn live_git_currency_explicit_release_then_recover_does_not_restore_the_root() {
         16,
     );
     request.acceptance.clear();
-    request.source_fingerprint = Some(revision);
     let error = f
         .store
         .complete_work(&request, &DevelopmentNoopRedactor)
@@ -1683,9 +1652,7 @@ fn live_git_currency_validates_saved_decisions_without_rediscovery() {
             "{damage}"
         );
     }
-    let revision = f.request.input.revision();
-    let seal =
-        complete_with_evidence(&mut f, &[check, note], &revision, "proof-completion").unwrap();
+    let seal = complete_with_evidence(&mut f, &[check, note], "proof-completion").unwrap();
     std::fs::rename(&root, root.with_file_name("gone-after-seal")).unwrap();
     assert_eq!(
         f.store.completion_seal_evaluation(&seal).unwrap(),

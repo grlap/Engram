@@ -81,10 +81,7 @@ fn refuse_misaddressed_acceptance(
 /// resolved, focus moves or an attempt is written. Every request storage
 /// could admit passes, so an exact replay still reaches its replay.
 pub(crate) fn validate_completion_request(input: &WorkCompleteInput) -> Result<(), StoreError> {
-    crate::domain::AcceptanceSourceBasis::validate_declaration(
-        input.source_fingerprint.as_deref(),
-        input.source_id.as_ref(),
-    )?;
+    crate::domain::AcceptanceSourceBasis::validate_declaration(input.source_id.as_ref())?;
     links::validate_shape(input)?;
     // A note beside an empty result list is admitted under an evaluated
     // policy, which reads no explicit results; beside results it never is.
@@ -613,7 +610,6 @@ impl LocalWorkService {
         match store.acceptance_evaluation_readiness(
             work.work_id,
             claim.run_id,
-            input.source_fingerprint.as_deref(),
             input.source_id.as_ref(),
         )? {
             crate::storage::AcceptanceEvaluationReadiness::Blocked(cause, context) => {
@@ -667,7 +663,7 @@ impl LocalWorkService {
                     reconciled_action_outcomes: Vec::new(),
                     released_resource_leases: Vec::new(),
                 },
-                source_fingerprint: input.source_fingerprint.clone(),
+                source_fingerprint: None,
                 source_id: input.source_id.clone(),
                 landing: input.landing.clone(),
                 actor,

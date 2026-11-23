@@ -40,8 +40,6 @@ fn done(
 ) -> Result<Receipt, crate::verbs::VerbError> {
     verbs.done(
         DoneInput {
-            source_fingerprint: None,
-
             source_id: None,
             landing,
             links: Vec::new(),
@@ -166,8 +164,6 @@ fn an_unreadable_seal_leaves_its_landing_unavailable() {
     claim(&verbs, &work, 1);
     let named = landing("0123456789abcdef0123456789abcdef01234567");
     let core_input = WorkCompleteInput {
-        source_fingerprint: None,
-
         source_id: None,
         landing: Some(named.clone()),
         links: Vec::new(),

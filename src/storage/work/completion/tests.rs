@@ -4,6 +4,7 @@ use super::super::*;
 use super::*;
 
 mod bindings;
+mod legacy_replay;
 mod named_root;
 mod obligations;
 mod stale_source;

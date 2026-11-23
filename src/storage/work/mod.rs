@@ -113,6 +113,8 @@ pub(in crate::storage) use registered_verification::seed_historical_registered_v
 mod remote_verification;
 pub(in crate::storage) use remote_verification::record_remote_verification_on;
 #[cfg(test)]
+pub(in crate::storage) use remote_verification::seed_historical_remote_verification_on;
+#[cfg(test)]
 pub(crate) use verification_bind::bound_assessment_fixture;
 pub(in crate::storage) use verification_bind::bound_receipt_matches_on;
 
@@ -603,6 +605,6 @@ pub(crate) struct CompletionRecoverySnapshot {
 #[cfg(test)]
 pub(crate) use acceptance_evaluation::{
     AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
-    admission_transport_fixture, long_declared_source, long_presented_source,
-    sealed_source_transport_fixture, source_recovery_transport_fixture,
+    admission_transport_fixture, long_declared_source, sealed_source_transport_fixture,
+    source_recovery_transport_fixture,
 };

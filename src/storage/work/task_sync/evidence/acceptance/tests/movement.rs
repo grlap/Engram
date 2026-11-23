@@ -146,7 +146,7 @@ fn later_shared_checks_follow_native_pass_exemptions_and_failed_check_barriers()
         assert_ne!(receipt.verifications.len(), 0);
         let native = fixture
             .store
-            .acceptance_evaluation_status(fixture.binding.work_id, None)
+            .acceptance_evaluation_status(fixture.binding.work_id)
             .unwrap()
             .unwrap();
         assert_eq!(native.stale.is_some(), failed, "native failed={failed}");
@@ -186,7 +186,7 @@ fn committed_input_currency_survives_a_reported_change_then_revert() {
     fixture.observe(root.path(), 31);
     let native = fixture
         .store
-        .acceptance_evaluation_status(fixture.binding.work_id, None)
+        .acceptance_evaluation_status(fixture.binding.work_id)
         .unwrap()
         .unwrap();
     assert!(native.stale.is_none());
@@ -332,7 +332,7 @@ fn report_based_shared_evaluation_keeps_an_accounted_change_barrier_after_revert
     assert!(
         fixture
             .store
-            .acceptance_evaluation_status(fixture.binding.work_id, None)
+            .acceptance_evaluation_status(fixture.binding.work_id)
             .unwrap()
             .unwrap()
             .stale

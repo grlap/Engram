@@ -2,12 +2,14 @@ use super::*;
 use crate::ObjectId;
 
 fn ordinary_fixture(store: SqliteStore) -> Fixture {
-    fixture_with_create_and_root(
+    let mut f = fixture_with_create_and_root(
         store,
         0,
         &root_request("project-a", "ordinary-work", 1),
         true,
-    )
+    );
+    f.use_shared_source();
+    f
 }
 
 #[test]
@@ -90,6 +92,7 @@ fn work_session_names_reads_and_records_without_old_turn_authority() {
     }];
     let mut f =
         fixture_with_create_and_root(SqliteStore::open_in_memory().unwrap(), 0, &create, false);
+    f.use_shared_source();
     let before = history(&f);
     let binding = f.request.registration.binding.clone();
     let root = f
@@ -303,7 +306,8 @@ fn work_session_replays_legacy_receipts_without_moving_or_rewriting_them() {
 #[test]
 fn work_session_wire_omits_control_routing_but_keeps_registered_credit_and_exact_retry() {
     let offset = (chrono::Utc::now() - at(10)).num_seconds();
-    let f = fixture_offset(offset);
+    let mut f = fixture_offset(offset);
+    f.use_shared_source();
     let mut wire = serde_json::to_value(&f.request).unwrap();
     wire["operation"] = serde_json::json!("verification_record");
     let mut server =
@@ -392,6 +396,7 @@ fn work_session_root_naming_keeps_the_actual_holder_fence_and_project() {
 #[test]
 fn work_session_reopen_fences_prior_connection_without_changing_passive_history() {
     let mut f = fixture();
+    f.use_shared_source();
     let before = history(&f);
     let previous = f.connection.clone();
     f.connection = f.store.resume_work_connection(&f.session, at(8)).unwrap();

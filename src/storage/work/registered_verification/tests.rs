@@ -143,15 +143,16 @@ impl Fixture {
         self.record_at(at(10))
     }
 
-    /// A staged-tree input is history: only the seed writes one now, so its
-    /// readers stay covered without keeping the retired ingress.
+    /// Commit and staged-tree inputs are history: only the seed writes one
+    /// now, so their readers stay covered without keeping the retired ingress.
     fn record_at(
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<RegisteredVerificationReceipt, StoreError> {
         let record = if matches!(
             self.request.input,
-            RegisteredVerificationInput::StagedTree { .. }
+            RegisteredVerificationInput::Commit { .. }
+                | RegisteredVerificationInput::StagedTree { .. }
         ) {
             SqliteStore::seed_historical_registered_verification
         } else {
@@ -167,6 +168,26 @@ impl Fixture {
             &self.request,
             now,
         )
+    }
+
+    /// States the input as a shared `source_id`, the only input a new write
+    /// takes. Admission checks its shape, never the filesystem.
+    fn use_shared_source(&mut self) {
+        let source_id = crate::source::SourceId {
+            git_delta: Some(crate::source::GitDelta {
+                sha256: "c".repeat(64),
+                dirty: false,
+                gitlinks: vec![],
+            }),
+            commit: "a".repeat(40),
+            tree: "b".repeat(40),
+            submodules: vec![],
+            changes: vec![],
+        };
+        self.request.input = RegisteredVerificationInput::SourceId {
+            source_id: source_id.clone(),
+        };
+        self.request.post_run = RegisteredVerificationPostRun::SourceId { source_id };
     }
 
     fn snapshot(&self) -> Vec<(String, String)> {
@@ -213,6 +234,32 @@ fn registered_verification_wire_and_replay_survive_root_movement() {
     f.request.operation_key = "termal-run:test-new".into();
     assert!(
         matches!(f.record(), Err(StoreError::RegisteredVerificationRefused { field, .. }) if field == "root")
+    );
+    assert_eq!(f.snapshot(), snapshot);
+}
+
+#[test]
+fn registered_verification_new_commit_input_is_refused_without_effects() {
+    let mut f = fixture();
+    let snapshot = f.snapshot();
+    let error = SqliteStore::record_registered_verification(
+        &mut f.store,
+        &f.project,
+        &f.session,
+        &f.connection,
+        crate::storage::HostSessionAuthority::Work,
+        &actor("runner"),
+        &f.request,
+        at(10),
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::host::store_error_code(&error),
+        "verification_record_refused"
+    );
+    assert!(
+        matches!(&error, StoreError::RegisteredVerificationRefused { field, .. } if field == "input.kind"),
+        "{error}"
     );
     assert_eq!(f.snapshot(), snapshot);
 }
@@ -404,13 +451,14 @@ fn registered_verification_emits_host_wire_fixtures() {
         ("failed".into(), 0),
         ("unrun".into(), 0),
     ]));
-    let mut request = serde_json::to_value(&f.request).unwrap();
-    request["operation"] = serde_json::json!("verification_record");
-
-    let mut refused = request.clone();
+    // A new write states its input as source_id; the commit form is refused.
+    let mut refused = serde_json::to_value(&f.request).unwrap();
+    refused["operation"] = serde_json::json!("verification_record");
     refused["operation_key"] = serde_json::json!("termal-run:test-refused");
     refused["registration"]["host_run_id"] = serde_json::json!("test-refused");
-    refused["post_run"]["clean_before"] = serde_json::json!(false);
+    f.use_shared_source();
+    let mut request = serde_json::to_value(&f.request).unwrap();
+    request["operation"] = serde_json::json!("verification_record");
     let mut failed = request.clone();
     failed["operation_key"] = serde_json::json!("termal-run:test-failed");
     failed["registration"]["host_run_id"] = serde_json::json!("test-failed");
@@ -452,7 +500,7 @@ fn registered_verification_emits_host_wire_fixtures() {
     assert_eq!(receipt.operation, receipt.producer);
     assert_eq!(receipt.verifications.len(), 1);
     assert_eq!(replies[1]["error"]["code"], "verification_record_refused");
-    assert_eq!(replies[1]["error"]["details"]["field"], "post_run");
+    assert_eq!(replies[1]["error"]["details"]["field"], "input.kind");
     assert_eq!(replies[2]["status"], "ok", "{}", replies[2]);
     assert_eq!(replies[2]["result"]["run_outcome"], "failed");
     assert_eq!(

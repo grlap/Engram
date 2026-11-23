@@ -98,8 +98,6 @@ pub(super) fn proposed_root(result: WorkProposeResult) -> WorkItemSummary {
 
 pub(super) fn completion_input(summary: &str, key: &str) -> WorkCompleteInput {
     WorkCompleteInput {
-        source_fingerprint: None,
-
         source_id: None,
         landing: None,
         links: Vec::new(),

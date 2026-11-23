@@ -587,19 +587,18 @@ operation_key: termal-run:<host_run_id>
 registration: {host_run_id, request_identity, registered_at,
   initiating_session_id, owning_session_id?, binding, root}
 root: {workspace_id, generation, state: named}
-input: {kind: commit, commit} | {kind: source_id, source_id}
+input: {kind: source_id, source_id}
 run: {mode, command, started_at, finished_at, outcome}
 checks: [{stage, check_kind, command, check_fingerprint, started_at?,
   completed_at?, outcome, summary?, refs?, counts?}]
-post_run: {outcome, clean_before, clean_after, dirty_paths?, disposition?}
-  | {source_id}
+post_run: {source_id}
 ```
 
-Commit input names its full commit and retains its historical
-clean-before/after rule. A new `staged_tree` input is refused; one an earlier
-build stored, naming its exact tree with base commit as provenance, keeps being
-read and an exact retry of it replays. The `source_id` input instead carries the
-complete object returned by the shared source reader, and requires exactly
+An otherwise valid new `commit` or `staged_tree` input is refused with
+`verification_record_refused`, naming `input.kind`, and records nothing. One an
+earlier build stored keeps being read with its historical clean-before/after
+post-run facts, and an exact retry of it replays. The `source_id` input carries
+the complete object returned by the shared source reader, and requires exactly
 the matching `{source_id}` post-run shape. Both objects must validate and be
 equal in full. Equal local changes and off-pin initialized submodules qualify;
 cleanliness and watcher reports add no source condition. Landing policy is
@@ -689,7 +688,7 @@ completion: {schema_version: 1, origin: {host_id, runner_session_id}, run_id,
   result: {verdict: PASS|FAIL|INTERRUPTED|RUNNING|UNKNOWN, terminal, exit, reason},
   input: {kind: source_id, source_id_before: SourceId|null,
           source_id_after: SourceId|null}
-       | {commit?, tree?, before_fingerprint?, after_fingerprint?},
+       | {commit?, tree?, before_fingerprint?, after_fingerprint?} (stored only),
   finished_at?}
 association: {binding, root, use}
 use: {kind: committed_input, expected_commit, purpose: verification|landing_gate}
@@ -704,11 +703,12 @@ admitted-source copy: the launcher checks its own frozen admitted snapshot
 against its actual before-run measurement before running stages. The remote
 consumer judges the two retained endpoints and the authoritative result.
 
-The legacy alternative retains its historical wire and qualification semantics
-during the additive producer rollout. Existing terminal, association,
-verification and decision records are read as stored, with no conversion. New
-shared submissions validate through the source owner's representation validator,
-separately from stored-record validation. A new `authorized_test_ref` names a
+An otherwise valid new delivery of the legacy alternative is refused with `invalid_request`,
+naming `input`, and records nothing. Existing terminal, association,
+verification and decision records keep its historical wire and qualification
+semantics and are read as stored, with no conversion; an exact retry of a
+stored delivery replays. New shared submissions validate through the source
+owner's representation validator, separately from stored-record validation. A new `authorized_test_ref` names a
 `refs/heads/test/` ref, where the Merger's test refs live; any other ref name,
 such as an author's own `refs/heads/author-test/` ref, is refused, naming
 `association.use.ref_name`, because an author test ref is reported as a
@@ -842,11 +842,12 @@ closure; imported text is never trusted merely because it occupies that field.
 Only a qualifying delivery mints verification: one `test` record, written by the
 same writer as any other, whose producer is the delivery. Shared input stores the
 whole equal source object as its verification basis, with no `source_revision`
-surrogate. Legacy `committed_input` is the input
+surrogate. A stored legacy `committed_input` record names the input
 `git-commit:<expected_commit>` and legacy `authorized_test_ref` is
-`git-tree:<expected_tree>`, so it enters the same
+`git-tree:<expected_tree>`. These earlier records retain the same
 [registered Git input](acceptance-evaluation.md#registered-git-input-evidence)
-decision, and the same root, run, cut, time and mutation guards. The wire names no
+decision readers and root, run, cut, time and mutation guards; a new delivery
+cannot supply this legacy input. The wire names no
 check, so its `check_fingerprint` is derived from the host, run and mode: it
 satisfies a requirement that leaves the check open, and a requirement pinning
 another check stays unmet. It never goes through a local producer, grant, turn,

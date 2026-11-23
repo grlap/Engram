@@ -119,6 +119,27 @@ fn assert_consistent(
     }
 }
 
+fn shared_source(revision: &str, generation: i64) -> crate::domain::VerificationSourceBasis {
+    crate::domain::VerificationSourceBasis {
+        workspace_id: "workspace-B".into(),
+        identity: crate::domain::VerificationSourceIdentity::SourceId {
+            source_id: crate::source::SourceId {
+                git_delta: Some(crate::source::GitDelta {
+                    sha256: "c".repeat(64),
+                    dirty: false,
+                    gitlinks: vec![],
+                }),
+                commit: ObjectId::from_canonical_bytes(b"named-root-read").as_str()[..40].into(),
+                tree: ObjectId::from_canonical_bytes(revision.as_bytes()).as_str()[..40].into(),
+                submodules: vec![],
+                changes: vec![],
+            },
+        },
+        source_root_generation: Some(generation),
+        source_root_state: Some(SourceRootState::Named),
+    }
+}
+
 #[test]
 fn a_claim_never_named_reads_none_without_an_event() {
     let (fixture, work, claim, host) = bound_host();
@@ -1122,22 +1143,16 @@ fn a_quiet_source_capture_in_the_root_is_a_sighting() {
         30,
     )
     .expect("host names B");
-    observe_basis(
-        &mut host,
-        store,
-        workspace("workspace-B", "R2", Some(9)),
-        false,
-        40,
-    )
-    .expect("the host observation records");
+    observe_basis(&mut host, store, shared_source("R2", 9), false, 40)
+        .expect("the host observation records");
     let read = sighting_read(store, &work, claim.run_id, None);
     assert!(
         matches!(
             &read.root,
             NamedRootAtCut::Bound {
-                sighting: InitialSighting::Present { revision, .. },
+                sighting: InitialSighting::SharedPresent { source_id_summary, .. },
                 ..
-            } if revision == "R2"
+            } if source_id_summary == &shared_source("R2", 9).source_id().unwrap().summary()
         ),
         "{read:?}"
     );
@@ -1221,14 +1236,11 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
                 workspace_id: "workspace-B".into(),
                 baseline: MeasuredBaseline {
                     workspace_id: "workspace-B".into(),
-                    identity: crate::domain::VerificationSourceIdentity::Legacy {
-                        source_revision: "revision-before".into(),
-                        git_tree: None,
-                    },
+                    identity: shared_source("revision-before", 9).identity,
                     observed_at: at(38),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: (workspace("workspace-B", "R3", Some(9))).into(),
+                    source_basis: shared_source("R3", 9),
                     observed_at: at(39),
                 },
             },
@@ -1241,7 +1253,7 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
         },
     };
     store
-        .seed_historical_execution_observation(
+        .record_unadmitted_execution_observation(
             &host.project_id,
             &host.session_id,
             &host.connection_token,
@@ -1256,9 +1268,9 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
         matches!(
             &after.root,
             NamedRootAtCut::Bound {
-                sighting: InitialSighting::Present { revision, .. },
+                sighting: InitialSighting::SharedPresent { source_id_summary, .. },
                 ..
-            } if revision == "R3"
+            } if source_id_summary == &shared_source("R3", 9).source_id().unwrap().summary()
         ),
         "{after:?}"
     );
@@ -1294,7 +1306,7 @@ fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() 
     observe_basis(
         &mut host,
         &mut fixture.store,
-        stated(Some(9), Some(SourceRootState::Named)),
+        shared_source("revision-B", 9),
         false,
         10,
     )
@@ -1303,7 +1315,7 @@ fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() 
     assert!(matches!(
         sighted.root,
         NamedRootAtCut::Bound {
-            sighting: InitialSighting::Present { .. },
+            sighting: InitialSighting::SharedPresent { .. },
             ..
         }
     ));
@@ -1362,19 +1374,18 @@ fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() 
 #[test]
 fn a_binding_that_moved_after_the_cut_is_reported_and_an_ended_root_reads_none() {
     let (mut fixture, work, claim, note) = evaluated_fixture();
-    let host = open_work_host(&mut fixture.store, "runner", at(8));
+    let mut host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
-    host_verification_from_basis(
+    let mut observer = HostSession::bind(&mut fixture.store, &work, &claim, 8);
+    host.connection_token = observer.connection_token.clone();
+    observe_basis(
+        &mut observer,
         &mut fixture.store,
-        &work,
-        &claim,
-        "runner",
-        "sighting-B",
-        VerificationKind::Test,
-        VerificationResult::Passed,
+        shared_source("revision-B", 9),
+        false,
         9,
-        source("workspace-B", 9),
-    );
+    )
+    .expect("shared source sighting");
     let first = sighting_read(&fixture.store, &work, claim.run_id, None);
     name_root(&mut fixture.store, &work, &claim, &host, 10, 10);
     let moved = sighting_read(&fixture.store, &work, claim.run_id, Some(first.read_cut));
@@ -1384,7 +1395,7 @@ fn a_binding_that_moved_after_the_cut_is_reported_and_an_ended_root_reads_none()
         moved.root,
         NamedRootAtCut::Bound {
             generation: 9,
-            sighting: InitialSighting::Present { .. },
+            sighting: InitialSighting::SharedPresent { .. },
             ..
         }
     ));
@@ -1541,6 +1552,11 @@ fn named_root_read_wire_round_trips_and_refuses_unknown_fields() {
             position: 3,
             revision: "R1".into(),
         })),
+        shape(bound(InitialSighting::SharedPresent {
+            record: object.clone(),
+            position: 3,
+            source_id_summary: shared_source("R1", 9).source_id().unwrap().summary(),
+        })),
     ] {
         let value = serde_json::to_value(&read).expect("serialize");
         // Each shape reads back as itself; nothing is dropped.
@@ -1548,10 +1564,10 @@ fn named_root_read_wire_round_trips_and_refuses_unknown_fields() {
         assert_eq!(back, read);
     }
     // An unknown field is refused at every level, never ignored.
-    let present = serde_json::to_value(shape(bound(InitialSighting::Present {
+    let present = serde_json::to_value(shape(bound(InitialSighting::SharedPresent {
         record: object.clone(),
         position: 3,
-        revision: "R1".into(),
+        source_id_summary: shared_source("R1", 9).source_id().unwrap().summary(),
     })))
     .expect("serialize");
     let none = serde_json::to_value(shape(NamedRootAtCut::None {})).expect("serialize");

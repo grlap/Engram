@@ -998,7 +998,7 @@ pub(crate) fn stale_deciding_refusal_fixture(
     );
     let run_feed = crate::domain::FeedId::RunExecution(claim.run_id);
     store
-        .record_acceptance_evaluation(
+        .seed_historical_acceptance_evaluation(
             &RecordAcceptanceEvaluationRequest {
                 supersedes: None,
                 project_id: work.project_id.clone(),

@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn live_verb_inputs_refuse_the_retired_fingerprint_key() {
+    let source_id = serde_json::json!({
+        "commit": "a".repeat(40),
+        "tree": "b".repeat(40),
+        "git_delta": {"sha256": "c".repeat(64), "dirty": false, "gitlinks": []}
+    });
+    let mut evaluate = serde_json::json!({
+        "mode": "same_session", "acceptance_basis": 1, "evidence_basis": 1,
+        "verdicts": [], "source_id": &source_id,
+    });
+    let mut done = serde_json::json!({"source_id": source_id});
+    assert!(serde_json::from_value::<EvaluateInput>(evaluate.clone()).is_ok());
+    assert!(serde_json::from_value::<DoneInput>(done.clone()).is_ok());
+
+    evaluate["source_fingerprint"] = serde_json::json!("retired");
+    done["source_fingerprint"] = serde_json::json!("retired");
+    assert!(serde_json::from_value::<EvaluateInput>(evaluate).is_err());
+    assert!(serde_json::from_value::<DoneInput>(done).is_err());
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one deterministic focus-race scenario covers the exact-target agent words"
@@ -131,8 +152,6 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

@@ -314,7 +314,7 @@ fn unsighted_root(name: &str) -> (Fixture, WorkItem, WorkClaim, HostSession) {
 /// The stale status as completion reads it, in words.
 fn status(store: &SqliteStore, work: &WorkItem, delivered: &Delivered) -> String {
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation");
     let mut words = match status.stale {
@@ -864,7 +864,7 @@ fn a_newer_unconfirmed_declaration_hides_an_older_pass() {
     .expect("a declaration the root has not reported records");
     assert_ne!(newer.evaluation, older.evaluation);
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation");
     assert_eq!(status.evaluation, newer.evaluation);

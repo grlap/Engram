@@ -466,7 +466,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidTaskProjection(_)
         | StoreError::InvalidHostContext(_)
         | StoreError::NamedRootBindingRefused(_)
-        | StoreError::SourceBasisTextRefused { .. }
         | StoreError::NamedRootReadRefused(_)
         | StoreError::ExecutionObservationInvalid(_)
         | StoreError::RegisteredVerificationRefused { .. }

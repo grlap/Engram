@@ -230,7 +230,7 @@ fn sub_agent_pass_survives_parent_handoff_and_refuses_a_former_holder() {
     );
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("read unchanged newest record")
             .expect("child record remains")
             .evaluation,
@@ -527,7 +527,7 @@ fn an_independent_evaluator_who_becomes_the_holder_cannot_consume_its_own_pass()
     .expect("holding a sibling child run keeps second independent for this run");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .expect("newest evaluation")
             .stale,
@@ -937,13 +937,14 @@ fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
     disable_obligation_rules(store, 6);
     let work = fx.work.clone();
     let claim = fx.claim.clone();
-    let mut host = HostSession::bind(store, &work, &claim, 10);
-    let passed = host.install_checks(
+    let (host, source_id) = admission::shared_host(
         store,
-        false,
-        Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
-        20,
+        &work,
+        &claim,
+        &fx.directory.path().join("source"),
+        10,
     );
+    let passed = admission::shared_check(store, &host, &source_id, "typed-citation", 20);
     let evidence_basis = cut(store, &work);
     let verbs = crate::AgentVerbs::new(
         database,
@@ -964,12 +965,11 @@ fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
                     criterion: 1,
                     verdict: "pass".into(),
                     basis: "observed".into(),
-                    rationale: "the observed build passed".into(),
-                    evidence: vec![passed[0].as_str().to_owned()],
+                    rationale: "the observed test passed".into(),
+                    evidence: vec![passed.as_str().to_owned()],
                 }],
                 attempt: None,
-                source_fingerprint: None,
-                source_id: None,
+                source_id: Some(source_id),
                 model: None,
                 execution_identity: None,
                 parent_session: None,
@@ -1521,8 +1521,6 @@ fn evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_chec
         .work_complete_on(
             Some(&work.work_id.0.to_string()),
             crate::work_service::WorkCompleteInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -2051,7 +2049,7 @@ fn a_corrupted_verification_projection_refuses_reads_and_completion_through_the_
     // The restored read is the observed pass recorded before the corruption,
     // fresh and still citing the verification evidence.
     let restored = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read on the restored projection")
         .expect("the observed pass is the newest evaluation");
     assert!(restored.stale.is_none(), "stale: {:?}", restored.stale);

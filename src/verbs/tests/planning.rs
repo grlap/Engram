@@ -326,8 +326,6 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
     let done = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

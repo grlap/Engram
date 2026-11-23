@@ -84,7 +84,6 @@ fn evaluate_input(
         evidence_basis,
         verdicts,
         attempt: None,
-        source_fingerprint: None,
         source_id: None,
         model: None,
         execution_identity: None,
@@ -402,7 +401,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     let work = store.resolve_work_ref(&project, &work_ref).expect("work");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("stored evaluation")
             .expect("record")
             .evaluation
@@ -418,8 +417,6 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     let refused_done = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -507,8 +504,6 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     let completed = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

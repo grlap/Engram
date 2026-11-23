@@ -289,6 +289,7 @@ pub(super) fn normalize_gate_input(input: &GateInput) -> Result<GateInput, VerbE
 /// `evaluate`: one attributed acceptance evaluation on the targeted item's
 /// active run.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvaluateInput {
     #[serde(default)]
     pub work_ref: Option<String>,
@@ -298,9 +299,7 @@ pub struct EvaluateInput {
     pub verdicts: Vec<crate::WorkCriterionVerdictInput>,
     #[serde(default)]
     pub attempt: Option<String>,
-    #[serde(default)]
-    pub source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at evaluation time.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -415,6 +414,7 @@ pub struct NoteInput {
 
 /// `done`: complete the held item.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DoneInput {
     // This shared core DTO is only a transport-neutral positional citation:
     // CLI and MCP must use the same shape and service-owned admission rules.
@@ -425,11 +425,8 @@ pub struct DoneInput {
     pub work_ref: Option<String>,
     pub summary: Option<String>,
     pub note: Option<String>,
-    /// Host-measured source fingerprint at completion time; checked against
-    /// the evaluated one when the policy requires source freshness.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at completion time; checked
+    /// against the evaluated one when the policy requires source freshness.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

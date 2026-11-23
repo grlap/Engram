@@ -112,7 +112,6 @@ impl AgentVerbs {
             evidence_basis: input.evidence_basis,
             verdicts: input.verdicts,
             attempt: input.attempt,
-            source_fingerprint: input.source_fingerprint,
             source_id: input.source_id,
             model: input.model,
             execution_identity: input.execution_identity,

@@ -49,7 +49,7 @@ fn submodule_git_currency_clean_pinned_child_evaluates_and_completes() {
             let input = evaluation(&f, &check, &revision);
             record_evaluation(&mut f, &input).unwrap();
         }
-        let seal = complete(&mut f, &check, &revision, "submodule-clean-done").unwrap();
+        let seal = complete(&mut f, &check, "submodule-clean-done").unwrap();
         assert!(seal.acceptance[0].satisfied);
     }
 }
@@ -92,13 +92,7 @@ fn submodule_git_currency_refusals_name_child_at_evaluate_and_done() {
         let error = record_evaluation(&mut f, &input).unwrap_err();
         assert!(error.to_string().contains("child"), "{scenario}: {error}");
         assert!(error.to_string().contains(reason), "{scenario}: {error}");
-        let error = complete(
-            &mut f,
-            &check,
-            &revision,
-            &format!("submodule-{scenario}-done"),
-        )
-        .unwrap_err();
+        let error = complete(&mut f, &check, &format!("submodule-{scenario}-done")).unwrap_err();
         assert!(error.to_string().contains("child"), "{scenario}: {error}");
         assert!(error.to_string().contains(reason), "{scenario}: {error}");
     }
@@ -117,7 +111,7 @@ fn submodule_git_currency_uses_the_pin_for_an_undeclared_child() {
     std::fs::write(child.join("tracked"), "undeclared change\n").unwrap();
     let input = evaluation(&f, &check, &revision);
     record_evaluation(&mut f, &input).unwrap();
-    let seal = complete(&mut f, &check, &revision, "undeclared-child-done").unwrap();
+    let seal = complete(&mut f, &check, "undeclared-child-done").unwrap();
     assert!(seal.acceptance[0].satisfied);
 }
 
@@ -150,7 +144,7 @@ fn submodule_git_currency_nested_clean_evaluates_and_completes() {
             let input = evaluation(&f, &check, &revision);
             record_evaluation(&mut f, &input).unwrap();
         }
-        let seal = complete(&mut f, &check, &revision, "nested-clean-done").unwrap();
+        let seal = complete(&mut f, &check, "nested-clean-done").unwrap();
         assert!(seal.acceptance[0].satisfied);
     }
 }

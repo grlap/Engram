@@ -79,14 +79,6 @@ pub(super) fn select_on(
         request.source_id.as_ref(),
         request.completed_at,
     )?;
-    if request.source_fingerprint.is_some()
-        && (selected.current_verification || selected.acceptance.is_some())
-    {
-        return Err(StoreError::WorkCompletionRefused {
-            work: request.work_id,
-            reason: "imported proof requires a complete source declaration".into(),
-        });
-    }
     Ok(selected)
 }
 

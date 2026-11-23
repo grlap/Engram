@@ -300,7 +300,7 @@ fn oversized_evaluations_are_refused_with_nothing_appended() {
     assert_eq!(cut(store, &many), head_before);
     assert_eq!(
         store
-            .acceptance_evaluation_status(many.work_id, None)
+            .acceptance_evaluation_status(many.work_id)
             .expect("status read")
             .map(|status| status.evaluation),
         Some(admitted.evaluation)

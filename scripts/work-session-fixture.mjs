@@ -1,12 +1,10 @@
 // Test fixtures send facts through the ordinary host evidence protocol.
 // They assert a registered producer; they do not attest that a command ran.
 import { createHash } from "node:crypto";
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 
-export function gitRevision(label) {
-  return `git-commit:${createHash("sha256").update(label).digest("hex").slice(0, 40)}`;
+// A complete identity standing for a label, for flows that assert no real tree.
+export function labelledSourceId(label) {
+  return measuredSource({ source_revision: label }).source_id;
 }
 
 function measuredSource(source) {
@@ -41,54 +39,6 @@ export async function observeSource({ request, policy, binding, key, source, cha
   });
 }
 
-// Acceptance's legacy string readers are a separate transition. Seed their
-// retained pre-cutoff observations explicitly, rather than letting those tests
-// keep a legacy producer alive on the current host protocol. Only throwaway
-// fixture stores are passed here; minted ids and links stay unchanged.
-export async function observeHistoricalSource({ home, ...args }) {
-  const receipt = await observeSource(args);
-  const projects = readdirSync(join(home, "projects"), { withFileTypes: true }).filter((entry) => entry.isDirectory());
-  if (projects.length !== 1) throw new Error("historical fixture requires exactly one project");
-  const database = join(home, "projects", projects[0].name, "engram.db");
-  const seed = String.raw`
-    import { DatabaseSync } from "node:sqlite";
-    import { createHash } from "node:crypto";
-    const [file, id, encodedSource] = process.argv.slice(-3);
-    const source = JSON.parse(encodedSource);
-    const canonical = (value) => {
-      if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-      if (value && typeof value === "object") return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
-      return JSON.stringify(value);
-    };
-    const replaceBasis = (occurrence) => {
-      if (occurrence.kind === "source_sighting") occurrence.source_basis = source;
-      else occurrence.source_change.sighting.source_basis = source;
-    };
-    const db = new DatabaseSync(file);
-    try {
-      db.exec("BEGIN IMMEDIATE");
-      const row = db.prepare("SELECT canonical_json FROM objects WHERE object_id = ? AND object_kind = 'unadmitted_execution_observation'").get(id);
-      if (!row) throw new Error("missing historical fixture observation");
-      const record = JSON.parse(Buffer.from(row.canonical_json));
-      replaceBasis(record.occurrence);
-      db.prepare("UPDATE objects SET canonical_json = ? WHERE object_id = ?").run(Buffer.from(canonical(record)), id);
-      const receipts = db.prepare("SELECT idempotency_key, result_json FROM work_operation_results WHERE operation = 'host_execution_observe'").all();
-      const operation = receipts.find((row) => JSON.parse(Buffer.from(row.result_json)).result.observation === id);
-      if (!operation) throw new Error("missing historical fixture receipt");
-      const envelope = JSON.parse(Buffer.from(operation.result_json));
-      replaceBasis(envelope.intent.occurrence);
-      const hash = createHash("sha256").update(canonical(envelope.intent)).digest("hex");
-      db.prepare("UPDATE work_operation_results SET request_hash = ?, result_json = ? WHERE operation = 'host_execution_observe' AND idempotency_key = ?")
-        .run(hash, Buffer.from(canonical(envelope)), operation.idempotency_key);
-      db.exec("COMMIT");
-    } finally { db.close(); }
-  `;
-  const result = spawnSync(process.execPath, ["--no-warnings", "--input-type=module", "--eval", seed,
-    database, receipt.observation, JSON.stringify(args.source)], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(result.stderr || "historical observation seeding failed");
-  return receipt;
-}
-
 export async function ensureRoot({ request, binding, key, source }) {
   let root = await request({ operation: "named_root_read", run_id: binding.run_id, claim_id: binding.claim_id });
   if (root.named_root.state === "none") {
@@ -100,7 +50,9 @@ export async function ensureRoot({ request, binding, key, source }) {
   return root;
 }
 
-export async function recordCheck({ request, binding, session, key, source, checkFingerprint, input }) {
+// A new registration states its input as a complete source_id; the commit
+// input is retired.
+export async function recordCheck({ request, binding, session, key, source, checkFingerprint }) {
   const root = await ensureRoot({ request, binding, key, source });
   const time = new Date().toISOString();
   const command = "fixture registered check";
@@ -110,11 +62,11 @@ export async function recordCheck({ request, binding, session, key, source, chec
     registration: { host_run_id: hostRun, request_identity: key, registered_at: time,
       initiating_session_id: session, owning_session_id: session, binding,
       root: { workspace_id: source.workspace_id, generation: root.named_root.generation, state: "named" } },
-    input: input ?? { kind: "commit", commit: source.source_revision.slice("git-commit:".length) },
+    input: { kind: "source_id", source_id: source.source_id },
     run: { mode: "focused", command, started_at: time, finished_at: time, outcome: "passed" },
     checks: [{ stage: "focused", check_kind: "test", command,
       check_fingerprint: checkFingerprint ?? createHash("sha256").update(command).digest("hex"),
       started_at: time, completed_at: time, outcome: "passed", summary: "fixture host check", refs: [] }],
-    post_run: { outcome: "clean", clean_before: true, clean_after: true, dirty_paths: [] },
+    post_run: { source_id: source.source_id },
   });
 }

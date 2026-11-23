@@ -153,8 +153,6 @@ fn status_correction_late_status_is_advisory_outside_the_seal() {
     let done = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

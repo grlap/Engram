@@ -1,6 +1,125 @@
 use super::*;
-use crate::domain::{AcceptWorkHandoffRequest, EvaluationAdmissionRemedy, OfferWorkHandoffRequest};
+use crate::domain::{
+    AcceptWorkHandoffRequest, EvaluationAdmissionRemedy, OfferWorkHandoffRequest,
+    RegisteredVerificationOutcome,
+};
 use chrono::{DateTime, Utc};
+
+#[test]
+fn new_fingerprint_evaluation_is_refused_without_recording() {
+    let mut fixture = fixture("retired-evaluation-source");
+    let (host, source_id) = shared_host(
+        &mut fixture.store,
+        &fixture.work,
+        &fixture.claim,
+        &fixture.directory.path().join("source"),
+        6,
+    );
+    let check = shared_check(
+        &mut fixture.store,
+        &host,
+        &source_id,
+        "before-retirement",
+        10,
+    );
+    let mut input = request(
+        &fixture.work,
+        cut(&fixture.store, &fixture.work),
+        "runner",
+        Mode::SameSession,
+        vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Observed,
+            &[check],
+        )],
+        20,
+    );
+    input.source_basis = Some(AcceptanceSourceBasis::legacy(
+        None,
+        "retained-source".into(),
+    ));
+    let before = test_database_shape_snapshot(&fixture.store.connection).unwrap();
+    let reads = crate::committed_input::read_count();
+    let error = fixture
+        .store
+        .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+        .expect_err("new legacy declaration");
+    assert_eq!(
+        crate::host::store_error_code(&error),
+        "acceptance_evaluation_refused"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("legacy source declarations are retired")
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&fixture.store.connection).unwrap(),
+        before
+    );
+    assert_eq!(crate::committed_input::read_count(), reads);
+}
+
+#[test]
+fn retained_legacy_source_requires_a_shared_declaration_for_new_verdicts() {
+    for outcome in [
+        AcceptanceVerdict::Pass,
+        AcceptanceVerdict::Fail,
+        AcceptanceVerdict::InsufficientEvidence,
+        AcceptanceVerdict::NeedsHuman,
+    ] {
+        let mut fixture = fixture("retained-evaluation-source");
+        enable(
+            &mut fixture.store,
+            &[Mode::SameSession],
+            MechanicalBasis::Asserted,
+            false,
+            "enable",
+            5,
+        );
+        let mut host = HostSession::bind(&mut fixture.store, &fixture.work, &fixture.claim, 6);
+        host.install_source_records(&mut fixture.store, &[(false, Some("historical-source"))], 7);
+        let mut input = request(
+            &fixture.work,
+            cut(&fixture.store, &fixture.work),
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                outcome,
+                AcceptanceBasis::Judgment,
+                std::slice::from_ref(&fixture.evidence),
+            )],
+            10,
+        );
+        let before = test_database_shape_snapshot(&fixture.store.connection).unwrap();
+        let error = fixture
+            .store
+            .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+            .expect_err("an undeclared evaluation cannot infer a retired source");
+        assert!(
+            matches!(&error, StoreError::AcceptanceEvaluationRefused { reason, .. }
+                if reason.contains("retained source is legacy")),
+            "{error}"
+        );
+        assert_eq!(
+            test_database_shape_snapshot(&fixture.store.connection).unwrap(),
+            before
+        );
+
+        if outcome != AcceptanceVerdict::Pass {
+            input.source_basis =
+                AcceptanceSourceBasis::from_declaration(Some(measured_elsewhere()));
+            let recorded = fixture
+                .store
+                .record_acceptance_evaluation(&input, &DevelopmentNoopRedactor)
+                .expect("shared declaration records the non-pass judgment");
+            assert_eq!(recorded.record.verdicts[0].verdict, outcome);
+            assert!(recorded.record.registered_input_decision.is_none());
+        }
+    }
+}
 
 pub(crate) struct AdmissionTransportFixture {
     // Keep the store and its repository-local temporary home alive.
@@ -44,7 +163,14 @@ pub(crate) fn admission_transport_fixture(
     );
     if matches!(
         case,
-        "wrong_run" | "beyond_cut" | "wrong_source" | "wrong_basis"
+        "wrong_run"
+            | "wrong_basis"
+            | "beyond_cut"
+            | "beyond_cut_without_match"
+            | "wrong_source"
+            | "wrong_source_without_match"
+            | "wrong_source_with_superseded_match"
+            | "wrong_source_with_distinct_current_match"
     ) {
         work = revise(
             store,
@@ -73,6 +199,17 @@ pub(crate) fn admission_transport_fixture(
     let mut basis = cut(store, &work);
     let mut declared = None;
     let mut citable_record = None;
+    let transport_source = |letter: &str| crate::source::SourceId {
+        git_delta: Some(crate::source::GitDelta {
+            sha256: letter.repeat(64),
+            dirty: false,
+            gitlinks: vec![],
+        }),
+        commit: letter.repeat(40),
+        tree: letter.repeat(40),
+        changes: vec![],
+        submodules: vec![],
+    };
     let (family, mismatch) = match case {
         "eligibility" => ("eligibility", "same_session_unmarked"),
         "source_root" => {
@@ -96,7 +233,7 @@ pub(crate) fn admission_transport_fixture(
                 )
                 .expect("bind the named root in the fixture's project");
             basis = cut(store, &work);
-            declared = Some("transport-R".into());
+            declared = Some(transport_source("a"));
             ("source_root", "no_initial_sighting")
         }
         "wrong_run" => {
@@ -127,36 +264,75 @@ pub(crate) fn admission_transport_fixture(
             basis = cut(store, &work);
             ("citation", "not_on_run")
         }
-        "beyond_cut" | "wrong_source" => {
-            let mut host = HostSession::bind(store, &work, &claim, second + 3);
-            host.basis.source_revision = "transport-R".into();
-            basis = cut(store, &work);
-            citation = host
-                .install_checks(
-                    store,
-                    true,
-                    Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
-                    second + 10,
-                )
-                .pop()
-                .unwrap();
-            declared = Some("transport-R".into());
-            if case == "wrong_source" {
-                host.basis.source_revision = "transport-S".into();
-                host.install_checks(store, true, None, second + 20);
-                citable_record = host
-                    .install_checks(
-                        store,
-                        false,
-                        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
-                        second + 30,
-                    )
-                    .pop();
+        "beyond_cut"
+        | "beyond_cut_without_match"
+        | "wrong_source"
+        | "wrong_source_without_match"
+        | "wrong_source_with_superseded_match"
+        | "wrong_source_with_distinct_current_match" => {
+            let (host, source_id) = shared_host(
+                store,
+                &work,
+                &claim,
+                &fixture.directory.path().join("source"),
+                second + 3,
+            );
+            if matches!(case, "beyond_cut" | "beyond_cut_without_match") {
+                if case == "beyond_cut" {
+                    shared_check(store, &host, &source_id, "initial", second + 5);
+                }
                 basis = cut(store, &work);
-                declared = Some("transport-S".into());
-                ("citation", "wrong_source")
-            } else {
+                citation = shared_check(store, &host, &source_id, "later", second + 10);
+                declared = Some(source_id);
                 ("citation", "beyond_cut")
+            } else {
+                let mut other = source_id.clone();
+                other.tree = ObjectId::from_canonical_bytes(b"other source").as_str()[..40].into();
+                citation = shared_check(store, &host, &other, "other", second + 10);
+                if case == "wrong_source" {
+                    citable_record = Some(shared_check(
+                        store,
+                        &host,
+                        &source_id,
+                        "current",
+                        second + 20,
+                    ));
+                } else if case == "wrong_source_with_superseded_match" {
+                    shared_check(store, &host, &source_id, "current", second + 20);
+                    shared_check_with_outcome(
+                        store,
+                        &host,
+                        &source_id,
+                        "newer-failure",
+                        second + 25,
+                        RegisteredVerificationOutcome::Failed,
+                        "cargo test --lib",
+                    );
+                } else if case == "wrong_source_with_distinct_current_match" {
+                    shared_check(store, &host, &source_id, "older", second + 20);
+                    shared_check(store, &host, &source_id, "superseded", second + 22);
+                    citable_record = Some(shared_check_with_outcome(
+                        store,
+                        &host,
+                        &source_id,
+                        "distinct-check",
+                        second + 24,
+                        RegisteredVerificationOutcome::Passed,
+                        "cargo test --lib distinct",
+                    ));
+                    shared_check_with_outcome(
+                        store,
+                        &host,
+                        &source_id,
+                        "superseding-failure",
+                        second + 25,
+                        RegisteredVerificationOutcome::Failed,
+                        "cargo test --lib",
+                    );
+                }
+                basis = cut(store, &work);
+                declared = Some(source_id);
+                ("citation", "wrong_source")
             }
         }
         // A valid passed check of the bound kind, cited under the wrong
@@ -194,8 +370,7 @@ pub(crate) fn admission_transport_fixture(
             rationale: "the cited evidence supports the criterion".into(),
             evidence: vec![citation.as_str().into()],
         }],
-        source_fingerprint: declared,
-        source_id: None,
+        source_id: declared,
         attempt: None,
         model: None,
         execution_identity: None,
@@ -212,6 +387,161 @@ pub(crate) fn admission_transport_fixture(
         mismatch,
         citable_record,
     }
+}
+
+/// Bind a real Git source for current registered evidence shared by word fixtures.
+pub(super) fn shared_host(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    source_root: &std::path::Path,
+    second: i64,
+) -> (HostSession, crate::source::SourceId) {
+    // A real named Git root lets the current SourceId producer and
+    // its live currency checks participate in both transports.
+    std::fs::create_dir(source_root).unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec![
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--no-gpg-sign",
+            "--allow-empty",
+            "-qm",
+            "fixture",
+        ],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(source_root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let source_id = crate::source::inspect(source_root, crate::source::MAX_BUDGET)
+        .source_id
+        .expect("complete fixture source");
+    let mut host = HostSession::bind(store, work, claim, second);
+    host.basis.workspace_id = source_root.canonicalize().unwrap().to_string_lossy().into();
+    host.basis.source_root_generation = Some(1);
+    host.basis.source_root_state = Some(crate::domain::SourceRootState::Named);
+    store
+        .bind_named_root(
+            &work.project_id,
+            &host.session_id,
+            &host.connection_token,
+            crate::storage::HostSessionAuthority::Work,
+            claim.claim_id,
+            claim.fence,
+            &host.basis.workspace_id,
+            1,
+            at(second + 1),
+            crate::domain::NamedRootBindingKind::Bound,
+            None,
+            &mut actor("runner"),
+            "transport-shared-root",
+            at(second + 1),
+        )
+        .unwrap();
+    (host, source_id)
+}
+
+/// Install a check through the current registered `SourceId` owner, rather
+/// than seeding a legacy check that new callers can no longer submit.
+pub(super) fn shared_check(
+    store: &mut SqliteStore,
+    host: &HostSession,
+    source_id: &crate::source::SourceId,
+    key: &str,
+    second: i64,
+) -> ObjectId {
+    shared_check_with_outcome(
+        store,
+        host,
+        source_id,
+        key,
+        second,
+        RegisteredVerificationOutcome::Passed,
+        "cargo test --lib",
+    )
+}
+
+fn shared_check_with_outcome(
+    store: &mut SqliteStore,
+    host: &HostSession,
+    source_id: &crate::source::SourceId,
+    key: &str,
+    second: i64,
+    outcome: RegisteredVerificationOutcome,
+    command: &str,
+) -> ObjectId {
+    use crate::domain::{
+        RegisteredVerificationAssociation, RegisteredVerificationCheck,
+        RegisteredVerificationInput, RegisteredVerificationPostRun, RegisteredVerificationRequest,
+        RegisteredVerificationRoot, RegisteredVerificationRun, SourceRootState,
+    };
+    let request = RegisteredVerificationRequest {
+        operation_key: format!("termal-run:test-transport-{key}"),
+        registration: RegisteredVerificationAssociation {
+            host_run_id: format!("test-transport-{key}"),
+            request_identity: format!("transport-request-{key}"),
+            registered_at: at(second),
+            initiating_session_id: host.session_id.clone(),
+            owning_session_id: None,
+            binding: host.binding.clone(),
+            root: RegisteredVerificationRoot {
+                workspace_id: host.basis.workspace_id.clone(),
+                generation: 1,
+                state: SourceRootState::Named,
+            },
+        },
+        input: RegisteredVerificationInput::SourceId {
+            source_id: source_id.clone(),
+        },
+        run: RegisteredVerificationRun {
+            mode: "focused".into(),
+            command: command.into(),
+            started_at: at(second),
+            finished_at: at(second + 1),
+            outcome,
+        },
+        checks: vec![RegisteredVerificationCheck {
+            stage: "focused".into(),
+            check_kind: VerificationKind::Test,
+            command: command.into(),
+            check_fingerprint: check_fingerprint(command),
+            started_at: Some(at(second)),
+            completed_at: Some(at(second + 1)),
+            outcome,
+            summary: Some("current source test".into()),
+            refs: vec![],
+            counts: None,
+        }],
+        post_run: RegisteredVerificationPostRun::SourceId {
+            source_id: source_id.clone(),
+        },
+    };
+    store
+        .record_registered_verification(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            crate::storage::HostSessionAuthority::Work,
+            &actor(&host.session_id.0),
+            &request,
+            at(second + 2),
+        )
+        .expect("registered shared check")
+        .verifications
+        .remove(0)
+        .record_id
 }
 
 /// Check the shared CLI/MCP error shape and word advice for an actual core refusal.

@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 
 struct Candidate {
     id: ObjectId,
+    position: i64,
     evidence: VerificationEvidence,
     root: Option<ObjectId>,
 }
@@ -66,12 +67,14 @@ impl LiveCurrency {
         let mut result = on_one_snapshot(&store.connection, |connection| {
             let item = load_work_item(connection, work)?;
             let mut statement = connection.prepare(
-                "SELECT entry.object_id FROM work_feed_entries entry JOIN objects object ON object.object_id=entry.object_id WHERE entry.feed_kind='run_execution' AND entry.feed_id=?1 AND object.object_kind='verification_evidence' ORDER BY entry.position")?;
+                "SELECT entry.object_id, entry.position FROM work_feed_entries entry JOIN objects object ON object.object_id=entry.object_id WHERE entry.feed_kind='run_execution' AND entry.feed_id=?1 AND object.object_kind='verification_evidence' ORDER BY entry.position")?;
             let ids = statement
-                .query_map(params![run.0.to_string()], |row| row.get::<_, String>(0))?
+                .query_map(params![run.0.to_string()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })?
                 .collect::<Result<Vec<_>, _>>()?;
             let mut candidates = Vec::new();
-            for id in ids {
+            for (id, position) in ids {
                 let id =
                     ObjectId::from_stored(id.clone()).ok_or(StoreError::InvalidStoredKey(id))?;
                 let evidence: VerificationEvidence =
@@ -94,7 +97,12 @@ impl LiveCurrency {
                         && Some(event.generation) == evidence.source_basis.source_root_generation
                 })
                 .map(|(_, id, _)| id);
-                candidates.push(Candidate { id, evidence, root });
+                candidates.push(Candidate {
+                    id,
+                    position,
+                    evidence,
+                    root,
+                });
             }
             Ok(Self {
                 work: Some((work, run, item.revision)),
@@ -180,6 +188,25 @@ impl LiveCurrency {
         connection: &Connection,
         id: &ObjectId,
     ) -> Result<bool, StoreError> {
+        self.check_input_on(connection, id, None)
+    }
+
+    /// Recovery has already checked newer registered outcomes in this transaction.
+    pub(super) fn check_citable_on(
+        &self,
+        connection: &Connection,
+        id: &ObjectId,
+        position: i64,
+    ) -> Result<bool, StoreError> {
+        self.check_input_on(connection, id, Some(position))
+    }
+
+    fn check_input_on(
+        &self,
+        connection: &Connection,
+        id: &ObjectId,
+        checked_position: Option<i64>,
+    ) -> Result<bool, StoreError> {
         let evidence: VerificationEvidence =
             load_typed_work_object(connection, id, "verification_evidence")?;
         let producer = load_verification_producer_on(connection, &evidence)?;
@@ -207,7 +234,15 @@ impl LiveCurrency {
                     .into(),
             ));
         }
-        let candidate = self.candidates.iter().find(|candidate| &candidate.id == id && candidate.evidence == evidence)
+        let candidate = match checked_position {
+            Some(position) => self
+                .candidates
+                .binary_search_by_key(&position, |candidate| candidate.position)
+                .ok()
+                .map(|index| &self.candidates[index]),
+            None => self.candidates.iter().find(|candidate| &candidate.id == id),
+        }
+            .filter(|candidate| &candidate.id == id && candidate.evidence == evidence)
             .ok_or_else(|| refused("the selected registered check changed during the Git read; retry with current evidence".into()))?;
         let root = latest_named_root_binding_on(
             connection,
@@ -242,7 +277,9 @@ impl LiveCurrency {
                 "the registered run did not pass on an eligible input; run a passing check".into(),
             ));
         }
-        refuse_newer_failed_on(connection, id, &evidence, i64::MAX)?;
+        if checked_position.is_none() {
+            refuse_newer_failed_on(connection, id, &evidence, i64::MAX)?;
+        }
         let workspace = &evidence.source_basis.workspace_id;
         let current = &self
             .roots
@@ -343,16 +380,20 @@ impl LiveCurrency {
                     .iter()
                     .any(|candidate| candidate.evidence.source_basis.source_id().is_some())
                 {
-                    "this run has registered source_id evidence; declare the intended complete source with --source-id-file before evaluating".into()
+                    "this run has registered source_id evidence; declare the complete source_id before evaluating".into()
                 } else {
-                    "this run has registered committed-input evidence; declare the intended git-commit input with --source-fingerprint before evaluating".into()
+                    "this run has only committed-input evidence, which cannot back a new evaluation; run a check with a source_id input and declare its complete source_id before evaluating".into()
                 },
             });
         };
         if !self.matching_on(connection, identity, cut)? {
             return Err(StoreError::WorkCompletionRefused {
                 work,
-                reason: "no registered check at the evaluated cut tested the declared commit; run a passing check on the intended current commit".into(),
+                reason: if identity.source_id().is_some() {
+                    "no registered check at the evaluated cut passed on the declared source_id; run a passing check with a source_id input on the intended source"
+                } else {
+                    "no registered check at the evaluated cut tested the declared commit; run a passing check on the intended current commit"
+                }.into(),
             });
         }
         Ok(true)
@@ -450,6 +491,7 @@ impl LiveCurrency {
                     source_id: source_id.clone(),
                 }
             } else {
+                // Stored commit checks still reconstruct their historical decision.
                 crate::domain::RegisteredDecisionSource::Legacy {
                     source_revision: candidate
                         .evidence
@@ -494,8 +536,11 @@ impl LiveCurrency {
                 &candidate.id,
             )?
             .position;
-            if position <= cut && passing_candidate_on(connection, candidate)? {
-                return self.decision_on(connection, &candidate.id);
+            if position <= cut
+                && passing_candidate_on(connection, candidate)?
+                && let Some(decision) = self.decision_on(connection, &candidate.id)?
+            {
+                return Ok(Some(decision));
             }
         }
         Ok(None)
@@ -523,7 +568,9 @@ impl LiveCurrency {
                 if !passing_candidate_on(connection, candidate)? {
                     continue;
                 }
-                return self.decision_on(connection, &candidate.id);
+                if let Some(decision) = self.decision_on(connection, &candidate.id)? {
+                    return Ok(Some(decision));
+                }
             }
         }
         Ok(None)
@@ -713,14 +760,18 @@ fn refuse_newer_failed_on(
     cut: i64,
 ) -> Result<(), StoreError> {
     if let Some(id) = newer_failed_on(connection, selected, evidence, cut)? {
-        return Err(StoreError::WorkCompletionRefused {
-            work: evidence.binding.work_id,
-            reason: format!(
-                "a newer registered check {id} on this input did not pass; run a passing check after it"
-            ),
-        });
+        return Err(newer_failure_refusal(evidence.binding.work_id, &id));
     }
     Ok(())
+}
+
+pub(super) fn newer_failure_refusal(work: WorkId, id: &ObjectId) -> StoreError {
+    StoreError::WorkCompletionRefused {
+        work,
+        reason: format!(
+            "a newer registered check {id} on this input did not pass; run a passing check after it"
+        ),
+    }
 }
 
 fn passing_candidate_on(

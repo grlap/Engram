@@ -7,7 +7,7 @@ pub(crate) struct SourceRecoveryTransportFixture {
     pub database: std::path::PathBuf,
     pub work: WorkItem,
     pub evaluation: ObjectId,
-    pub presented: Option<String>,
+    pub presented: Option<crate::source::SourceId>,
     pub mismatch: Mismatch,
 }
 
@@ -15,11 +15,6 @@ pub(crate) struct SourceRecoveryTransportFixture {
 /// multibyte script whose 128th byte falls inside a character.
 pub(crate) fn long_declared_source() -> String {
     "源".repeat(43)
-}
-
-/// A presented measurement one byte past that bound.
-pub(crate) fn long_presented_source() -> String {
-    "m".repeat(129)
 }
 
 /// B21/B22/B77/B78: real histories reused by service and MCP tests. The
@@ -118,17 +113,13 @@ pub(crate) fn source_recovery_transport_fixture(
     let evaluation = record(store, &input).unwrap().evaluation;
     let (presented, mismatch) = match case {
         "unconfirmed" | "long_unconfirmed" => (None, Mismatch::UnconfirmedDeclaration),
-        "long_mismatch" => (
-            Some(long_presented_source()),
-            Mismatch::CompletionFingerprintMismatch,
-        ),
         "missing" | "shared_missing" => (None, Mismatch::CompletionMeasurementMissing),
-        "mismatch" => (
-            Some("measured-B".into()),
+        "mismatch" | "long_mismatch" => (
+            Some(measured_elsewhere()),
             Mismatch::CompletionFingerprintMismatch,
         ),
         "no_basis" => (
-            Some("measured-A".into()),
+            Some(measured_elsewhere()),
             Mismatch::EvaluationSourceBasisMissing,
         ),
         _ => panic!("unknown source fixture"),
@@ -147,7 +138,7 @@ pub(crate) fn source_recovery_transport_fixture(
 #[test]
 fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
     for (case, remedy) in [
-        ("missing", Remedy::MeasureSourceAndRetry),
+        ("missing", Remedy::EvaluateCurrentSource),
         ("shared_missing", Remedy::MeasureSourceIdAndRetry),
         ("mismatch", Remedy::EvaluateCurrentSource),
         ("no_basis", Remedy::EvaluateCurrentSource),
@@ -159,8 +150,7 @@ fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
             .acceptance_evaluation_readiness(
                 fixture.work.work_id,
                 fixture.work.active_run_id.unwrap(),
-                fixture.presented.as_deref(),
-                None,
+                fixture.presented.as_ref(),
             )
             .unwrap();
         let AcceptanceEvaluationReadiness::Blocked(cause, context) = readiness else {
@@ -176,14 +166,14 @@ fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
         assert_eq!(source.mismatch, fixture.mismatch);
         assert_eq!(source.remedy, remedy);
         assert_eq!(source.evaluation, fixture.evaluation);
-        assert_eq!(source.presented_fingerprint, fixture.presented);
+        assert_eq!(source.presented_fingerprint, None);
         assert_eq!(
             source.expected_fingerprint.as_deref(),
             (!matches!(case, "no_basis" | "shared_missing")).then_some("measured-A")
         );
         assert!(context.deciding_observation.is_none());
         let shown = store
-            .acceptance_evaluation_status(fixture.work.work_id, None)
+            .acceptance_evaluation_status(fixture.work.work_id)
             .unwrap()
             .unwrap();
         if case == "no_basis" {

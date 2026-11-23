@@ -138,7 +138,7 @@ pub enum NamedRootEndReason {
 }
 
 /// State carried by a host sighting after its claim has had a named root.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceRootState {
     Named,

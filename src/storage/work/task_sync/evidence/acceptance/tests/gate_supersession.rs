@@ -67,7 +67,7 @@ fn a_newer_record_of_a_cited_gate_retires_a_retained_pass_that_an_older_cut_omit
         gate(&mut fixture, later, true, 30);
         let native = fixture
             .store
-            .acceptance_evaluation_status(fixture.binding.work_id, None)
+            .acceptance_evaluation_status(fixture.binding.work_id)
             .unwrap()
             .unwrap();
         assert_eq!(native.stale.is_some(), superseding, "{case}: native");

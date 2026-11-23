@@ -112,35 +112,10 @@ pub enum AcceptanceEvaluationReadiness {
     Blocked(WorkCompletionRecoveryCause, StaleRecoveryContext),
 }
 
-/// How a completion-time source fingerprint enters a freshness check.
-#[derive(Clone, Copy, Debug)]
-pub(super) enum SourceCheck<'a> {
-    /// A read: nothing has been measured for a completion, so a recorded
-    /// basis is pending rather than stale.
-    Unmeasured,
-    /// A completion attempt presenting this fingerprint, if any.
-    AtCompletion(Option<&'a str>),
-    AtSharedCompletion(&'a crate::source::SourceId),
-}
-
-impl SourceCheck<'_> {
-    fn identity(self) -> Option<crate::domain::VerificationSourceIdentity> {
-        match self {
-            Self::Unmeasured | Self::AtCompletion(None) => None,
-            Self::AtCompletion(Some(source_revision)) => {
-                Some(crate::domain::VerificationSourceIdentity::Legacy {
-                    source_revision: source_revision.to_owned(),
-                    git_tree: None,
-                })
-            }
-            Self::AtSharedCompletion(source_id) => {
-                Some(crate::domain::VerificationSourceIdentity::SourceId {
-                    source_id: source_id.clone(),
-                })
-            }
-        }
-    }
-}
+mod source_check;
+use source_check::SourceCheck;
+#[cfg(test)]
+pub(crate) use source_check::historical_completion;
 
 /// The attempt key one request resolves to on a run, and the content
 /// fingerprint a same-key resend is checked against. The service computes
@@ -236,6 +211,27 @@ impl SqliteStore {
         redactor: &R,
         register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+        self.record_acceptance_evaluation_inner(request, redactor, register, false)
+    }
+
+    /// Seed immutable records from earlier builds for historical reader tests.
+    /// Current service and host entry points never call this fixture path.
+    #[cfg(test)]
+    pub(crate) fn seed_historical_acceptance_evaluation<R: Redactor>(
+        &mut self,
+        request: &RecordAcceptanceEvaluationRequest,
+        redactor: &R,
+    ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+        self.record_acceptance_evaluation_inner(request, redactor, None, true)
+    }
+
+    fn record_acceptance_evaluation_inner<R: Redactor>(
+        &mut self,
+        request: &RecordAcceptanceEvaluationRequest,
+        redactor: &R,
+        register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
+        historical: bool,
+    ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
         inspect_work_request(redactor, request, &request.evaluator)?;
         crate::storage::admit_live_actor_session(&request.evaluator)?;
         let evaluator_session = IdentityShape::of_request(request)
@@ -243,6 +239,11 @@ impl SqliteStore {
             .cloned()
             .ok_or_else(|| refused(request.work_id, "the evaluator must carry a session id"))?;
         validate_request_shape(request)?;
+        let retired_declaration = !historical
+            && request
+                .source_basis
+                .as_ref()
+                .is_some_and(|basis| basis.source_id().is_none());
         let before = load_work_item(&self.connection, request.work_id)?;
         let before_run = before
             .active_run_id
@@ -251,7 +252,7 @@ impl SqliteStore {
             .verdicts
             .iter()
             .any(|verdict| verdict.verdict == AcceptanceVerdict::Pass);
-        let currency = if let Some(run) = before_run.filter(|_| has_pass) {
+        let currency = if let Some(run) = before_run.filter(|_| has_pass && !retired_declaration) {
             let attempt = attempt_identity(request, run)?;
             if self.replay_acceptance_evaluation(&attempt)?.is_some() {
                 LiveCurrency::default()
@@ -267,23 +268,24 @@ impl SqliteStore {
             .filter(|verdict| verdict.verdict == AcceptanceVerdict::Pass)
             .flat_map(|verdict| verdict.evidence.iter().cloned())
             .collect();
-        let imported_uses = if let Some(run) = before_run.filter(|_| has_pass) {
-            let attempt = attempt_identity(request, run)?;
-            if self.replay_acceptance_evaluation(&attempt)?.is_some() {
-                None
+        let imported_uses =
+            if let Some(run) = before_run.filter(|_| has_pass && !retired_declaration) {
+                let attempt = attempt_identity(request, run)?;
+                if self.replay_acceptance_evaluation(&attempt)?.is_some() {
+                    None
+                } else {
+                    super::task_sync::evidence::consumption::measure_selected_on(
+                        &self.connection,
+                        request.work_id,
+                        run,
+                        &imported_citations,
+                        false,
+                        &currency,
+                    )?
+                }
             } else {
-                super::task_sync::evidence::consumption::measure_selected_on(
-                    &self.connection,
-                    request.work_id,
-                    run,
-                    &imported_citations,
-                    false,
-                    &currency,
-                )?
-            }
-        } else {
-            None
-        };
+                None
+            };
         let transaction = self.begin_work_mutation()?;
         if let Some((session_id, now)) = register {
             super::session::register_process_default_work_session_on(
@@ -315,6 +317,12 @@ impl SqliteStore {
             transaction.commit()?;
             receipt.replayed = true;
             return Ok(receipt);
+        }
+        if retired_declaration {
+            return Err(refused(
+                request.work_id,
+                "legacy source declarations are retired; declare the complete source_id",
+            ));
         }
         if before_run != Some(attempt_run) {
             return Err(refused(
@@ -483,29 +491,49 @@ impl SqliteStore {
                 .is_some_and(|value| value.starts_with("git-tree:"))
                 && (cited_git_input || registered_input_witness.is_some())
         });
-        let live_commit = has_pass
-            && !registered_staged
-            && currency.require_declared_on(
+        let live_currency = if has_pass && !registered_staged {
+            currency.require_declared_on(
                 &transaction,
                 request.source_basis.as_ref().map(|basis| &basis.identity),
                 cut,
-            )?;
+            )
+        } else {
+            Ok(false)
+        };
+        // A declared source can lack a current matching check because the
+        // selected citation is beyond the cut or checked a different source.
+        // Let citation admission explain that before refusing live currency.
+        let (live_commit, currency_refusal) = match live_currency {
+            Ok(current) => (current, None),
+            Err(error @ StoreError::WorkCompletionRefused { .. })
+                if request
+                    .source_basis
+                    .as_ref()
+                    .and_then(crate::domain::AcceptanceSourceBasis::source_id)
+                    .is_some() =>
+            {
+                (false, Some(error))
+            }
+            Err(error) => return Err(error),
+        };
         let registered_input_witness = if live_commit {
             None
         } else {
             registered_input_witness
         };
         let git_input = cited_git_input || registered_input_witness.is_some() || live_commit;
-        if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after_live(
-            &transaction,
-            run_id,
-            cut,
-            request.source_basis.as_ref(),
-            named_root.as_ref(),
-            git_input,
-            registered_input_witness.as_ref(),
-            live_commit,
-        )? {
+        if currency_refusal.is_none()
+            && let Some(BasisMoveFinding { moved, observation }) = basis_moved_after_live(
+                &transaction,
+                run_id,
+                cut,
+                request.source_basis.as_ref(),
+                named_root.as_ref(),
+                git_input,
+                registered_input_witness.as_ref(),
+                live_commit,
+            )?
+        {
             let unadmitted_change = observation
                 .as_ref()
                 .is_some_and(|observation| observation.source_changed && !observation.admitted);
@@ -537,6 +565,19 @@ impl SqliteStore {
             request.source_basis.as_ref(),
             named_root.as_ref(),
         )?;
+        if !historical
+            && judged.as_ref().is_some_and(|source| {
+                matches!(
+                    source.identity,
+                    crate::domain::VerificationSourceIdentity::Legacy { .. }
+                )
+            })
+        {
+            return Err(refused(
+                item.work_id,
+                "the retained source is legacy; declare the complete source_id being judged",
+            ));
+        }
         let stale = source::stale_bound_citation_live(
             &transaction,
             &item,
@@ -545,14 +586,15 @@ impl SqliteStore {
             cut,
             passing_citations(&verdicts),
             named_root.as_ref(),
-            &currency,
+            |id| Ok(currency.active() && currency.check_on(&transaction, id)?),
             false,
         )?;
         // A registered citation without a Git declaration needs the exact
         // declaration remedy, not the legacy missing-sighting remedy.
         let nonpass_commit = !has_pass
             && super::registered_commit_currency::has_committed_run_on(&transaction, run_id, cut)?;
-        if !nonpass_commit
+        if currency_refusal.is_none()
+            && !nonpass_commit
             && !git_input
             && !stale
                 .as_ref()
@@ -607,12 +649,10 @@ impl SqliteStore {
             let reason = if cause.mismatch == EvaluationCitationMismatch::WrongSource {
                 let records = citable::records(
                     &transaction,
-                    &item,
-                    run_id,
-                    cut,
-                    stale.criterion,
+                    &context,
                     judged.as_ref(),
                     named_root.as_ref(),
+                    &currency,
                 )?;
                 let reason = format!("{}{original_reason}", citable::prefix(&records));
                 cause.citable_records = Some(records);
@@ -625,6 +665,9 @@ impl SqliteStore {
                 reason,
                 AcceptanceEvaluationAdmissionCause::Citation(Box::new(cause)),
             ));
+        }
+        if let Some(error) = currency_refusal {
+            return Err(error);
         }
         // Last, after every structural and basis refusal, which are the more
         // specific answers: a same-session record needs an eligible mark, or
@@ -685,9 +728,8 @@ impl SqliteStore {
     }
 
     /// The newest evaluation on the item's active (or latest) run, with the
-    /// freshness completion would apply now. `source_fingerprint` is the
-    /// host-measured value a completion would present; a read that measured
-    /// none leaves a recorded source basis pending rather than stale.
+    /// freshness completion would apply now. A read has measured nothing, so
+    /// a recorded source basis is pending rather than stale.
     ///
     /// # Errors
     ///
@@ -696,7 +738,6 @@ impl SqliteStore {
     pub fn acceptance_evaluation_status(
         &self,
         work_id: WorkId,
-        source_fingerprint: Option<&str>,
     ) -> Result<Option<AcceptanceEvaluationStatus>, StoreError> {
         // Status is a historical read in every calling context. Git currency
         // is measured at evaluate and done, never inside a read snapshot.
@@ -717,9 +758,7 @@ impl SqliteStore {
             let Some((hash, record)) = latest_on(connection, run_id)? else {
                 return Ok(None);
             };
-            let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
-                SourceCheck::AtCompletion(Some(fingerprint))
-            });
+            let source = SourceCheck::Unmeasured;
             let (stale, context) = staleness_named_live(
                 connection, &item, run_id, &policy, &hash, &record, source, &currency,
             )?;
@@ -739,9 +778,7 @@ impl SqliteStore {
                 source_recovery: context.source,
                 evaluation: hash,
                 source_checked_at_done: record.registered_input_decision.is_some()
-                    || (policy.require_source_freshness
-                        && record.source_basis.is_some()
-                        && matches!(source, SourceCheck::Unmeasured)),
+                    || (policy.require_source_freshness && record.source_basis.is_some()),
                 record,
                 stale,
             }))
@@ -761,7 +798,6 @@ impl SqliteStore {
         &self,
         work_id: WorkId,
         run_id: WorkRunId,
-        source_fingerprint: Option<&str>,
         source_id: Option<&crate::source::SourceId>,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
         let policy_before = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
@@ -785,12 +821,7 @@ impl SqliteStore {
                 });
             }
             Self::acceptance_evaluation_readiness_on(
-                connection,
-                work_id,
-                run_id,
-                source_fingerprint,
-                source_id,
-                &currency,
+                connection, work_id, run_id, source_id, &currency,
             )
         })
     }
@@ -799,7 +830,6 @@ impl SqliteStore {
         connection: &Connection,
         work_id: WorkId,
         run_id: WorkRunId,
-        source_fingerprint: Option<&str>,
         source_id: Option<&crate::source::SourceId>,
         currency: &LiveCurrency,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
@@ -809,15 +839,7 @@ impl SqliteStore {
         }
         let item = load_work_item(connection, work_id)?;
         Ok(
-            match assess_live_on(
-                connection,
-                &item,
-                run_id,
-                &policy,
-                source_fingerprint,
-                source_id,
-                currency,
-            )? {
+            match assess_live_on(connection, &item, run_id, &policy, source_id, currency)? {
                 AcceptanceEvaluationAssessment::Absent => AcceptanceEvaluationReadiness::Blocked(
                     WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
                         criterion: item.acceptance.first().cloned().unwrap_or_default(),
@@ -2103,10 +2125,7 @@ fn staleness_after_move(
             .source_basis
             .as_ref()
             .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
-        presented_fingerprint: match source {
-            SourceCheck::Unmeasured | SourceCheck::AtSharedCompletion(_) => None,
-            SourceCheck::AtCompletion(value) => value.map(str::to_owned),
-        },
+        presented_fingerprint: None,
     };
     let refused_source = |source| {
         (
@@ -2159,7 +2178,7 @@ fn staleness_after_move(
         record.evaluated_cut.position,
         passing_citations(&record.verdicts),
         evaluated_root,
-        currency,
+        |id| Ok(currency.active() && currency.check_on(connection, id)?),
         record.registered_input_decision.is_some(),
     )?
     .is_some()
@@ -2216,11 +2235,12 @@ fn staleness_after_move(
                 None => {
                     source_context.mismatch =
                         crate::domain::AcceptanceSourceMismatch::CompletionMeasurementMissing;
-                    source_context.remedy = if evaluated.source_id().is_some() {
-                        crate::domain::AcceptanceSourceRemedy::MeasureSourceIdAndRetry
-                    } else {
-                        crate::domain::AcceptanceSourceRemedy::MeasureSourceAndRetry
-                    };
+                    // Only a complete identity can be measured and presented
+                    // again: a stored fingerprint leaves evaluating afresh.
+                    if evaluated.source_id().is_some() {
+                        source_context.remedy =
+                            crate::domain::AcceptanceSourceRemedy::MeasureSourceIdAndRetry;
+                    }
                     return Ok(refused_source(source_context));
                 }
                 Some(_) => {
@@ -2243,7 +2263,6 @@ pub(super) fn assess_live_on(
     item: &WorkItem,
     run_id: WorkRunId,
     policy: &AcceptanceEvaluationPolicy,
-    source_fingerprint: Option<&str>,
     source_id: Option<&crate::source::SourceId>,
     currency: &LiveCurrency,
 ) -> Result<AcceptanceEvaluationAssessment, StoreError> {
@@ -2261,10 +2280,7 @@ pub(super) fn assess_live_on(
             policy,
             &hash,
             &record,
-            source_id.map_or(
-                SourceCheck::AtCompletion(source_fingerprint),
-                SourceCheck::AtSharedCompletion,
-            ),
+            SourceCheck::AtCompletion(source_id),
             currency,
         )? {
             (Some(reason), context) => AcceptanceEvaluationAssessment::Stale(reason, context),
@@ -2321,16 +2337,20 @@ mod admission;
 mod citable {
     //! Bounded wrong-source refusal guidance from the same admission snapshot.
 
-    use super::source::{JudgedSource, NamedEvaluationRoot};
+    use super::source::{JudgedSource, NamedEvaluationRoot, stale_bound_citation_live};
     use super::{
-        Connection, ObjectId, OptionalExtension, StoreError, VerificationEvidence,
-        VerificationResult, WorkItem, WorkRunId, load_typed_work_object, params,
-        stale_bound_citation,
+        CitationContext, Connection, LiveCurrency, ObjectId, OptionalExtension, StoreError,
+        VerificationEvidence, VerificationResult, load_typed_work_object, params,
     };
     use crate::domain::{AcceptanceBindingReadBasis, CitableVerificationRecords};
+    use crate::storage::work::load_verification_producer_on;
+    use crate::storage::work::registered_commit_currency::{
+        newer_failure_refusal, registered_check_failed,
+    };
     use crate::storage::work::verification_read::{
         require_fed_verifications_on, verification_candidate_on,
     };
+    use std::collections::BTreeMap;
 
     const MAX_RECORDS: usize = 4;
 
@@ -2338,13 +2358,18 @@ mod citable {
     /// not alter the submitted citations, guarantee a verdict, or satisfy done.
     pub(super) fn records(
         connection: &Connection,
-        item: &WorkItem,
-        run_id: WorkRunId,
-        cut: i64,
-        criterion: usize,
+        context: &CitationContext<'_>,
         judged: Option<&JudgedSource>,
         root: Option<&NamedEvaluationRoot>,
+        currency: &LiveCurrency,
     ) -> Result<CitableVerificationRecords, StoreError> {
+        let CitationContext {
+            item,
+            run_id,
+            cut,
+            criterion,
+            ..
+        } = *context;
         let mut found = CitableVerificationRecords {
             records: Vec::new(),
             more: false,
@@ -2356,9 +2381,17 @@ mod citable {
         else {
             return Ok(found);
         };
-        if judged.is_none() {
+        let Some(judged) = judged else {
             return Ok(found);
-        }
+        };
+        let live_source = match &judged.identity {
+            crate::domain::VerificationSourceIdentity::SourceId { source_id }
+                if currency.active() =>
+            {
+                Some(source_id)
+            }
+            _ => None,
+        };
         require_fed_verifications_on(connection, run_id)?;
         let basis = AcceptanceBindingReadBasis {
             project_id: item.project_id.clone(),
@@ -2373,9 +2406,14 @@ mod citable {
                AND object_kind = 'verification_evidence'
              ORDER BY position DESC",
         )?;
-        let entries = statement.query_map(params![run_id.0.to_string(), cut], |row| {
+        let through = if live_source.is_some() { i64::MAX } else { cut };
+        let entries = statement.query_map(params![run_id.0.to_string(), through], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
+        // A later registered result can supersede a suggestion even when it
+        // falls after the evaluated cut. The check kind and full source are
+        // fixed here, so cache outcomes by the remaining exact check fields.
+        let mut newest_outcomes: BTreeMap<_, Option<ObjectId>> = BTreeMap::new();
         for entry in entries {
             let (position, stored) = entry?;
             let id = ObjectId::from_stored(stored.clone())
@@ -2383,6 +2421,34 @@ mod citable {
             let evidence: VerificationEvidence =
                 load_typed_work_object(connection, &id, "verification_evidence")?;
             if evidence.check_kind != binding.requirement.check_kind {
+                continue;
+            }
+            let on_live_source =
+                live_source.is_some() && evidence.source_basis.source_id() == live_source;
+            let newer_failure = if on_live_source {
+                let source = &evidence.source_basis;
+                let key = (
+                    evidence.check_fingerprint.clone(),
+                    source.workspace_id.clone(),
+                    source.source_root_generation,
+                    source.source_root_state,
+                );
+                match newest_outcomes.entry(key) {
+                    std::collections::btree_map::Entry::Occupied(newest) => {
+                        newest.into_mut().as_ref()
+                    }
+                    std::collections::btree_map::Entry::Vacant(newest) => {
+                        let producer = load_verification_producer_on(connection, &evidence)?;
+                        if let Some(failed) = registered_check_failed(&evidence, &producer) {
+                            newest.insert(failed.then(|| id.clone()));
+                        }
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if position > cut {
                 continue;
             }
             // A fed verification must have its verification projection even
@@ -2401,22 +2467,31 @@ mod citable {
                     "fed verification evidence {id} has no verification projection on run {run_id:?}"
                 )));
             }
-            // Exclude checks the existing admission rule refuses before the
-            // stricter candidate reader checks producer agreement. Historical
-            // no-source or other-root producers are ineligible alternatives,
-            // not a reason to replace the original source refusal.
-            if stale_bound_citation(
+            // Use the same source and live currency checks as admission.
+            // An ineligible alternative cannot replace the citation refusal.
+            match stale_bound_citation_live(
                 connection,
                 item,
                 run_id,
-                judged,
+                Some(judged),
                 cut,
                 [(criterion, std::slice::from_ref(&id), true)],
                 root,
-            )?
-            .is_some()
-            {
-                continue;
+                |citation| {
+                    if let Some(failure) = newer_failure {
+                        return Err(newer_failure_refusal(item.work_id, failure));
+                    }
+                    if on_live_source {
+                        currency.check_citable_on(connection, citation, position)
+                    } else {
+                        Ok(currency.active() && currency.check_on(connection, citation)?)
+                    }
+                },
+                false,
+            ) {
+                Ok(None) => {}
+                Ok(Some(_)) | Err(StoreError::WorkCompletionRefused { .. }) => continue,
+                Err(error) => return Err(error),
             }
             let candidate = verification_candidate_on(
                 connection,
@@ -2490,7 +2565,7 @@ pub(in crate::storage::work) use source::sealed_source_basis_on;
 use source::{
     NamedEvaluationRoot, RootBinding, RootPhase, RootSource, StaleCause, assess_named_root_binding,
     assess_named_root_source, judged_source, named_root_at_on, off_named_root, passing_citations,
-    require_named_root_judged_source, revision_seen_through, stale_bound_citation,
+    require_named_root_judged_source, revision_seen_through,
 };
 mod history;
 pub(crate) use history::{AssessedAcceptanceEvaluation, SourceObservationRecord};
@@ -2508,6 +2583,6 @@ mod tests;
 #[cfg(test)]
 pub(crate) use tests::{
     AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
-    admission_transport_fixture, long_declared_source, long_presented_source,
-    sealed_source_transport_fixture, source_recovery_transport_fixture,
+    admission_transport_fixture, long_declared_source, sealed_source_transport_fixture,
+    source_recovery_transport_fixture,
 };

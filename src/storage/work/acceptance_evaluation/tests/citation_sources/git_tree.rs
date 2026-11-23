@@ -158,15 +158,7 @@ fn git_tree_consumption_rechecks_the_current_quiet_sighting_even_for_a_waived_bi
     // A quiet same-content move cannot borrow the check's tree identity.
     set_tree(&mut host, Some('b'), false);
     host.install_source_records(store, &[(false, Some("revision-d"))], 40);
-    stale_verification_source(done(
-        store,
-        &work,
-        &claim,
-        &[note, check],
-        Some("revision-d"),
-        "done-tree",
-        50,
-    ));
+    stale_verification_source(done(store, &work, &claim, &[note, check], "done-tree", 50));
 }
 
 #[test]

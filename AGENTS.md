@@ -838,9 +838,9 @@ engram work add "Title" [--accept "criterion"]... [--bind POSITION=KIND]... [--u
 engram work claim REF | --under PARENT
 engram work update REF [--release [--reason "why"] | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --accept "criterion"... | --bind POSITION=KIND... | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
-engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION] [--supersedes RECORD_ID]
+engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-id-file PATH] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION] [--supersedes RECORD_ID]
 engram work note "what you found or decided"
-engram work done ["what was delivered"] [--source-fingerprint F] [--landed COMMIT --remote R --branch B --pushed-at T [--installed-build F]]
+engram work done ["what was delivered"] [--source-id-file PATH] [--landed COMMIT --remote R --branch B --pushed-at T [--installed-build F]]
 engram work remember "project note" [--key KEY [--revise [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full | engram work memories --context-generation GENERATION
 engram work forget KEY

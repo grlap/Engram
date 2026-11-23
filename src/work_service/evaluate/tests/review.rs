@@ -184,7 +184,7 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
             completion_run_feed_head(&service, root.work_id),
             SqliteStore::open(&database)
                 .expect("store")
-                .acceptance_evaluation_status(root.work_id, None)
+                .acceptance_evaluation_status(root.work_id)
                 .expect("status")
                 .map(|status| status.evaluation),
         )
@@ -387,7 +387,7 @@ fn the_preflight_projection_carries_the_recorded_attempt_key() {
             identity.key.clone(),
         );
         let recorded = store
-            .record_acceptance_evaluation(&request, &DevelopmentNoopRedactor)
+            .seed_historical_acceptance_evaluation(&request, &DevelopmentNoopRedactor)
             .expect("record");
         assert!(!recorded.replayed, "{label}");
         assert_eq!(preview.attempt_key, recorded.record.attempt_key, "{label}");

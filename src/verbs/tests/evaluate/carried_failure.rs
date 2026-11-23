@@ -306,8 +306,6 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

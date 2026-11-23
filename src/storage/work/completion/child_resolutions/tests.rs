@@ -61,8 +61,6 @@ fn successor_seal_accounting_verifies_each_immutable_binding_and_disjointness() 
             !verbs
                 .done(
                     DoneInput {
-                        source_fingerprint: None,
-
                         source_id: None,
                         landing: None,
                         links: Vec::new(),

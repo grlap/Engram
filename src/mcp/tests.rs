@@ -117,7 +117,40 @@ fn record_id_descriptions_preserve_mcp_argument_names() {
     assert!(!description.contains("full hashes"));
     assert_eq!(evidence["type"], "array");
     assert_eq!(evidence["items"]["type"], "string");
-    assert!(evaluate["properties"].get("source_fingerprint").is_some());
+    assert!(evaluate["properties"].get("source_id").is_some());
+}
+
+#[test]
+fn live_source_id_is_optional_but_cannot_be_null() {
+    let identity = serde_json::to_value(schemars::schema_for!(crate::source::SourceId)).unwrap();
+    for schema in [
+        schemars::schema_for!(EvaluateArgs),
+        schemars::schema_for!(DoneArgs),
+    ] {
+        let schema = serde_json::to_value(schema).unwrap();
+        let source = &schema["properties"]["source_id"];
+        assert!(source.is_object(), "{source}");
+        let declared = source["$ref"].as_str().map_or(source, |reference| {
+            schema
+                .pointer(reference.strip_prefix('#').unwrap())
+                .unwrap()
+        });
+        let variants = identity["anyOf"].as_array().expect("closed source shapes");
+        assert_eq!(declared["anyOf"].as_array(), Some(variants));
+        assert!(
+            schema["required"]
+                .as_array()
+                .is_none_or(|required| { !required.iter().any(|field| field == "source_id") })
+        );
+    }
+    let mut evaluate = json!({
+        "mode": "same_session", "acceptance_basis": 1, "evidence_basis": 1, "verdicts": [],
+    });
+    assert!(serde_json::from_value::<EvaluateArgs>(evaluate.clone()).is_ok());
+    assert!(serde_json::from_value::<DoneArgs>(json!({})).is_ok());
+    evaluate["source_id"] = Value::Null;
+    assert!(serde_json::from_value::<EvaluateArgs>(evaluate).is_err());
+    assert!(serde_json::from_value::<DoneArgs>(json!({"source_id": null})).is_err());
 }
 
 #[test]
@@ -168,7 +201,6 @@ fn done_names_the_deciding_observation_beside_the_unchanged_stale_cause() {
             note: None,
             links: None,
             link_basis: None,
-            source_fingerprint: None,
             source_id: None,
             landing: None,
         }));
@@ -252,8 +284,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
                     evidence: vec![],
                     acceptance: None,
                     note: None,
-                    source_fingerprint: fixture.presented.clone(),
-                    source_id: None,
+                    source_id: fixture.presented.clone(),
                     landing: None,
                     idempotency_key: String::new(),
                 },
@@ -292,8 +323,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             note: None,
             links: None,
             link_basis: None,
-            source_fingerprint: fixture.presented.clone(),
-            source_id: None,
+            source_id: fixture.presented.clone(),
             landing: None,
         }));
         assert_ne!(response.is_error, Some(true), "{case}: an owed receipt");
@@ -315,22 +345,13 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             );
         }
         if case == "long_mismatch" {
-            let long_presented = crate::storage::long_presented_source();
             assert_eq!(
                 source.expected_fingerprint.as_deref(),
                 Some(&*long_declared)
             );
             assert_eq!(
-                source.presented_fingerprint.as_deref(),
-                Some(&*long_presented)
-            );
-            assert_eq!(
                 value["recovery"]["source"]["expected_fingerprint"],
                 long_declared
-            );
-            assert_eq!(
-                value["recovery"]["source"]["presented_fingerprint"],
-                format!("{}… (129 bytes stored)", "m".repeat(128))
             );
         }
         // Plain show names the same remedy on its own line, from the
@@ -347,7 +368,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             .expect("show the item");
         let status = crate::SqliteStore::open(&fixture.database)
             .expect("open the store")
-            .acceptance_evaluation_status(fixture.work.work_id, None)
+            .acceptance_evaluation_status(fixture.work.work_id)
             .expect("status read")
             .expect("newest evaluation");
         let shown_in_read = read.value["acceptance_evaluation"]["source_recovery"].clone();
@@ -467,7 +488,11 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
         "source_root",
         "wrong_run",
         "beyond_cut",
+        "beyond_cut_without_match",
         "wrong_source",
+        "wrong_source_without_match",
+        "wrong_source_with_superseded_match",
+        "wrong_source_with_distinct_current_match",
         "wrong_basis",
     ] {
         let fixture: crate::storage::AdmissionTransportFixture =
@@ -507,8 +532,7 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
             evidence_basis: input.evidence_basis,
             verdicts: input.verdicts.clone(),
             attempt: input.attempt.clone(),
-            source_fingerprint: input.source_fingerprint.clone(),
-            source_id: None,
+            source_id: input.source_id.clone(),
             model: input.model.clone(),
             execution_identity: input.execution_identity.clone(),
             parent_session: input.parent_session.clone(),
@@ -526,21 +550,27 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
         assert_eq!(error["message"], message);
         assert_eq!(error["details"], details);
         if let Some(candidate) = &fixture.citable_record {
+            let candidates = json!({"records": [candidate], "more": false});
+            assert_eq!(error["details"]["cause"]["citable_records"], candidates);
+            assert_eq!(
+                shared["error"]["details"]["cause"]["citable_records"],
+                candidates
+            );
+            for message in [&error["message"], &shared["error"]["message"]] {
+                let message = message.as_str().expect("refusal message");
+                let first = message.as_bytes().get(..512).unwrap_or(message.as_bytes());
+                assert!(
+                    String::from_utf8_lossy(first).contains(candidate.as_str()),
+                    "{message}"
+                );
+            }
+        } else if matches!(
+            case,
+            "wrong_source_without_match" | "wrong_source_with_superseded_match"
+        ) {
             assert_eq!(
                 error["details"]["cause"]["citable_records"],
-                json!({"records": [candidate], "more": false})
-            );
-            let message = error["message"].as_str().expect("refusal message");
-            let first = message.as_bytes().get(..512).unwrap_or(message.as_bytes());
-            assert!(
-                String::from_utf8_lossy(first).contains(candidate.as_str()),
-                "{message}"
-            );
-            assert!(
-                shared["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains(candidate.as_str())
+                json!({"records": [], "more": false})
             );
         } else {
             assert!(error["details"]["cause"].get("citable_records").is_none());
@@ -575,7 +605,7 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
         let store = crate::SqliteStore::open(&fixture.database).unwrap();
         assert!(
             store
-                .acceptance_evaluation_status(fixture.work.work_id, None)
+                .acceptance_evaluation_status(fixture.work.work_id)
                 .unwrap()
                 .is_none()
         );
@@ -619,7 +649,6 @@ fn done_preserves_bound_check_error_status_and_exposes_typed_guidance() {
             note: None,
             links: None,
             link_basis: None,
-            source_fingerprint: None,
             source_id: None,
             landing: None,
         }));
@@ -1204,7 +1233,6 @@ fn done_args(work_ref: Option<&str>) -> DoneArgs {
         note: None,
         links: None,
         link_basis: None,
-        source_fingerprint: None,
         source_id: None,
         landing: None,
     }
@@ -1265,7 +1293,6 @@ fn bare_done_and_evaluate_refuse_over_mcp_while_several_claims_are_live() {
             evidence_basis: 1,
             verdicts: Vec::new(),
             attempt: None,
-            source_fingerprint: None,
             source_id: None,
             model: None,
             execution_identity: None,

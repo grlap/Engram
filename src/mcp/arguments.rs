@@ -231,21 +231,19 @@ pub(super) struct EvaluateArgs {
     pub(super) mode: String,
     /// The item revision whose criteria the verdicts address, as printed by show.
     pub(super) acceptance_basis: i64,
-    /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission, unless it passed on the revision given as `source_fingerprint`; a source change after it voids the evaluation, unless it is to that revision.
+    /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission, unless it passed on the identity given as `source_id`; a source change after it voids the evaluation, unless it is to that identity.
     pub(super) evidence_basis: i64,
     /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full record ids of host-minted verification or environment evidence.
     pub(super) verdicts: Vec<crate::WorkCriterionVerdictInput>,
     /// Explicit attempt key; identical resends replay, contradicting content under the same key refuses.
     pub(super) attempt: Option<String>,
-    /// Host-measured source fingerprint at evaluation time.
-    pub(super) source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at evaluation time.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::source::present_source_id"
     )]
-    #[schemars(with = "Option<crate::source::SourceId>")]
+    #[schemars(with = "crate::source::SourceId")]
     pub(super) source_id: Option<crate::source::SourceId>,
     /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
     pub(super) model: Option<String>,
@@ -341,15 +339,13 @@ pub(super) struct DoneArgs {
     pub(super) summary: Option<String>,
     /// Shared acceptance note; does not link evidence to individual criteria.
     pub(super) note: Option<String>,
-    /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
-    pub(super) source_fingerprint: Option<String>,
-    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    /// Complete host-measured source identity at completion time; checked against the evaluated one when the policy requires source freshness.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::source::present_source_id"
     )]
-    #[schemars(with = "Option<crate::source::SourceId>")]
+    #[schemars(with = "crate::source::SourceId")]
     pub(super) source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance: `commit`, `remote`, `branch`, `pushed_at`, and `installed_build` when a binary was installed.
     pub(super) landing: Option<crate::domain::CompletionLanding>,

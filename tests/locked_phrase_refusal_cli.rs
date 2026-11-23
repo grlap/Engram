@@ -222,6 +222,12 @@ impl Drop for Control {
 }
 
 fn evaluate(home: &Path, work_ref: &str, bases: (i64, i64), note: &str, attempt: &str) -> Output {
+    let judged = home.join("judged-source.json");
+    let source = json!({
+        "commit": "a".repeat(40), "tree": "b".repeat(40), "submodules": [], "changes": []
+    });
+    std::fs::write(&judged, source.to_string()).unwrap();
+    let judged = judged.display().to_string();
     work(
         home,
         JUDGE,
@@ -240,8 +246,8 @@ fn evaluate(home: &Path, work_ref: &str, bases: (i64, i64), note: &str, attempt:
             "1=the runner's note shows the outcome",
             "--evidence",
             &format!("1={note}"),
-            "--source-fingerprint",
-            "content-revision-2",
+            "--source-id-file",
+            &judged,
             "--attempt",
             attempt,
             "--json",

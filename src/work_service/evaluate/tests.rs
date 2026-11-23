@@ -73,7 +73,6 @@ fn evaluate_input(
         evidence_basis,
         verdicts,
         attempt: None,
-        source_fingerprint: None,
         source_id: None,
         model: None,
         execution_identity: None,
@@ -447,7 +446,7 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
     assert!(passing.projection.blocking.is_none());
     let stored_model = SqliteStore::open(&database)
         .expect("store")
-        .acceptance_evaluation_status(root.work_id, None)
+        .acceptance_evaluation_status(root.work_id)
         .expect("status read")
         .expect("newest evaluation")
         .record
@@ -608,19 +607,5 @@ fn shared_evaluation_keeps_the_complete_record_and_only_projects_an_owner_summar
     assert_eq!(
         service.work_evaluate_on(&input, at(11)).unwrap().evaluation,
         result.evaluation
-    );
-    let mut invalid = input;
-    invalid.source_fingerprint = Some("legacy".into());
-    let before = crate::storage::test_database_shape_snapshot(
-        &rusqlite::Connection::open(&database).unwrap(),
-    )
-    .unwrap();
-    assert!(service.work_evaluate_on(&invalid, at(12)).is_err());
-    assert_eq!(
-        crate::storage::test_database_shape_snapshot(
-            &rusqlite::Connection::open(&database).unwrap()
-        )
-        .unwrap(),
-        before
     );
 }

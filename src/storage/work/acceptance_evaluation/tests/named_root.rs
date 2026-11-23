@@ -330,7 +330,7 @@ fn a_focus_move_captures_the_claims_named_root() {
 fn observe_basis(
     host: &mut HostSession,
     store: &mut SqliteStore,
-    basis: ExecutionSourceBasis,
+    basis: impl Into<crate::domain::VerificationSourceBasis>,
     source_changed: bool,
     second: i64,
 ) -> Result<crate::domain::ExecutionObservationReceipt, StoreError> {
@@ -338,6 +338,8 @@ fn observe_basis(
         ExecutionObserveInput, MeasuredSighting, ObservationCausality, ObservationPolicyBasis,
         ObservationRootBasis, ObservedInterval, ObservedOccurrence, ObservedSourceChange,
     };
+    let basis = basis.into();
+    let shared = basis.source_id().is_some();
     host.captures += 1;
     let root = store.read_named_root(
         &host.project_id,
@@ -349,7 +351,7 @@ fn observe_basis(
     )?;
     let policy = SqliteStore::load_active_control_policy(&store.connection)?;
     let sighting = MeasuredSighting {
-        source_basis: (basis).into(),
+        source_basis: basis,
         observed_at: at(second + 1),
     };
     let occurrence = if source_changed {
@@ -367,7 +369,13 @@ fn observe_basis(
     };
     let mut observer = actor(&host.session_id.0);
     observer.run_id = Some(host.binding.run_id.0.to_string());
-    store.seed_historical_execution_observation(
+    let record = if shared {
+        SqliteStore::record_unadmitted_execution_observation
+    } else {
+        SqliteStore::seed_historical_execution_observation
+    };
+    record(
+        store,
         &host.project_id,
         &host.session_id,
         &host.connection_token,
@@ -884,7 +892,7 @@ fn an_evaluation_goes_stale_when_its_named_root_ends_is_released_or_renamed() {
             named
                 .fixture
                 .store
-                .acceptance_evaluation_status(named.work.work_id, None)
+                .acceptance_evaluation_status(named.work.work_id)
                 .expect("status read")
                 .expect("the evaluation is visible")
                 .stale
@@ -1676,7 +1684,7 @@ fn declared_pass(
 
 fn stale_reason(store: &SqliteStore, work: &WorkItem) -> Option<AcceptanceStaleReason> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation")
         .stale
@@ -1703,7 +1711,7 @@ fn a_declared_revision_the_root_is_about_to_report_records_and_seals_once_sighte
         Some(AcceptanceStaleReason::Source)
     );
     let shown = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .unwrap()
         .unwrap();
     let source = shown.source_recovery.unwrap();
@@ -1794,7 +1802,7 @@ fn a_declared_revision_the_root_never_reports_blocks_until_evaluated_again() {
         Some(AcceptanceStaleReason::Source)
     );
     let source = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .unwrap()
         .unwrap()
         .source_recovery

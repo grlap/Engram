@@ -322,7 +322,7 @@ impl Scenario {
 
     fn carried(&self) -> Option<crate::domain::CarriedFailure> {
         self.store()
-            .acceptance_evaluation_status(self.root.work_id, None)
+            .acceptance_evaluation_status(self.root.work_id)
             .expect("status")
             .and_then(|status| status.carried_failure)
     }
@@ -588,7 +588,7 @@ fn cancelling_the_item_ends_the_carry() {
         .expect("cancel");
     let status = scenario
         .store()
-        .acceptance_evaluation_status(scenario.root.work_id, None)
+        .acceptance_evaluation_status(scenario.root.work_id)
         .expect("status")
         .expect("the ended run's newest evaluation is still read");
     assert!(

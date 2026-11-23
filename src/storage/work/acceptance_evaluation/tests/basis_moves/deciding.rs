@@ -7,7 +7,7 @@ use crate::storage::DecidingObservation;
 
 fn status_observation(store: &SqliteStore, work: &WorkItem) -> Option<DecidingObservation> {
     store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("an evaluation")
         .stale_observation
@@ -1056,7 +1056,7 @@ fn completion_carries_the_deciding_observation_beside_the_unchanged_cause() {
         });
 
         let crate::storage::AcceptanceEvaluationReadiness::Blocked(cause, context) = store
-            .acceptance_evaluation_readiness(work.work_id, claim.run_id, None, None)
+            .acceptance_evaluation_readiness(work.work_id, claim.run_id, None)
             .expect("readiness")
         else {
             panic!("a stale evaluation blocks completion");
@@ -1569,7 +1569,7 @@ fn an_unadmitted_change_is_named_as_a_barrier_with_the_revisions_compared() {
         );
 
         let status = store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .expect("an evaluation");
         assert_eq!(status.evaluation, recorded.evaluation, "{reported}");

@@ -106,8 +106,6 @@ fn mutation_and_continuation_first_lines_escape_titles_without_changing_json() {
     let done = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),

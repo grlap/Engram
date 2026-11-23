@@ -181,7 +181,9 @@ impl SqliteStore {
             )?
             .is_some()
         };
+        let retired_declaration = request.source_fingerprint.is_some();
         let needs_live_input = !replay_exists
+            && !retired_declaration
             && super::query::on_one_snapshot(&self.connection, |connection| {
                 completion_needs_live_input_on(connection, request)
             })?;
@@ -194,7 +196,7 @@ impl SqliteStore {
         } else {
             super::registered_commit_currency::LiveCurrency::default()
         };
-        let imported_uses = if replay_exists {
+        let imported_uses = if replay_exists || retired_declaration {
             None
         } else {
             super::task_sync::evidence::consumption::measure_selected_on(
@@ -217,10 +219,15 @@ impl SqliteStore {
             Self::journal_claim_ended(request);
             return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
         }
-        crate::domain::AcceptanceSourceBasis::validate_declaration(
-            request.source_fingerprint.as_deref(),
-            request.source_id.as_ref(),
-        )?;
+        if retired_declaration {
+            return Err(StoreError::WorkCompletionRefused {
+                work: request.work_id,
+                reason:
+                    "source_fingerprint is retired; declare the complete source_id being judged"
+                        .into(),
+            });
+        }
+        crate::domain::AcceptanceSourceBasis::validate_declaration(request.source_id.as_ref())?;
         expire_handoff_offers(
             &transaction,
             request.run_id,
@@ -320,7 +327,6 @@ impl SqliteStore {
                 &item,
                 run.run_id,
                 &acceptance_policy,
-                request.source_fingerprint.as_deref(),
                 request.source_id.as_ref(),
                 &currency,
             )?;
@@ -446,32 +452,23 @@ impl SqliteStore {
                 live_commit_consumed = true;
                 let checked: VerificationEvidence =
                     load_typed_work_object(&transaction, citation, "verification_evidence")?;
-                if request.source_fingerprint.is_some()
-                    && checked.source_basis.source_id().is_some()
-                {
-                    return Err(StoreError::WorkCompletionRefused {
-                        work: item.work_id,
-                        reason: "source_fingerprint cannot declare a source_id input; use --source-id-file or omit the declaration for unevaluated completion".into(),
-                    });
-                }
                 let declared = crate::domain::AcceptanceSourceBasis::from_declaration(
-                    request.source_fingerprint.clone(),
                     request.source_id.clone(),
-                )
-                .map_err(|reason| StoreError::InvalidWork(reason.into()))?;
+                );
                 if declared.as_ref().is_some_and(|declared| {
                     !declared
                         .identity
                         .same_source(&checked.source_basis.identity)
                 }) {
-                    let remedy = checked.source_basis.legacy_revision().map_or_else(
-                        || "use --source-id-file with the current complete identity or omit the declaration for unevaluated completion".to_owned(),
-                        |revision| format!("use --source-fingerprint {revision} or omit the declaration for unevaluated completion"),
-                    );
+                    let remedy = if checked.source_basis.source_id().is_some() {
+                        "supply the check's complete source_id, or omit the declaration for unevaluated completion"
+                    } else {
+                        "omit the declaration for unevaluated completion, or run and cite a new check that records a complete source_id"
+                    };
                     return Err(StoreError::WorkCompletionRefused {
                         work: item.work_id,
                         reason: format!(
-                            "completion declares an input other than its current registered check; {remedy}; otherwise run a check on the intended source"
+                            "completion declares an input other than its current registered check; {remedy}"
                         ),
                     });
                 }
@@ -689,7 +686,6 @@ impl SqliteStore {
             &evidence,
             &selected_imports.retired_imports,
             acceptance_evaluation.is_some() || imported_acceptance.is_some(),
-            request.source_fingerprint.as_deref(),
             request.source_id.as_ref(),
             acceptance,
             &currency,

@@ -411,7 +411,7 @@ pub(super) struct ShowEvaluation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_id_summary: Option<crate::source::SourceIdSummary>,
     /// True when the policy requires source freshness and this read could
-    /// not measure a fingerprint: `done --source-fingerprint` checks it.
+    /// not measure the source: `done` checks it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) source_checked_at_done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -775,7 +775,7 @@ fn evaluation_lines(
                 if status.record.registered_input_decision.is_some() {
                     "; source currency checked at done"
                 } else {
-                    "; present --source-fingerprint at done"
+                    "; source currency checked at done; a new evaluation may be needed"
                 }
             } else {
                 ""

@@ -269,14 +269,13 @@ host checks and measures the source, the policy can require more:
   cites the record id of a passed host-minted check:
   `--verdict 1=pass:observed --evidence 1=RECORD-ID`. A bound criterion
   passes only this way, whatever the mechanical basis.
-- With `--require-source-freshness`, the evaluator declares the source it
-  judged with `--source-fingerprint F` on `evaluate`, and `done` must present
-  the same `F`, measured by the host at completion. A record without one
-  never matches. `F` is the host's own source revision; another form, such as
-  a Git commit id, voids the evaluation at the host's next sighting. This
-  sighting rule applies to legacy observation evidence; [registered Git-input
+- With `--require-source-freshness`, the evaluator declares the complete source
+  it judged with `--source-id-file PATH` on `evaluate`, and `done` must present
+  the same identity, measured by the host at completion. A record without one
+  never matches. An evaluation stored with an older source fingerprint can't be
+  presented again, so it is evaluated afresh; see [registered Git-input
   evidence](docs/features/acceptance-evaluation.md#registered-git-input-evidence)
-  instead uses the check's exact `git-commit:` or `git-tree:` declaration.
+  for the exception.
 
 Revising the criteria or bindings a failing evaluation judged does not clear
 the failure. After the executor's own revision, the next evaluation must name

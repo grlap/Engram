@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { fixtureHome, removeFixtureHomes, registerFixtureChild, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { FixtureChild, finishFixture } from "./fixture-child.mjs";
-import { observeHistoricalSource, recordCheck, ensureRoot, gitRevision } from "./work-session-fixture.mjs";
+import { labelledSourceId, observeSource, recordCheck, ensureRoot } from "./work-session-fixture.mjs";
 import { join, resolve } from "node:path";
 import test, { after } from "node:test";
 
@@ -52,6 +52,14 @@ function nativeEnvironment(overrides = {}) {
 
 function spawnNative(args, options) {
   return spawnSync(binary, args, { ...options, env: nativeEnvironment(options?.env) });
+}
+
+function readFixtureSourceId(sourceRoot) {
+  const capture = spawnNative(["source", "--root", sourceRoot, "--json"], { cwd: root, encoding: "utf8" });
+  assert.equal(capture.status, 0, capture.stderr);
+  const observation = JSON.parse(capture.stdout);
+  assert.equal(observation.status, "clean");
+  return observation.source_id;
 }
 
 function spawnNativeControl(args, options) {
@@ -744,10 +752,10 @@ test("retained ordinary observations owe checks and registered evidence satisfie
     assert.equal(ok(await client.request({ operation: "work_session_read" })).work_session, true);
     const request = async (frame) => ok(await client.request(frame));
     const policy = () => readPolicy(home);
-    const source = { workspace_id: "ordinary-workspace", source_revision: gitRevision("ordinary-R1"),
+    const source = { workspace_id: "ordinary-workspace", source_id: labelledSourceId("ordinary-R1"),
       source_root_generation: 1, source_root_state: "named" };
     await ensureRoot({ request, binding, key: "ordinary", source });
-    await observeHistoricalSource({ home, request, policy, binding, key: "ordinary-mutation", source, changed: true });
+    await observeSource({ request, policy, binding, key: "ordinary-mutation", source, changed: true });
     let focus = cliWorkFocus(home, actor, item.work.short_ref);
     assert.equal(focus.obligation_page.items.filter((row) => row.state === "open").length, 1);
     const recorded = await recordCheck({ request, binding, session: actor, key: "ordinary-check", source });
@@ -777,12 +785,12 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
   assert.equal(built.status, 0, built.stderr);
   // Bound cases cite registered checks of a real repository, since a live input
   // is measured at evaluation. Its currency rules are exercised separately below.
-  const revisionFor = (label) => gitRevision(label).replace("git-commit:", "git-tree:");
   for (const caseName of ["eligibility", "source_root", "wrong_run", "beyond_cut", "wrong_source"]) {
     const engramHome = fixtureHome(`engram-admission-${caseName.replaceAll("_", "-")}-`, t);
     const clients = [];
     let failure;
     let sourceRoot;
+    let sourceId;
     const git = (...args) => {
       const result = spawnSync("git", args, { cwd: sourceRoot, env: nativeEnvironment(), encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
@@ -790,7 +798,6 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
     };
     const commit = () => git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
       "commit", "--no-gpg-sign", "--allow-empty", "-qm", "fixture");
-    const head = () => `git-commit:${git("rev-parse", "HEAD")}`;
     const actor = `admission-${caseName}`;
     const word = (session, ...args) => spawnNative(["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
       { cwd: root, encoding: "utf8" });
@@ -814,6 +821,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         writeFileSync(join(sourceRoot, "tracked"), "checked\n");
         git("add", "tracked");
         commit();
+        sourceId = readFixtureSourceId(sourceRoot);
       }
       const create = (session, title) => {
         const added = jsonWord(session, "add", title, "--accept", "the check supports the outcome",
@@ -832,7 +840,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         if (bound) await ensureRoot({ request, binding, key: "admission", source: { workspace_id: workspace } });
         let sequence = 0;
         const check = () => recordCheck({ request, binding, session, key: `admission-report-${++sequence}`,
-          source: { workspace_id: workspace, source_revision: head(), source_root_generation: 1, source_root_state: "named" } });
+          source: { workspace_id: workspace, source_id: sourceId, source_root_generation: 1, source_root_state: "named" } });
         return { client, binding, check };
       };
       let citation;
@@ -862,16 +870,18 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         citation = (await host.check()).verifications[0].record_id;
         if (caseName === "wrong_source") {
           commit();
+          sourceId = readFixtureSourceId(sourceRoot);
           await host.check();
         }
       }
       const shown = jsonWord(actor, "show", ref);
       const cut = caseName === "beyond_cut" ? beforeCheck : shown.evidence_basis;
-      const revision = sourceRoot ? head() : revisionFor("admission-R");
+      const judgedFile = join(engramHome, "judged-source.json");
+      writeFileSync(judgedFile, JSON.stringify(sourceId ?? labelledSourceId("admission-R")));
       const result = word(actor, "evaluate", ref, "--mode", "same-session", "--acceptance-basis", String(shown.acceptance_basis),
         "--evidence-basis", String(cut), "--verdict", `1=pass:${bound ? "observed" : "judgment"}`,
         "--rationale", "1=judge the supplied evidence", "--evidence", `1=${citation}`,
-        ...(caseName === "eligibility" || caseName === "wrong_run" ? [] : ["--source-fingerprint", revision]), "--json");
+        ...(caseName === "eligibility" || caseName === "wrong_run" ? [] : ["--source-id-file", judgedFile]), "--json");
       assert.equal(result.status, 1, `${caseName}: ${result.stderr}`);
       const error = JSON.parse(result.stderr).error;
       assert.equal(error.code, "acceptance_evaluation_refused", `${caseName}: ${result.stderr}`);
@@ -884,7 +894,6 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
       assert.ok(error.next.some((command) => command.includes(ref)));
       if (caseName === "source_root") {
         assert.equal(cause.workspace_id, "C:/database is locked");
-        assert.equal(cause.declared_revision, revision);
         assert.doesNotMatch(result.stderr.toLowerCase(), /database is locked/u);
       }
       if (bound) {
@@ -941,7 +950,8 @@ test("committed input admission reads real Git through the native CLI", async (t
       writeFileSync(join(sourceRoot, "tracked"), "checked\n");
       git("add", "tracked");
       commit();
-      const revision = `git-commit:${git("rev-parse", "HEAD")}`;
+      const source_id = readFixtureSourceId(sourceRoot);
+      const judgedFile = join(home, "judged-source.json");
       const initialized = spawnNative(["--home", home, "init"], { cwd: root, encoding: "utf8" });
       assert.equal(initialized.status, 0, initialized.stderr);
       const policy = spawnNative(["--home", home, "control-policy", "set-acceptance-evaluation",
@@ -954,22 +964,27 @@ test("committed input admission reads real Git through the native CLI", async (t
       client = new ControlClient(home, actor);
       assert.equal(ok(await client.request({ operation: "work_session_read" })).work_session, true);
       const request = async (frame) => ok(await client.request(frame));
-      const source = { workspace_id: realpathSync.native(sourceRoot), source_revision: revision,
+      writeFileSync(judgedFile, JSON.stringify(source_id));
+      const source = { workspace_id: realpathSync.native(sourceRoot), source_id,
         source_root_generation: 1, source_root_state: "named" };
       await ensureRoot({ request, binding, key: "live-admission", source });
       const before = jsonWord("show", ref).evidence_basis;
-      const citation = (await recordCheck({ request, binding, session: actor, key: "live-admission", source })).verifications[0].record_id;
+      const citation = (await recordCheck({ request, binding, session: actor, key: "live-admission", source }))
+        .verifications[0].record_id;
       const shown = jsonWord("show", ref);
       const evaluate = (cut) => word("evaluate", ref, "--mode", "same-session",
         "--acceptance-basis", String(shown.acceptance_basis), "--evidence-basis", String(cut),
         "--verdict", "1=pass:observed", "--rationale", "1=registered check on this commit",
-        "--evidence", `1=${citation}`, "--source-fingerprint", revision, "--json");
+        "--evidence", `1=${citation}`, "--source-id-file", judgedFile, "--json");
       // No check inside the cut cannot mint a live source decision, even
       // when the declared commit is currently clean and its check is later.
       const staleCut = evaluate(before);
       assert.equal(staleCut.status, 1, staleCut.stderr);
-      assert.equal(JSON.parse(staleCut.stderr).error.code, "work_completion_refused");
-      assert.match(staleCut.stderr, /no registered check at the evaluated cut/u);
+      const staleError = JSON.parse(staleCut.stderr).error;
+      assert.equal(staleError.code, "acceptance_evaluation_refused");
+      assert.equal(staleError.details.cause.mismatch, "beyond_cut");
+      assert.equal(staleError.details.cause.citation, citation);
+      assert.equal(staleError.details.cause.evaluated_cut, before);
       assert.deepEqual(jsonWord("show", ref, "--evaluations").evaluations, []);
       if (state === "dirty") writeFileSync(join(sourceRoot, "tracked"), "changed\n");
       if (state === "new-commit") commit();
@@ -977,12 +992,12 @@ test("committed input admission reads real Git through the native CLI", async (t
       const result = evaluate(shown.evidence_basis);
       if (state === "clean") {
         assert.equal(result.status, 0, result.stderr);
-        const sealed = jsonWord("done", ref, "Delivered", "--source-fingerprint", revision);
+        const sealed = jsonWord("done", ref, "Delivered", "--source-id-file", judgedFile);
         assert.equal(sealed.work.lifecycle, "completed");
       } else {
         assert.equal(result.status, 1, `${state}: ${result.stderr}`);
         assert.equal(JSON.parse(result.stderr).error.code, "work_completion_refused");
-        assert.match(result.stderr, state === "dirty" ? /dirty/u : state === "missing" ? /unavailable/u : /named root is at/u);
+        assert.match(result.stderr, state === "missing" ? /unavailable/u : /full source_id changed/u);
         assert.deepEqual(jsonWord("show", ref, "--evaluations").evaluations, []);
       }
       const doctor = spawnNative(["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
@@ -1014,7 +1029,7 @@ test("a host reads what satisfied each bound criterion and lists its candidates 
     const binding = cliWorkFocus(engramHome, actor, ref).control_binding;
     client = new ControlClient(engramHome, actor);
     assert.equal(ok(await client.request({ operation: "work_session_read" })).work_session, true);
-    const source = { workspace_id: "binding-read-workspace", source_revision: gitRevision("binding-read-R1"),
+    const source = { workspace_id: "binding-read-workspace", source_id: labelledSourceId("binding-read-R1"),
       source_root_generation: 1, source_root_state: "named" };
     const checked = await recordCheck({ request: async (frame) => ok(await client.request(frame)),
       binding, session: actor, key: "binding-read-check", source });
@@ -1118,18 +1133,17 @@ test("source recovery keeps a judgment through host confirmation and separates f
     jsonWord("gate", "source-evidence", "--work-ref", ref);
     return ref;
   };
-  const evaluate = (ref, revision, sourceFile) => {
+  const evaluate = (ref, sourceFile) => {
     const shown = jsonWord("show", ref);
     const citation = jsonWord("show", ref, "--notes", "--gates").notes
       .find((row) => String(row.family).toLowerCase() === "gates").locator;
     return jsonWord("evaluate", ref, "--mode", "same-session",
       "--acceptance-basis", String(shown.acceptance_basis), "--evidence-basis", String(shown.evidence_basis),
       "--verdict", "1=pass:judgment", "--rationale", "1=judge the recorded outcome", "--evidence", `1=${citation}`,
-      ...(revision ? ["--source-fingerprint", revision] : []),
       ...(sourceFile ? ["--source-id-file", sourceFile] : []));
   };
   const refused = (ref, mismatch, action, presented) => {
-    const result = word("done", ref, "Delivered", ...(presented ? ["--source-fingerprint", presented] : []), "--json");
+    const result = word("done", ref, "Delivered", ...(presented ? ["--source-id-file", presented] : []), "--json");
     assert.equal(result.status, 2, result.stderr);
     const value = JSON.parse(result.stdout);
     assert.equal(value.code, "acceptance_evaluation_stale");
@@ -1154,17 +1168,17 @@ test("source recovery keeps a judgment through host confirmation and separates f
       claim_id: binding.claim_id, claim_fence: binding.claim_fence, workspace_id: workspace,
       generation: 1, named_at: new Date().toISOString(), kind: "bound", idempotency_key: "source-root" }));
     let sightingCounter = 0;
-    const sight = async (revision) => observeHistoricalSource({ home: engramHome, request: async (frame) => ok(await client.request(frame)),
+    const sight = async (revision) => observeSource({ request: async (frame) => ok(await client.request(frame)),
       policy: () => readPolicy(engramHome), binding, key: `source-sighting-${++sightingCounter}`,
       source: { workspace_id: workspace, source_revision: revision,
         source_root_generation: 1, source_root_state: "named" } });
     await sight("R1");
-    const recorded = evaluate(ref, "R2");
+    const declaredFile = join(engramHome, "declared-source.json");
+    writeFileSync(declaredFile, JSON.stringify(labelledSourceId("R2")));
+    const recorded = evaluate(ref, declaredFile);
     const pending = refused(ref, "unconfirmed_declaration", "end_turn_read_and_retry");
     assert.equal(pending.value.recovery.source.evaluation, recorded.evaluation.evaluation);
     assert.equal(pending.value.recovery.source.workspace_id, workspace);
-    assert.equal(pending.value.recovery.source.declared_revision, "R2");
-    assert.equal(pending.value.recovery.source.reported_revision, "R1");
     assert.doesNotMatch(pending.result.stdout.toLowerCase(), /database is locked/u);
     assert.match(pending.value.remedy, /no future report is promised/u);
     const read = jsonWord("show", ref);
@@ -1222,7 +1236,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
     assert.equal(sighting.root.binding_event, rootRead.latest_event.event);
     assert.equal(sighting.current_binding, rootRead.latest_event.event);
     assert.equal(sighting.root.sighting.state, "present");
-    assert.equal(sighting.root.sighting.revision, "R2");
+    assert.equal(sighting.root.sighting.source_id_summary.commit, labelledSourceId("R2").commit);
     assert.match(sighting.root.sighting.record, /^[0-9a-f]{32}$/u);
     const wrongRun = await client.request({ operation: "named_root_sighting_read", work_ref: ref,
       run_id: "00000000-0000-0000-0000-000000000007" });
@@ -1232,16 +1246,6 @@ test("source recovery keeps a judgment through host confirmation and separates f
     client = null;
 
     setPolicy(true);
-    const measuredRef = create("Fresh measurement required");
-    const measured = evaluate(measuredRef, "measured-A");
-    const missing = refused(measuredRef, "completion_measurement_missing", "measure_source_and_retry");
-    assert.equal(missing.value.recovery.source.evaluation, measured.evaluation.evaluation);
-    assert.match(missing.value.remedy, /fresh source measurement/u);
-    const mismatch = refused(measuredRef, "completion_fingerprint_mismatch", "evaluate_current_source", "measured-B");
-    assert.match(mismatch.value.remedy, /new acceptance evaluation/u);
-    assert.match(mismatch.value.remedy, /copying.*insufficient/u);
-    assert.equal(jsonWord("show", measuredRef).acceptance_evaluation.source_recovery, undefined);
-    assert.equal(jsonWord("done", measuredRef, "Delivered", "--source-fingerprint", "measured-A").work.lifecycle, "completed");
     const sharedRef = create("Complete shared measurement required");
     const sourceFile = join(engramHome, "saved-source.json");
     const changedFile = join(engramHome, "different-source.json");
@@ -1249,23 +1253,25 @@ test("source recovery keeps a judgment through host confirmation and separates f
       changes: [{ path: "private-source-file.rs", status: " M", origin: null, blob: "c".repeat(40), mode: "100644" }] };
     writeFileSync(sourceFile, JSON.stringify(sharedSource));
     writeFileSync(changedFile, JSON.stringify({ ...sharedSource, tree: "d".repeat(40) }));
-    const sharedEvaluation = evaluate(sharedRef, undefined, sourceFile);
+    const sharedEvaluation = evaluate(sharedRef, sourceFile);
     assert.doesNotMatch(JSON.stringify(sharedEvaluation), /private-source-file/u);
     const sharedMissing = refused(sharedRef, "completion_measurement_missing", "measure_source_id_and_retry");
+    assert.equal(sharedMissing.value.recovery.source.evaluation, sharedEvaluation.evaluation.evaluation);
     assert.match(sharedMissing.value.remedy, /--source-id-file PATH/u);
-    assert.doesNotMatch(sharedMissing.value.remedy, /source-fingerprint/u);
-    const conflict = word("done", sharedRef, "Delivered", "--source-id-file", sourceFile,
-      "--source-fingerprint", "legacy", "--json");
-    assert.notEqual(conflict.status, 0);
+    assert.equal(jsonWord("show", sharedRef).acceptance_evaluation.source_recovery, undefined);
     const wrong = word("done", sharedRef, "Delivered", "--source-id-file", changedFile, "--json");
     assert.equal(wrong.status, 2, wrong.stderr);
-    assert.equal(JSON.parse(wrong.stdout).recovery.source.mismatch, "completion_fingerprint_mismatch");
+    const wrongSource = JSON.parse(wrong.stdout);
+    assert.equal(wrongSource.recovery.source.mismatch, "completion_fingerprint_mismatch");
+    assert.equal(wrongSource.recovery.source.remedy, "evaluate_current_source");
+    assert.match(wrongSource.remedy, /new acceptance evaluation/u);
+    assert.match(wrongSource.remedy, /copying.*insufficient/u);
     const sharedDone = jsonWord("done", sharedRef, "Delivered", "--source-id-file", sourceFile);
     assert.equal(sharedDone.work.lifecycle, "completed");
     assert.equal(sharedDone.acceptance.evaluation, sharedEvaluation.evaluation.evaluation);
     const absentRef = create("No evaluated source basis");
     evaluate(absentRef);
-    const absent = refused(absentRef, "evaluation_source_basis_missing", "evaluate_current_source", "measured-A");
+    const absent = refused(absentRef, "evaluation_source_basis_missing", "evaluate_current_source", sourceFile);
     assert.equal(absent.value.recovery.source.expected_fingerprint, undefined);
     assert.match(absent.value.remedy, /new acceptance evaluation/u);
     assert.match(absent.value.remedy, /copying.*insufficient/u);

@@ -46,8 +46,6 @@ fn refused_done(name: &str, modes: &[AcceptanceEvaluationMode], mark: Option<&st
     let owed = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -206,8 +204,6 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
     let owed = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -332,8 +328,6 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
     let completed = verbs
         .done(
             DoneInput {
-                source_fingerprint: None,
-
                 source_id: None,
                 landing: None,
                 links: Vec::new(),
@@ -400,8 +394,6 @@ fn a_child_done_receipt_names_the_parent_placeholder_as_the_parents() {
         let completed = verbs
             .done(
                 DoneInput {
-                    source_fingerprint: None,
-
                     source_id: None,
                     landing: None,
                     links: Vec::new(),

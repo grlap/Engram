@@ -112,14 +112,8 @@ impl AcceptanceSourceBasis {
     }
 
     pub(crate) fn validate_declaration(
-        fingerprint: Option<&str>,
         source_id: Option<&SourceId>,
     ) -> Result<(), crate::StoreError> {
-        if fingerprint.is_some() && source_id.is_some() {
-            return Err(crate::StoreError::InvalidWork(
-                "source_fingerprint and source_id are exclusive".into(),
-            ));
-        }
         if let Some(source) = source_id {
             source.validate().map_err(|_| {
                 crate::StoreError::InvalidWork("source_id has invalid values or ordering".into())
@@ -134,22 +128,12 @@ impl AcceptanceSourceBasis {
         Ok(())
     }
 
-    /// Assemble a declaration from the two exclusive front-door alternatives.
-    ///
-    /// # Errors
-    /// Refuses a request supplying both a fingerprint and a complete identity.
-    pub fn from_declaration(
-        fingerprint: Option<String>,
-        source_id: Option<SourceId>,
-    ) -> Result<Option<Self>, &'static str> {
-        Ok(match (fingerprint, source_id) {
-            (None, None) => None,
-            (Some(value), None) => Some(Self::legacy(None, value)),
-            (None, Some(source_id)) => Some(Self {
-                workspace_id: None,
-                identity: VerificationSourceIdentity::SourceId { source_id },
-            }),
-            (Some(_), Some(_)) => return Err("source_fingerprint and source_id are exclusive"),
+    /// A declaration of the complete identity a request names, if any.
+    #[must_use]
+    pub fn from_declaration(source_id: Option<SourceId>) -> Option<Self> {
+        source_id.map(|source_id| Self {
+            workspace_id: None,
+            identity: VerificationSourceIdentity::SourceId { source_id },
         })
     }
 }

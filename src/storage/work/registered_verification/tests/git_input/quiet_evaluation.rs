@@ -174,19 +174,11 @@ fn quiet_during_evaluation(cited: bool, bound: bool) {
         recorded.record.registered_input_witness.as_ref(),
         (!cited).then_some(check)
     );
-    let revision = f.request.input.revision();
-    let sealed = complete_with_evidence(
+    asks_for_a_fresh_evaluation(complete_with_evidence(
         &mut f,
         &[check.clone(), note],
-        &revision,
         "after-quiet-closes",
-    )
-    .unwrap();
-    assert!(sealed.acceptance[0].satisfied);
-    assert_eq!(
-        f.store.completion_seal_evaluation(&sealed).unwrap(),
-        Some(recorded.record)
-    );
+    ));
     let report = f.store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
 }
@@ -268,10 +260,9 @@ fn registered_staged_input_quiet_git_identity_after_recording_stales_witness() {
         object_name("quietly observed other commit")
     );
     let sighting = source_sighting(&mut f, "different-git-after-recording", 14, &other);
-    let revision = f.request.input.revision();
     let status = f
         .store
-        .acceptance_evaluation_status(f.request.registration.binding.work_id, Some(&revision))
+        .acceptance_evaluation_status(f.request.registration.binding.work_id)
         .unwrap()
         .unwrap();
     assert_eq!(status.stale, Some(AcceptanceStaleReason::Mutation));
@@ -279,7 +270,6 @@ fn registered_staged_input_quiet_git_identity_after_recording_stales_witness() {
     let error = complete_with_evidence(
         &mut f,
         &[check.clone(), note],
-        &revision,
         "quiet-git-changed-after-witness",
     )
     .unwrap_err();
@@ -331,14 +321,11 @@ fn earlier_quiet_git_sighting(delivery: &str) {
         recorded.record.registered_input_witness.as_ref(),
         Some(check)
     );
-    let revision = f.request.input.revision();
-    complete_with_evidence(
+    asks_for_a_fresh_evaluation(complete_with_evidence(
         &mut f,
         &[check.clone(), note],
-        &revision,
         "complete-after-early-sighting",
-    )
-    .unwrap();
+    ));
     let report = f.store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
 }
@@ -551,14 +538,13 @@ fn registered_staged_input_quiet_evaluation_keeps_real_change_and_revert_barrier
 }
 
 fn assert_unconfirmed_at_done(f: &mut Fixture, check: &ObjectId) {
-    let revision = f.request.input.revision();
     let status = f
         .store
-        .acceptance_evaluation_status(f.request.registration.binding.work_id, Some(&revision))
+        .acceptance_evaluation_status(f.request.registration.binding.work_id)
         .unwrap()
         .unwrap();
     assert_eq!(status.stale, Some(AcceptanceStaleReason::Source));
-    let refusal = complete(f, check, &revision, "unconfirmed-declaration").unwrap_err();
+    let refusal = complete(f, check, "unconfirmed-declaration").unwrap_err();
     assert!(
         matches!(
             refusal,
@@ -647,15 +633,14 @@ fn registered_staged_input_note_only_change_needs_a_later_check() {
     let mut request = completion_request(&work, &held, "runner", check, "current-completion", 19);
     request.evidence.push(note);
     request.acceptance.clear();
-    request.source_fingerprint = Some(f.request.input.revision());
-    let seal = f
-        .store
-        .complete_work(&request, &DevelopmentNoopRedactor)
-        .unwrap();
-    assert!(seal.acceptance[0].satisfied);
+    asks_for_a_fresh_evaluation(f.store.complete_work(&request, &DevelopmentNoopRedactor));
     assert_eq!(
-        seal.acceptance_evaluation.as_ref(),
-        Some(&recorded.evaluation)
+        f.store
+            .acceptance_evaluation_status(f.request.registration.binding.work_id)
+            .unwrap()
+            .unwrap()
+            .evaluation,
+        recorded.evaluation
     );
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
@@ -714,14 +699,14 @@ fn registered_staged_input_later_check_recovers_from_a_quiet_git_conflict() {
     );
     request.evidence.push(note);
     request.acceptance.clear();
-    request.source_fingerprint = Some(f.request.input.revision());
-    let seal = f
-        .store
-        .complete_work(&request, &DevelopmentNoopRedactor)
-        .unwrap();
+    asks_for_a_fresh_evaluation(f.store.complete_work(&request, &DevelopmentNoopRedactor));
     assert_eq!(
-        seal.acceptance_evaluation.as_ref(),
-        Some(&recorded.evaluation)
+        f.store
+            .acceptance_evaluation_status(f.request.registration.binding.work_id)
+            .unwrap()
+            .unwrap()
+            .evaluation,
+        recorded.evaluation
     );
     let report = f.store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
@@ -874,7 +859,7 @@ fn registered_staged_input_uncited_witness_validates_the_exact_saved_proof() {
         .unwrap();
     assert!(
         f.store
-            .acceptance_evaluation_status(f.request.registration.binding.work_id, None)
+            .acceptance_evaluation_status(f.request.registration.binding.work_id)
             .is_err()
     );
     let report = f.store.verify_all().unwrap();
@@ -926,7 +911,6 @@ fn registered_staged_input_uncited_witness_requires_completion_input_with_freshn
     );
     request.evidence = evidence.to_vec();
     request.acceptance.clear();
-    request.source_fingerprint = None;
     let error = f
         .store
         .complete_work(&request, &DevelopmentNoopRedactor)
@@ -945,7 +929,7 @@ fn registered_staged_input_uncited_witness_requires_completion_input_with_freshn
     );
     let crate::storage::AcceptanceEvaluationReadiness::Blocked(_, context) = f
         .store
-        .acceptance_evaluation_readiness(work.work_id, held.run_id, None, None)
+        .acceptance_evaluation_readiness(work.work_id, held.run_id, None)
         .unwrap()
     else {
         panic!("a witness still requires the completion's exact input");
@@ -954,7 +938,6 @@ fn registered_staged_input_uncited_witness_requires_completion_input_with_freshn
         context.source.unwrap().mismatch,
         AcceptanceSourceMismatch::CompletionMeasurementMissing
     );
-    complete_with_evidence(&mut f, &evidence, &revision, "measured-completion-input").unwrap();
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
 
@@ -972,7 +955,6 @@ fn registered_staged_input_uncited_witness_stales_after_a_recorded_change() {
             Some(check)
         );
         actual_change(&mut f, unadmitted, 14);
-        let revision = f.request.input.revision();
         let reason = if unadmitted {
             AcceptanceStaleReason::UnadmittedChange
         } else {
@@ -980,17 +962,12 @@ fn registered_staged_input_uncited_witness_stales_after_a_recorded_change() {
         };
         let status = f
             .store
-            .acceptance_evaluation_status(f.request.registration.binding.work_id, Some(&revision))
+            .acceptance_evaluation_status(f.request.registration.binding.work_id)
             .unwrap()
             .unwrap();
         assert_eq!(status.stale, Some(reason));
-        let error = complete_with_evidence(
-            &mut f,
-            &[check.clone(), note],
-            &revision,
-            "changed-after-witness",
-        )
-        .unwrap_err();
+        let error = complete_with_evidence(&mut f, &[check.clone(), note], "changed-after-witness")
+            .unwrap_err();
         assert!(
             matches!(error, StoreError::WorkCompletionRecoveryRequired {
             cause: WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason: stale }, ..
@@ -1020,14 +997,7 @@ fn registered_staged_input_uncited_witness_keeps_a_sealed_historical_cut() {
     let note = note(&mut f);
     let input = judgment(&f, &note);
     let recorded = record_evaluation(&mut f, &input).unwrap();
-    let revision = f.request.input.revision();
-    let sealed = complete_with_evidence(
-        &mut f,
-        &[check.clone(), note],
-        &revision,
-        "before-later-change",
-    )
-    .unwrap();
+    let sealed = historically_sealed(&mut f, &[check.clone(), note], "before-later-change");
     let capture = HistoricalCapture {
         project: f.project.clone(),
         session: f.session.clone(),
@@ -1133,7 +1103,7 @@ fn registered_staged_input_old_note_only_record_keeps_its_citation_source_lane()
     quiet_sighting(&mut f, "after-historical-evaluation", 13);
     let status = f
         .store
-        .acceptance_evaluation_status(f.request.registration.binding.work_id, None)
+        .acceptance_evaluation_status(f.request.registration.binding.work_id)
         .unwrap()
         .unwrap();
     assert_eq!(status.stale, Some(AcceptanceStaleReason::Mutation));
@@ -1186,14 +1156,9 @@ fn registered_staged_input_old_and_witness_records_round_trip_without_rewriting(
         let replay = record_evaluation(&mut f, &input).unwrap();
         assert!(replay.replayed);
         assert_eq!(replay.record, recorded.record);
-        let revision = f.request.input.revision();
-        complete_with_evidence(
-            &mut f,
-            &[check.clone(), note],
-            &revision,
-            "round-trip-complete",
-        )
-        .unwrap();
+        // Live stores hold completions sealed on such records before the
+        // fingerprint's retirement; the round trip carries that seal too.
+        historically_sealed(&mut f, &[check.clone(), note], "round-trip-complete");
         let objects = |store: &SqliteStore| -> Vec<(String, Vec<u8>)> {
             store
                 .connection
@@ -1261,18 +1226,17 @@ fn a_shared_quiet_sighting_preserves_the_historical_staged_tree_witness() {
     assert!(f.store.verify_all().unwrap().is_healthy());
     let basis = shared(&f);
     basis_sighting_delivered(&mut f, "shared-after-recording", 14, 14, basis);
-    let revision = f.request.input.revision();
     let status = f
         .store
-        .acceptance_evaluation_status(f.request.registration.binding.work_id, Some(&revision))
+        .acceptance_evaluation_status(f.request.registration.binding.work_id)
         .unwrap()
         .unwrap();
     assert_eq!(status.stale, None);
-    let sealed =
-        complete_with_evidence(&mut f, &[check, note], &revision, "shared-quiet-complete").unwrap();
-    assert_eq!(
-        f.store.completion_seal_evaluation(&sealed).unwrap(),
-        Some(recorded.record)
-    );
+    assert_eq!(status.record, recorded.record);
+    asks_for_a_fresh_evaluation(complete_with_evidence(
+        &mut f,
+        &[check, note],
+        "shared-quiet-complete",
+    ));
     assert!(f.store.verify_all().unwrap().is_healthy());
 }

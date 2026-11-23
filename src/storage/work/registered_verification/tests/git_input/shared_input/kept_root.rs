@@ -146,7 +146,6 @@ fn shared_input_kept_root_accepts_new_checks_after_claim_changes() {
         let mut complete =
             completion_request(&current, &held, holder, &check, "kept-root-done", 4009);
         complete.acceptance.clear();
-        complete.source_fingerprint = None;
         complete.source_id = Some(identity);
         let sealed = f
             .store

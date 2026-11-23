@@ -198,14 +198,14 @@ fn a_target_observed_during_a_check_passes_evaluation_on_its_bound_record() {
     );
     let admitted = f
         .store
-        .record_acceptance_evaluation(&evaluation, &DevelopmentNoopRedactor)
+        .seed_historical_acceptance_evaluation(&evaluation, &DevelopmentNoopRedactor)
         .unwrap();
     assert_eq!(admitted.record.verdicts.len(), 1);
     assert_eq!(admitted.record.verdicts[0].verdict, AcceptanceVerdict::Pass);
     assert!(admitted.record.evidence_basis.contains(&bound.verification));
     let evaluated = f
         .store
-        .acceptance_evaluation_status(f.b.work.work_id, None)
+        .acceptance_evaluation_status(f.b.work.work_id)
         .unwrap()
         .unwrap();
     assert_eq!(evaluated.evaluation, admitted.evaluation);

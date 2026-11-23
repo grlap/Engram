@@ -189,7 +189,10 @@ pub(super) fn validate_request(
         RegisteredVerificationInput::StagedTree { .. } => {
             Err(refused("input.kind", "the staged_tree input is retired"))
         }
-        RegisteredVerificationInput::Commit { .. } => Ok(()),
+        RegisteredVerificationInput::Commit { .. } => Err(refused(
+            "input.kind",
+            "the commit input is retired; report source_id",
+        )),
     }
 }
 

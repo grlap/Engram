@@ -14,6 +14,7 @@ fn kept_root_registration_preserves_authority_and_root_refusals() {
         "released",
     ] {
         let mut f = fixture();
+        f.use_shared_source();
         let binding = f.request.registration.binding.clone();
         let work = f.store.get_work_item(binding.work_id).unwrap();
         let mut now = 10;

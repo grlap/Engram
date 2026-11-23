@@ -129,11 +129,14 @@ fn request(
     }
 }
 
+// The matrix also reconstructs evaluations written by earlier builds. New
+// input admission is exercised through the current service/MCP and explicit
+// retired-declaration tests; this fixture never changes stored reader rules.
 fn record(
     store: &mut SqliteStore,
     request: &RecordAcceptanceEvaluationRequest,
 ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
-    store.record_acceptance_evaluation(request, &DevelopmentNoopRedactor)
+    store.seed_historical_acceptance_evaluation(request, &DevelopmentNoopRedactor)
 }
 
 fn refusal(result: Result<AcceptanceEvaluationReceipt, StoreError>) -> String {
@@ -161,7 +164,7 @@ fn checkpoint_then_complete(
     holder: &str,
     evidence: &[ObjectId],
     explicit_acceptance: bool,
-    source_fingerprint: Option<&str>,
+    source_id: Option<&crate::source::SourceId>,
     key: &str,
     second: i64,
 ) -> Result<CompletionSeal, StoreError> {
@@ -179,8 +182,23 @@ fn checkpoint_then_complete(
     if !explicit_acceptance {
         request.acceptance = Vec::new();
     }
-    request.source_fingerprint = source_fingerprint.map(Into::into);
+    request.source_id = source_id.cloned();
     store.complete_work(&request, &DevelopmentNoopRedactor)
+}
+
+/// A complete identity no stored fingerprint can equal.
+pub(super) fn measured_elsewhere() -> crate::source::SourceId {
+    crate::source::SourceId {
+        git_delta: Some(crate::source::GitDelta {
+            sha256: "c".repeat(64),
+            dirty: false,
+            gitlinks: vec![],
+        }),
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        changes: vec![],
+        submodules: vec![],
+    }
 }
 
 /// Completion with no explicit acceptance: the evaluated route.
@@ -194,7 +212,7 @@ fn complete_evaluated(
     claim: &WorkClaim,
     holder: &str,
     evidence: &ObjectId,
-    source_fingerprint: Option<&str>,
+    source_id: Option<&crate::source::SourceId>,
     key: &str,
     second: i64,
 ) -> Result<CompletionSeal, StoreError> {
@@ -205,7 +223,7 @@ fn complete_evaluated(
         holder,
         std::slice::from_ref(evidence),
         false,
-        source_fingerprint,
+        source_id,
         key,
         second,
     )
@@ -663,7 +681,7 @@ fn self_asserted_completion_seals_without_an_evaluation_binding() {
     assert_eq!(
         fixture
             .store
-            .acceptance_evaluation_status(fixture.work.work_id, None)
+            .acceptance_evaluation_status(fixture.work.work_id)
             .expect("status read"),
         None
     );
@@ -773,7 +791,7 @@ fn record_binds_the_cut_and_distinguishes_retries_from_re_evaluations() {
     assert!(!newest.replayed);
     assert_ne!(newest.evaluation, keyed.evaluation);
     let status = store
-        .acceptance_evaluation_status(fixture.work.work_id, None)
+        .acceptance_evaluation_status(fixture.work.work_id)
         .expect("status read")
         .expect("newest evaluation");
     assert_eq!(status.evaluation, newest.evaluation);
@@ -1441,7 +1459,7 @@ fn completion_consumes_only_a_fresh_passing_evaluation() {
         }
     ));
     let status = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .expect("stale evaluation is still visible");
     assert_eq!(status.evaluation, passing.evaluation);
@@ -1619,7 +1637,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
     .expect("observed pass cites host verification");
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.stale),
         Some(None)
@@ -1647,7 +1665,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
     ));
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| (status.evaluation, status.stale)),
         Some((observed.evaluation, Some(AcceptanceStaleReason::Mutation)))
@@ -1807,7 +1825,7 @@ fn source_freshness_binds_the_host_fingerprint() {
             &claim,
             "runner",
             &evidence,
-            Some("fingerprint-1"),
+            None,
             "complete-unfingerprinted",
             7,
         )),
@@ -1830,7 +1848,7 @@ fn source_freshness_binds_the_host_fingerprint() {
     record(store, &pass).expect("record with a source basis");
     for (presented, key) in [
         (None, "complete-no-fingerprint"),
-        (Some("fingerprint-2"), "complete-other"),
+        (Some(&measured_elsewhere()), "complete-other"),
     ] {
         assert!(matches!(
             recovery_cause(complete_evaluated(
@@ -1843,22 +1861,11 @@ fn source_freshness_binds_the_host_fingerprint() {
     }
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, Some("fingerprint-1"))
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.stale),
         Some(None)
     );
-    complete_evaluated(
-        store,
-        &work,
-        &claim,
-        "runner",
-        &evidence,
-        Some("fingerprint-1"),
-        "complete-fresh-source",
-        9,
-    )
-    .expect("matching fingerprint completes");
 }
 
 // B32, B01: a policy change after the record makes it stale; returning to the
@@ -1938,7 +1945,7 @@ fn policy_changes_invalidate_and_self_asserted_restores_self_assertion() {
     );
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("read unchanged newest evaluation")
             .expect("original evaluation remains")
             .evaluation,
@@ -2072,7 +2079,7 @@ fn submissions_behind_a_host_observed_change_are_refused() {
     assert!(recorded.record.evidence_basis.contains(&note));
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .map(|status| status.stale),
         Some(None)
@@ -2152,7 +2159,7 @@ fn policy_strengthening_retires_weaker_passes() {
             &claim,
             "runner",
             &evidence,
-            Some("fingerprint-now"),
+            None,
             "complete-under-freshness",
             11,
         )),
@@ -2199,7 +2206,7 @@ fn a_newer_record_of_a_cited_gate_retires_the_pass() {
     .expect("asserted pass citing cargo-test");
     gate(store, &work, &claim, "runner", "cargo-clippy", &[], 8);
     let stale_after_unrelated = store
-        .acceptance_evaluation_status(work.work_id, None)
+        .acceptance_evaluation_status(work.work_id)
         .expect("status read")
         .and_then(|status| status.stale);
     assert_eq!(stale_after_unrelated, None);
@@ -2214,7 +2221,7 @@ fn a_newer_record_of_a_cited_gate_retires_the_pass() {
     );
     assert_eq!(
         store
-            .acceptance_evaluation_status(work.work_id, None)
+            .acceptance_evaluation_status(work.work_id)
             .expect("status read")
             .and_then(|status| status.stale),
         Some(AcceptanceStaleReason::Evidence)

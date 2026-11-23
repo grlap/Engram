@@ -65,6 +65,35 @@ pub(in crate::storage) fn record_remote_verification_on(
     request
         .validate_new()
         .map_err(|(field, reason)| invalid(field, reason))?;
+    write_remote_verification_on(tx, project, session, actor, request, now)
+}
+
+/// Seeds a stored delivery of the retired commit and fingerprint input, for
+/// tests of how history keeps being read. Production ingress always goes
+/// through [`record_remote_verification_on`].
+#[cfg(test)]
+pub(in crate::storage) fn seed_historical_remote_verification_on(
+    tx: &Transaction<'_>,
+    project: &ProjectId,
+    session: &SessionId,
+    actor: &ActorContext,
+    request: &RemoteVerificationRequest,
+    now: DateTime<Utc>,
+) -> Result<RemoteVerificationReceipt, StoreError> {
+    request
+        .validate()
+        .map_err(|(field, reason)| invalid(field, reason))?;
+    write_remote_verification_on(tx, project, session, actor, request, now)
+}
+
+fn write_remote_verification_on(
+    tx: &Transaction<'_>,
+    project: &ProjectId,
+    session: &SessionId,
+    actor: &ActorContext,
+    request: &RemoteVerificationRequest,
+    now: DateTime<Utc>,
+) -> Result<RemoteVerificationReceipt, StoreError> {
     let completion = &request.completion;
     let supported = completion.schema_version == REMOTE_COMPLETION_SCHEMA_VERSION;
     let destination = if supported {

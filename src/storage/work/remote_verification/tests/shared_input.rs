@@ -351,9 +351,7 @@ fn finish(f: &mut Fixture, evidence: &ObjectId) -> Result<CompletionSeal, StoreE
         13,
         std::slice::from_ref(evidence),
     );
-    let mut request =
-        completion_request(&work, &held, "runner", evidence, "shared-remote-done", 14);
-    request.source_fingerprint = None;
+    let request = completion_request(&work, &held, "runner", evidence, "shared-remote-done", 14);
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
 }
 

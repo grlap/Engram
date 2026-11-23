@@ -84,6 +84,65 @@ impl SqliteStore {
         request: &RemoteVerificationRequest,
         now: DateTime<Utc>,
     ) -> Result<RemoteVerificationReceipt, StoreError> {
+        self.record_remote_verification_through(
+            project_id,
+            session_id,
+            connection_token,
+            authority,
+            request,
+            now,
+            |tx| {
+                super::work::record_remote_verification_on(
+                    tx, project_id, session_id, actor, request, now,
+                )
+            },
+        )
+    }
+
+    /// Seeds a delivery of the retired commit and fingerprint input for tests
+    /// of how stored history keeps being read. Production ingress always uses
+    /// [`Self::record_remote_verification`].
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn seed_historical_remote_verification(
+        &mut self,
+        project_id: &ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        authority: super::HostSessionAuthority,
+        actor: &ActorContext,
+        request: &RemoteVerificationRequest,
+        now: DateTime<Utc>,
+    ) -> Result<RemoteVerificationReceipt, StoreError> {
+        self.record_remote_verification_through(
+            project_id,
+            session_id,
+            connection_token,
+            authority,
+            request,
+            now,
+            |tx| {
+                super::work::seed_historical_remote_verification_on(
+                    tx, project_id, session_id, actor, request, now,
+                )
+            },
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "routing stays explicit; the writer differs only for seeded history"
+    )]
+    fn record_remote_verification_through(
+        &mut self,
+        project_id: &ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        authority: super::HostSessionAuthority,
+        request: &RemoteVerificationRequest,
+        now: DateTime<Utc>,
+        write: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<RemoteVerificationReceipt, StoreError>,
+    ) -> Result<RemoteVerificationReceipt, StoreError> {
         let intent = CanonicalObject::freeze(&Intent {
             control_schema_version: crate::CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
@@ -105,9 +164,7 @@ impl SqliteStore {
             )? {
                 return Ok(receipt);
             }
-            let receipt = super::work::record_remote_verification_on(
-                tx, project_id, session_id, actor, request, now,
-            )?;
+            let receipt = write(tx)?;
             authority.persist(
                 tx,
                 project_id,
