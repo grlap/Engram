@@ -4,12 +4,14 @@
   "title": "Stop quadratic registered-check scans during live acceptance preflight",
   "outcome": "Stop quadratic registered-check scans during live acceptance preflight",
   "acceptance": [
-    "Stop quadratic registered-check scans during live acceptance preflight is done"
+    "Live acceptance preflight (evaluate and done) finds the newest applicable registered check with one pass over the item's registered checks: the matching_on → passing_candidate_on → newer_failed_on path no longer rescans, or materialises a suffix, once per older superseded pass",
+    "A behaviour test with many superseded passes and a newer failure shows the preflight's work grows linearly with the number of registered checks, and that the outcome (newest applicable result, newer failure wins) is unchanged",
+    "No new check, flag or cache table; the change only removes the repeated scan"
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,
   "kind": "bug",
-  "priority": 2,
+  "priority": 1,
   "labels": [],
   "assigned_to": null,
   "deferred_until": null,

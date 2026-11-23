@@ -1,0 +1,27 @@
+{
+  "id": "01a20649-6b3b-7270-83b3-96809b8fcac0",
+  "external_ref": null,
+  "title": "List the cold snapshot's task tree under the listing limit so audits of more than about 11,000 tasks are not refused",
+  "outcome": "List the cold snapshot's task tree under the listing limit so audits of more than about 11,000 tasks are not refused",
+  "acceptance": [
+    "The cold task snapshot (read_task_snapshot) lists .engram/tasks under the listing byte limit (MAX_LISTING_BYTES) rather than the general 1 MiB query output limit, so a snapshot of 20,000 tasks is not refused with DestinationTreeLimit at the listing step",
+    "A behaviour test reads a cold snapshot whose task-tree listing exceeds 1 MiB and gets every document"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
