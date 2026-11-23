@@ -20,12 +20,19 @@
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Retired new legacy source identity inputs for evaluation, completion, and registered/remote verification while preserving exact stored replay and historical readers. The named-root legacy sighting reader remains tracked separately.",
+    "completed_at": "2026-11-23T04:23:53.983301Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
