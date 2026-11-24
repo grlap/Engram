@@ -18,12 +18,19 @@
   ],
   "assigned_to": "session-11334",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed the federation test-dispatch skill guidance, verified the landed Markdown contribution and focused link check, and passed fresh independent post-landing acceptance evaluation.",
+    "completed_at": "2026-11-24T09:36:48.372983500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

@@ -1,0 +1,27 @@
+{
+  "id": "01a20ced-1628-7720-88e7-ff06b9484bdb",
+  "external_ref": null,
+  "title": "Handle overlapping commands on one local task-sync data worktree",
+  "outcome": "Handle overlapping commands on one local task-sync data worktree",
+  "acceptance": [
+    "Overlapping ordinary sync or explicit folder operations on one data worktree preserve an in-progress merge, without changing multi-host coordination or relying on a global writer lock."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
