@@ -85,6 +85,51 @@ impl StagedCommitRequest {
 }
 
 impl DataWorktree {
+    pub(crate) async fn commit_folder(&mut self, message: &str) -> Result<()> {
+        use super::git::ordinary;
+
+        self.check_head()?;
+        let tree = ordinary::oid(
+            &ordinary::checked(git::command(&self.checkout, &["write-tree"]), "write-tree").await?,
+        )?;
+        self.check_root_tree(&tree)?;
+        let mut command = git::command(
+            &self.checkout,
+            &[
+                "-c",
+                "user.name=Engram task sync",
+                "-c",
+                "user.email=task-sync@engram.invalid",
+                "commit",
+                "--no-gpg-sign",
+                "-m",
+                message,
+            ],
+        );
+        for name in [
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+        ] {
+            command.env_remove(name);
+        }
+        ordinary::checked(command, "commit the data folder").await?;
+        self.refresh_sync_tip().await
+    }
+
+    pub(crate) async fn refresh_sync_tip(&mut self) -> Result<()> {
+        use super::git::ordinary;
+
+        let head = ordinary::checked(
+            git::command(&self.checkout, &["rev-parse", "HEAD"]),
+            "read data tip",
+        )
+        .await?;
+        self.head = Some(ordinary::oid(&head)?);
+        Ok(())
+    }
+
     /// Create and retain the caller's exact staged data commit, without staging
     /// files, changing the index or advancing any branch. The later explicit
     /// `advance_retained` step remains separate. No remote is contacted.
