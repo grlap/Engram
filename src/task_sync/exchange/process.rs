@@ -9,7 +9,7 @@ use std::{
 use tokio::io::{AsyncRead, AsyncReadExt};
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
-pub(super) fn confined_command(mut command: Command) -> CommandWrap {
+pub(crate) fn confined_command(mut command: Command) -> CommandWrap {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
