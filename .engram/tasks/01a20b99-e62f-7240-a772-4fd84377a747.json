@@ -1,0 +1,27 @@
+{
+  "id": "01a20b99-e62f-7240-a772-4fd84377a747",
+  "external_ref": null,
+  "title": "Describe cross-item verification binding as removed in the shipped inventory and the Execution Observability guide",
+  "outcome": "Describe cross-item verification binding as removed in the shipped inventory and the Execution Observability guide",
+  "acceptance": [
+    "docs/shipped.md (the registered-input paragraph, about line 65) and docs/features/execution-observability.md (about line 601) no longer describe cross-item binding as a current protocol: they say the host refuses verification_bind, that historical bound records remain readable, and that crediting another item with a remote result uses a new delivery (src/host/tests.rs:293; docs/features/acceptance-evaluation.md:1568)",
+    "The changeset passes the focused link check and a Codex + Claude review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

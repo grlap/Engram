@@ -1,0 +1,27 @@
+{
+  "id": "01a20b5f-4108-7e00-9677-f898a8500aa9",
+  "external_ref": null,
+  "title": "Scope the shipped inventory's registered Git-input paragraph to passing evaluations and stored commit decisions",
+  "outcome": "Scope the shipped inventory's registered Git-input paragraph to passing evaluations and stored commit decisions",
+  "acceptance": [
+    "docs/shipped.md's registered Git-input paragraph says that Engram reads the named root and requires a declared complete source_id and a matching passed registered check only for a new evaluation containing a pass (non-pass verdicts stay recordable without one), that the source_id-check-first need applies to such evaluations, and that unevaluated completion can still use a current stored commit check under the historical clean-at-commit rule, matching src/storage/work/acceptance_evaluation.rs and completion/acceptance_bindings.rs",
+    "The changeset passes the focused link check and a Codex + Claude review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

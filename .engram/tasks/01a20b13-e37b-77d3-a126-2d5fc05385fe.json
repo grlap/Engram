@@ -1,0 +1,28 @@
+{
+  "id": "01a20b13-e37b-77d3-a126-2d5fc05385fe",
+  "external_ref": null,
+  "title": "Align presentation docs with source_id test-ref identity",
+  "outcome": "Describe test-ref and review evidence using the shared source_id identity without treating fingerprints or tree IDs as separate input identities.",
+  "acceptance": [
+    "Update the outdated test-ref passages in docs/presentation.md so the one shared source_id is the only input identity and fingerprint/tree-id are not presented as separate identities.",
+    "Keep the change limited to the presentation documentation and retain accurate distinctions between focused evidence and a qualifying full gate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

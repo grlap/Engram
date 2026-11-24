@@ -1,0 +1,28 @@
+{
+  "id": "01a20b99-f63a-7941-93f8-19801d006474",
+  "external_ref": null,
+  "title": "Limit the shipped inventory's clean-at-commit exception to legacy commit-basis evaluations and checks",
+  "outcome": "Limit the shipped inventory's clean-at-commit exception to legacy commit-basis evaluations and checks",
+  "acceptance": [
+    "docs/shipped.md's registered Git-input paragraph (about line 88) limits the clean-at-exactly-that-commit rule to historical evaluations that declared a legacy commit and to legacy commit checks; a stored source_id evaluation stays eligible at an equal dirty source_id (src/storage/work/registered_commit_currency.rs:295); stored tree declarations follow docs/features/acceptance-evaluation.md:137",
+    "Optionally, in the same pass: 'stay recordable without one' at docs/shipped.md:86 reads 'without a passing source_id check'; execution-observability.md:834 says string evaluation declarations are retired; README names the DL560 as a second trusted Windows host",
+    "The changeset passes the focused link check and a Codex + Claude review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -15,7 +15,8 @@
   "labels": [
     "docs",
     "execution-observability",
-    "greg-directed"
+    "greg-directed",
+    "ready-to-land"
   ],
   "assigned_to": "Engram::Opus",
   "deferred_until": null,

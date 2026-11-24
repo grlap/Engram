@@ -1,0 +1,27 @@
+{
+  "id": "01a20b33-57d5-75d0-af7c-f343af6e7c74",
+  "external_ref": null,
+  "title": "Correct stale status lines in the Execution Observability, acceptance-evaluation, shipped and roadmap docs",
+  "outcome": "Correct stale status lines in the Execution Observability, acceptance-evaluation, shipped and roadmap docs",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md (the 'Temporarily off' banner at lines 11-16 and the source-fingerprint wording at about line 1369), docs/features/execution-observability.md (the 'temporarily off' definition at about lines 33-36), docs/roadmap.md (row 44) and docs/shipped.md (the string-declaration sentence at line 62 and the clean-at-commit rule at lines 79-81) state the current shipped behaviour, or mark the older text as historical",
+    "The changeset passes the focused link check and a Codex + Claude review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
