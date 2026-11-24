@@ -4,8 +4,8 @@
   "title": "Apply Greg's 60 s abort / 10 s warning rule to Engram's own operation time limits",
   "outcome": "Apply Greg's 60 s abort / 10 s warning rule to Engram's own operation time limits",
   "acceptance": [
-    "Every Engram limit that aborts, kills or resets an operation (for example SQLite busy or lock waits, subprocess and Git exchange deadlines, MCP or control call deadlines, launcher stage limits) is listed with its location and current value, and each is set to 60 s or justified on the item as not an operation-aborting limit",
-    "An operation still running after 10 s logs one warning naming the operation, without interrupting it",
+    "Every Engram limit that aborts, kills or resets an operation (for example SQLite busy or lock waits, subprocess and Git exchange deadlines, MCP or control call deadlines, launcher stage limits) is listed with its location and current value, and each is set to 60 s or justified on the item as not an operation-aborting limit; an MCP call still in flight when the client itself closes the session ends with the session (nothing partial is written), and is not an Engram abort",
+    "An operation still running after 10 s logs one warning naming the operation, without interrupting it; a single blocking system call that runs past 10 s is named when it returns",
     "Changed limits keep their idempotency and exact-retry semantics: an operation aborted at 60 s leaves no partial durable write, and its retry neither duplicates nor misreports the outcome, shown by tests that observe behaviour"
   ],
   "acceptance_bindings": [],

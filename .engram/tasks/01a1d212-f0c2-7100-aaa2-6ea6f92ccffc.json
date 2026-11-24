@@ -4,7 +4,7 @@
   "title": "Give operators one command that syncs a project's task data with its shared remote (wire the delta exchange into the CLI)",
   "outcome": "Give operators one command that syncs a project's task data with its shared remote (wire the delta exchange into the CLI)",
   "acceptance": [
-    "An operator can run Engram's own task-sync exchange on a configured project with a single documented CLI command (and the MCP equivalent if the design keeps one): it fetches the bound data ref, computes the outgoing delta and incoming changes from Engram's own state (no hand-supplied inventory roots, fingerprints or baseline ids), reconciles, records publication and resolution, and creates a fast-forward data commit, without operator-run Git",
+    "On a configured project, the documented `engram task-sync sync` command incrementally exports task data, fetches the configured Git data branch, reconciles incoming changes by importing when histories diverge, commits the resulting data and publishes with a fast-forward push. The operator supplies no Git commands, inventory roots, fingerprints or baseline IDs.",
     "The command runs on Windows, macOS and Linux and is exercised by behavior tests that drive it end to end through the CLI against a local test remote, including a rejected push resolved by re-fetch and reconciliation",
     "The supported remote transports are stated in docs/shipped.md and the git-task-sync brief, including whether SSH or local-path remotes are supported in addition to HTTPS"
   ],
