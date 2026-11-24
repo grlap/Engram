@@ -158,6 +158,8 @@ pub use task_sync_folder_import::{FolderImportReceipt, MemoryImport};
 mod task_sync_origin;
 mod task_sync_settings;
 mod task_sync_setup;
+mod task_sync_sync;
+pub use task_sync_sync::FolderSyncReceipt;
 pub(crate) mod unadmitted;
 pub(crate) use projection::shed_work_next_focus;
 pub use status::WorkCurrentStatus;

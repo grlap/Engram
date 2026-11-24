@@ -33,6 +33,21 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Run a full two-way exchange, the task-data equivalent of git pull plus git push.
+    ///
+    /// Pushes to the configured remote, which may be public. Use --no-push to
+    /// prepare local commits and review them for secrets and private data.
+    Sync {
+        #[arg(long, default_value = "origin")]
+        remote: String,
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
+        /// Prepare local commits for disclosure review without pushing.
+        #[arg(long)]
+        no_push: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Execute one explicit ledger/data step; never dispatches network or merges.
     Step {
         /// Typed action as JSON or @FILE; retain it unchanged for exact retries.
@@ -413,6 +428,27 @@ async fn run_observed(
         return Ok(ExitCode::SUCCESS);
     }
     match args.operation {
+        TaskSyncCommand::Sync {
+            remote,
+            branch,
+            no_push,
+            json,
+        } => {
+            let receipt =
+                Box::pin(service.sync_task_folder(project_file, &remote, &branch, no_push)).await?;
+            attribution.print_notices();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+            } else if no_push && receipt.remote_head.as_deref() != Some(receipt.local_head.as_str())
+            {
+                println!(
+                    "Project task data prepared at {}; push skipped",
+                    receipt.local_head
+                );
+            } else {
+                println!("Project task data synchronized at {}", receipt.local_head);
+            }
+        }
         TaskSyncCommand::Step { request } => {
             let request = crate::parse_bounded_json_input::<engram::task_sync::driver::StepRequest>(
                 &request,
