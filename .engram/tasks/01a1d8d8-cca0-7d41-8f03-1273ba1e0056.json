@@ -20,12 +20,19 @@
   ],
   "assigned_to": "Engram::Opus",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a1d5a8-54e4-7371-b870-06f2c1b2b856",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Updated README.md to describe delivered Execution Observability, its limitations, evidence and source identity, and links to the relevant documentation. Landed and pushed b7b3ab8fa29c6b81b511abe5900f06b8bed30e0c to origin/master; installed the release build with fingerprint 3738ed005f8f91ff0ad70975f18361c444e27e240fd6bcce203b8e799e360d94. Fresh post-landing independent acceptance evaluation e449610625f543dab1f874caacf6f554 passed 3/3 on the same clean source identity.",
+    "completed_at": "2026-11-24T05:57:05.120395Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
