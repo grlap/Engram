@@ -30,12 +30,10 @@ Recent changes on master:
   fails, returning its evidence locator and readback while disclosing the
   unavailable response details (`9f4a1c7`).
 
-The dogfood stores completed the verification-applicability cutover. The
-Engram project is using gated model turns after a reported steady-state
-canary pass; its sampled evidence does not prove an uninterrupted sequence.
-The TermAl projects remain off pending a host settings-reset fix and their
-own release observation. This is a dated deployment checkpoint, not a claim
-that every host or project has enabled control.
+The dogfood stores completed the verification-applicability cutover. This
+dated checkpoint is historical and does not describe current host settings;
+the turn gating in use at that time has since been removed (see [records from earlier
+builds](docs/features/execution-observability.md#records-from-earlier-builds)).
 
 Repository landing validation can run on a second trusted Windows host or
 the Mac for an exact test ref under the same-tree evidence rules; Windows-only
@@ -329,13 +327,78 @@ Engram checks its task rules, but the agent can still edit files or run
 tools without asking it. Claims schedule work; they grant no file or external
 authority.
 
-A host that runs Execution Observability records what it saw run, how the
-source changed and which registered checks passed, through a separate private
-work-session channel. It never admits or refuses a model turn.
+See the [host checklist](docs/host-checklist.md) for setup and
+[Execution Observability](#execution-observability) below for what a host
+can record.
 
-See the [host checklist](docs/host-checklist.md) for setup and the
-[Execution Observability guide](docs/features/execution-observability.md) for
-the private channel.
+## Execution Observability
+
+Execution Observability lets the agent host, not the agent, supply the
+evidence that work was done. A host such as TermAl records, through a private
+work-session channel, what it saw run, how the source changed, and which
+registered checks passed or failed. Engram stores these facts, ties them to
+the item and run, and uses them at completion. It never admits, delays or
+refuses a model turn, and it grants no file or tool authority. In TermAl the
+project setting "Execution Observability", on by default, switches only the
+automatic observations; registered checks work either way.
+
+What is delivered:
+
+- **Host-recorded checks.** The stages of a test-launcher run that the host
+  registered before it started can enter as verification, when the host
+  submits the run's result against a still valid item, claim and named root.
+  Credit needs equal, complete source identities before and after the run,
+  and Engram measures the named root again when the check is used. A passing
+  stage can satisfy a criterion bound with `--bind POSITION=test`.
+  Registration alone earns nothing.
+- **Remote test results.** A test run on another host, such as the DL560 or
+  the Mac, can enter as verification evidence from its launcher's completion
+  facts and a stated destination. Credit needs a finished passing result, a
+  still valid destination whose expected commit matches the tested commit
+  (for a Merger's `refs/heads/test/` ref, whose expected tree matches the
+  tested tree; an author's test ref counts as a commit), and equal, complete
+  source identities before and after the run; each result Engram does not
+  credit gets a named reason. A focused
+  or full run can verify a criterion; only a full run counts as a landing
+  gate. Whether a change may land is the repository's own rule, such as this
+  one's [Authority and Git](AGENTS.md#authority-and-git).
+- **Source identity.** Evidence is tied to a complete `source_id`: the root
+  commit and tree, one digest of the staged, unstaged and untracked Git
+  changes, and the pins and checkout commits of dirty or off-pin submodules.
+  `engram source --root ABSOLUTE-PATH --json` prints it without opening a
+  store. When the capture succeeds, its `source_id` field is what
+  `--source-id-file` expects; otherwise the source is reported unavailable.
+  Equal identities qualify even with equal local changes.
+- **Acceptance evaluation.** It applies only when an operator activates an
+  [acceptance policy](#complete-under-an-acceptance-policy) for the project.
+  Then `done` refuses self-assertion and needs a fresh evaluation that passes
+  every criterion. Under `independent_session`, the evaluation must come from
+  a separate session, supplied by the host, that never held the run. When the
+  run carries registered checks, a passing evaluation, even one citing only
+  notes, declares the complete `source_id` it judged. A registered check must
+  have passed on that source at the evaluated cut, and Engram measures the
+  named root itself at evaluation and again at `done`.
+
+Limits:
+
+- Engram trusts what the host reports. Actor identity is asserted, not
+  authenticated, and Engram itself never runs a check, a build or a model.
+- Without an active acceptance policy, `done` stays self-asserted.
+- Recording across every supported agent harness is still listed as
+  remaining work in the [roadmap](docs/roadmap.md).
+- A remote run moves no store and no claim.
+- `readiness` does not detect mixed process builds. Every process using a
+  store needs a build that reads remote results and shared `source_id`
+  records before the first one arrives, and an older build is no rollback
+  once the store holds them.
+- The Git reader can miss edits hidden by `assume-unchanged` or
+  `skip-worktree` flags.
+- Records stored by earlier builds that name a commit, tree or source
+  fingerprint are read as stored; a new remote result in that older form is
+  refused.
+
+See the [Execution Observability guide](docs/features/execution-observability.md)
+and the [feature inventory](docs/shipped.md) for the full contract.
 
 ## Data and limits
 

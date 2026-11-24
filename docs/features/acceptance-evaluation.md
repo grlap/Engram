@@ -8,12 +8,12 @@
 > [Lifecycle ownership](acceptance-evaluation-lifecycle.md) (rule owners,
 > admission and completion horizons, consolidation proposals).
 
-> **Temporarily off.** Acceptance evaluation is switched off in the project
-> policy until [Execution Observability](execution-observability.md) delivers
-> the host evidence it needs. While it is off, no landing, completion or other
-> work waits for an evaluation. A missing verdict stays missing and is never
-> recorded as a pass. The contract below is kept unchanged for when
-> evaluation is switched back on.
+> **Policy-gated.** Acceptance evaluation is enforced only in a project whose
+> operator has activated an acceptance policy; it uses the host evidence that
+> [Execution Observability](execution-observability.md) records. Without an
+> active policy, no completion waits for an evaluation and `done` stays
+> self-asserted. A missing verdict stays missing and is never recorded as a
+> pass.
 
 This brief is the contract for evidence-based acceptance evaluation before
 completion. It describes the agreed design, not a claim that every row is
@@ -1366,9 +1366,9 @@ process:
   `carried_failure_self_acknowledged` remedy. A superseding evaluation that
   does not pass leaves the failure carried, so the host keeps choosing a
   distinct evaluator until one passes;
-- measuring the source fingerprint at evaluation time and again at completion
-  time, binding it to the exact attempt rather than reusing the evaluator's
-  earlier string;
+- measuring the complete `source_id` at evaluation time and again at
+  completion time, binding it to the exact attempt rather than reusing the
+  evaluator's earlier declaration;
 - giving every evaluator attempt its own identity (an explicit `--attempt`
   key) and treating an attempt that was started but has not recorded as
   pending: the host must not complete on an older pass while a newer attempt

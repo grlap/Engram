@@ -31,9 +31,8 @@ The terms used throughout:
   launcher's completion facts and a stated destination, through
   `remote_verification_record`.
 - **acceptance evaluation**: the evidence-based judgement of an item's
-  criteria before completion. It is **temporarily off** until Execution
-  Observability is implemented; see
-  [acceptance evaluation](acceptance-evaluation.md).
+  criteria before completion, enforced in a project whose operator activates
+  an acceptance policy; see [acceptance evaluation](acceptance-evaluation.md).
 
 ## Project ON/OFF
 
@@ -595,11 +594,12 @@ After the first shared record, keep every store reader on a build that reads
 that representation: an older backup binary cannot read those records merely
 because schema readiness is unchanged. Reinstalling it is not a supported
 rollback of a store containing shared records.
-The existing frame limits remain: oversized input is unavailable, never truncated. Observation
-admission and retirement of new legacy submissions remain separate coordinated
-rollout steps. The string-based evaluation declaration and cross-item bind
-protocol do not declare a shared object; they must not substitute a commit or
-digest for it.
+The existing frame limits remain: oversized input is unavailable, never truncated. New
+measured observations, registered inputs and remote deliveries use the shared
+object, and their new legacy forms are refused. The string-based evaluation
+declaration is retired; evaluations stored with one are read as stored. The
+cross-item bind protocol does not declare a shared object; it must not
+substitute a commit or digest for it.
 
 An immutable `registered_host_run` preserves the aggregate and individual
 stage results. Completed checks enter canonical verification with that

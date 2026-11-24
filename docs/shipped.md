@@ -56,10 +56,13 @@ reusing canonical verification and exact-intent settlement. Host emission
 requires the connected producer's capability advertisement; registration alone
 is not credit. See [registered verification](features/execution-observability.md#registered-verification).
 
-The native registered input also accepts the complete shared `source_id`.
-Equal clean or dirty endpoints qualify, and live currency compares the whole
-object. New measured observations also require the shared object. String-based
-evaluation declarations and cross-item binding retain their separate protocols.
+A new native registered check names the complete shared `source_id`; a new
+commit or staged input is refused, and records an earlier build stored keep
+their meaning. Equal clean or dirty endpoints qualify, and live currency
+compares the whole object. New measured observations and new evaluation and
+completion declarations also use the shared object: the string
+`source_fingerprint` declaration is retired, and evaluations stored with one
+are read as stored. Cross-item binding retains its separate protocol.
 
 A test run on another host can enter typed verification through the private
 `remote_verification_record` operation, from the launcher's completion facts and a
@@ -76,9 +79,17 @@ changes qualify. Association uses the before object's commit or tree, and live
 currency compares the whole identity. Historical remote records keep their
 original wire, qualification and canonical bytes.
 
-Evaluation and test-bound completion read the named Git root and require it clean
-at exactly the registered check's commit. Accounted reports remain history;
-reverted edits can pass, while dirty, missing and different-commit roots refuse.
+For a run carrying registered checks, a new evaluation containing a pass reads
+the named Git root itself: it declares the complete `source_id` it judged, a
+passed registered check must have tested that source, and the root must still
+measure as that source. Such an evaluation on a run holding only commit-input
+checks needs a `source_id` check first. Fail, insufficient-evidence and
+needs-human verdicts stay recordable without one. Completion that consumes the
+evaluation, and test-bound completion, read the root again. A stored
+evaluation or commit check keeps the older rule: the root must be clean at
+exactly that commit. Accounted reports remain history; reverted edits can
+pass, while missing roots and roots that differ from the declared source
+refuse.
 New immutable decisions retain provenance for historical validation without
 filesystem reads. Existing records and staged-tree or bound-copy lanes retain
 their interpretation. The live reader admits clean initialized submodules,
