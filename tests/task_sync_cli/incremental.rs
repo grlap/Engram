@@ -3,6 +3,9 @@
 
 use super::*;
 
+#[path = "ordinary.rs"]
+mod ordinary;
+
 const PROJECT: &str = "incremental-cli";
 
 struct Host {

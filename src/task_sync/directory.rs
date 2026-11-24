@@ -1183,6 +1183,15 @@ pub(crate) fn require_task_only_head(
     let Some(head) = &data.head else {
         return Ok(());
     };
+    task_only_committed_basis(data, head, operation)?;
+    Ok(())
+}
+
+pub(crate) fn task_only_committed_basis(
+    data: &super::data_worktree::DataWorktree,
+    head: &str,
+    operation: &str,
+) -> Result<Option<FolderBasis>> {
     let entries = super::git::query(
         &data.checkout,
         &[
@@ -1208,7 +1217,7 @@ pub(crate) fn require_task_only_head(
             !has_memories,
             invalid_memory_export_basis(head, "project envelope is absent while memories exist")
         );
-        return Ok(());
+        return Ok(None);
     };
     anyhow::ensure!(
         project.starts_with(b"100644 blob "),
@@ -1227,7 +1236,7 @@ pub(crate) fn require_task_only_head(
         None,
         super::data_worktree::QUERY_BOUND,
     )?;
-    let (_, capable) = committed_memory_envelope(&bytes, head)?;
+    let (basis, capable) = committed_memory_envelope(&bytes, head)?;
     anyhow::ensure!(
         !has_memories || capable,
         invalid_memory_export_basis(
@@ -1241,7 +1250,7 @@ pub(crate) fn require_task_only_head(
             "the committed data folder carries the memory component: {operation} with --include-memories"
         ))
     );
-    Ok(())
+    Ok(Some(basis))
 }
 
 fn write_folder_at(
