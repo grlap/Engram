@@ -1,0 +1,27 @@
+{
+  "id": "01a20c87-20e9-7163-ba2b-5b7b5a75b013",
+  "external_ref": null,
+  "title": "Suppress configured clean filters in ordinary task-sync commit and conflict inspection",
+  "outcome": "Suppress configured clean filters in ordinary task-sync commit and conflict inspection",
+  "acceptance": [
+    "With a configured clean filter on a task path, ordinary sync's commit and unresolved-path inspection independently preserve the folder owner's no-filter behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

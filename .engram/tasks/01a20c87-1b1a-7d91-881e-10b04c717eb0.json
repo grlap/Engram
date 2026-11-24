@@ -1,0 +1,27 @@
+{
+  "id": "01a20c87-1b1a-7d91-881e-10b04c717eb0",
+  "external_ref": null,
+  "title": "Keep ordinary task-sync from running Git automatic maintenance",
+  "outcome": "Keep ordinary task-sync from running Git automatic maintenance",
+  "acceptance": [
+    "With a repository configured to trigger automatic maintenance, normal sync Git operations complete without running maintenance on the shared code object store."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

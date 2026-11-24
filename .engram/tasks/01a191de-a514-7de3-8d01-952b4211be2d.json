@@ -21,12 +21,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Post-landing verification completed on clean landed source b7b3ab8fa29c6b81b511abe5900f06b8bed30e0c (tree cf1fd0cd032461fd34f4dab9fef898e16a19bb30): focused refusal test test-7a018feb-ca84-461d-8aac-18e9b1068fb2 passed, and fresh independent acceptance evaluation dbc1c8322894415891d2da2a3aa6ffe9 passed all 4 criteria with no findings.",
+    "completed_at": "2026-11-24T07:51:00.677425200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

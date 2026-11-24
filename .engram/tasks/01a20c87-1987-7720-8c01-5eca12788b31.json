@@ -1,0 +1,27 @@
+{
+  "id": "01a20c87-1987-7720-8c01-5eca12788b31",
+  "external_ref": null,
+  "title": "Declare the ordinary task-sync CLI fixture's Node dependency",
+  "outcome": "Declare the ordinary task-sync CLI fixture's Node dependency",
+  "acceptance": [
+    "A task-sync CLI contributor can discover and provision the runtime needed by the receive-pack fixture, or run the same rejected-push test with a fixture that needs only the Rust and Git toolchain."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

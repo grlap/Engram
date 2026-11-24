@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed the simplification on landed Engram master and verified it on the named post-landing root. The fresh independent acceptance evaluation passed all four criteria; the focused Central restore test passed 36/36, and the evaluator verified the preserved recovery and publication behavior alongside removal of the hypothetical-swap protections.",
+    "completed_at": "2026-11-24T07:21:25.011838700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
