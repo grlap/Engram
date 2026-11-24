@@ -719,13 +719,13 @@ Review scheduling:
   failed gate discards those reviews.
 - A changeset touching only `.md` files skips the full gate, as Required
   Quality Gates describes; both reviewers still review it.
-- Before coding an item, run a design review with Engram::Fable and a
-  read-only Codex explorer, covering edge cases and real host (TermAl)
-  behavior. Run it during the previous item's gate or review. Advisory
-  fallback: when Codex is unavailable (a usage limit or outage met at that
-  time, recorded on the item with the refusal text), a read-only Kimi explorer
-  stands in for it, decided case by case for a security-sensitive item,
-  because the host cannot gate Kimi's network tools.
+- Before coding a new mechanism or a significant behavior change, the
+  project coordinator chooses read-only design reviewers, who cover edge
+  cases and real host (TermAl) behavior as described in the
+  [architecture lens](.claude/reviewers/architecture.md).
+  Run the review during the previous item's gate or review.
+  For a security-sensitive item, the coordinator includes Kimi only case by
+  case, because the host cannot gate Kimi's network tools.
 - During an item's gate or review, do only non-mutating work on the next
   one: no worktree or index edits, and no claim or other change of this
   session's focus. Reading, planning and a read-only design review stay

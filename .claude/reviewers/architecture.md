@@ -3,6 +3,8 @@
 Focus on domain boundaries, dependency direction, and local-versus-published
 state.
 
+For a new mechanism or a significant behavior change, the item states the goal, the observed problem, the proposed behavior and its cost before code. The project coordinator chooses the design reviewers before code; they check necessity, simpler existing alternatives, real host behavior and possible damage to functionality. Do not require protection for hypothetical scenarios; a severity label is not evidence. Do not dismiss a concrete correctness defect merely because no incident has occurred. Small fixes use ordinary review only.
+
 ## Check
 
 - Domain meaning must not depend on SQLite, CLI, MCP, or proprietary tracker
