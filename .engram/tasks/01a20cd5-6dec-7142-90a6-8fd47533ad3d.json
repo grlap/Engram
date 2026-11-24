@@ -1,0 +1,28 @@
+{
+  "id": "01a20cd5-6dec-7142-90a6-8fd47533ad3d",
+  "external_ref": null,
+  "title": "Cover the remaining ordinary task-sync CLI recovery paths",
+  "outcome": "Cover the remaining ordinary task-sync CLI recovery paths",
+  "acceptance": [
+    "Behavioral CLI checks exercise a receiving fast-forward, an absent remote branch, and a real task-file merge conflict that stops publication and preserves the pending merge.",
+    "A held import reports the task and data folder with original-option retry guidance, and the ordinary Git runner's timeout cleanup is exercised without a real 60-second wait."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
