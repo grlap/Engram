@@ -1,0 +1,26 @@
+{
+  "id": "01a20cff-e4fa-7ce1-bac8-c950531776a9",
+  "external_ref": null,
+  "title": "Explain ordinary task-sync remote failures without exposing credentials",
+  "outcome": "Explain ordinary task-sync remote failures without exposing credentials",
+  "acceptance": [
+    "When ordinary sync cannot reach or authenticate to a configured remote, its error or documentation gives an actionable diagnosis while keeping credentials and private configuration out of output."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
