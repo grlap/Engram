@@ -2,6 +2,7 @@
 
 mod delta;
 mod evidence;
+pub(crate) mod ordinary;
 mod path;
 mod query;
 mod snapshot;
@@ -55,8 +56,6 @@ const GIT_HARDENING: &[&str] = &[
     "-c",
     "core.hooksPath=",
     "-c",
-    "credential.helper=",
-    "-c",
     "protocol.allow=never",
 ];
 
@@ -87,11 +86,16 @@ const CLEARED_GIT_ENVIRONMENT: &[&str] = &[
 /// replacement ancestry and repository redirection disabled. The caller bounds
 /// execution and admits attributes before commands that compare worktree bytes.
 pub fn command(repository: &Path, args: &[&str]) -> Command {
+    let mut command = configured_command(repository);
+    command.args(["-c", "credential.helper="]).args(args);
+    command
+}
+
+fn configured_command(repository: &Path) -> Command {
     let mut command = Command::new("git");
     command
         .current_dir(repository)
         .args(GIT_HARDENING)
-        .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_ALLOW_PROTOCOL", "")

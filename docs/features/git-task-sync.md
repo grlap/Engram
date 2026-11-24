@@ -10,8 +10,8 @@ Design selected on 2026-10-09. The [explicit directory profile](task-planning-te
 implements planning text, opt-in shared notes and informational machine activity.
 The [host-local opt-in and explicit prepared materialization](task-planning-text.md#materializing-a-selected-preparation)
 are implemented, together with the internal exchange foundation below.
-Automated exchange and reconciliation remain planned. The
-contract below describes that broader target. This replaces sequential
+The ordinary task-folder command below automates the Git exchange.
+The contract also describes the broader managed exchange target. This replaces sequential
 single-writer handoff as the selected personal cross-machine workflow.
 Previous portable writer-epoch, release/acquire, dedicated-ref and scheduled
 push proposals are not prerequisites for this feature. Local SQLite remains
@@ -42,6 +42,43 @@ filesystem-neutral directory port remains available for private candidates,
 while `task-sync prepare` retains its separate private preparation contract.
 None of these folder commands commits, advances a branch or publishes to a
 remote.
+
+## Run the ordinary sync command
+
+`engram task-sync sync` runs a full two-way exchange, the task-data equivalent of `git pull` plus `git push`.
+
+After initializing the dedicated data worktree and importing its committed
+task folder once to enroll this host, run `engram task-sync sync`.
+It incrementally exports and commits local planning, fetches the configured
+data branch and imports the incoming changes. It fast-forwards when it can.
+When the tips diverge, it keeps both parents in a Git merge commit, imports
+the resulting committed task files, and exports any remaining local changes.
+Git can combine edits to separate parts of the same task file. Sync stops
+before publication on a Git conflict or held or refused import.
+Set aside ignored local files in the data folder before merging divergent tips.
+For an incomplete import, sync lists each affected task and its reason.
+After resolving the issues, repeat your original sync command with all its
+options, including any `--no-push` and `--remote`. To retry the import
+separately, use `engram task-sync import` with the data folder and branch
+selected for sync.
+A rejected fast-forward push triggers one re-fetch and reconciliation before
+a second refusal stops the command. Local commits remain available for recovery.
+
+The defaults are `--remote origin` and `--branch engram-data`. Configure a
+single destination for both fetch and push. The remote can use HTTPS, SSH or a
+local path on Windows, macOS and Linux. Sync runs OpenSSH in BatchMode for SSH
+remotes. Configure the identity and host trust in OpenSSH before running the
+command. Git calls made by the command have a 60-second limit each.
+
+Sync pushes to the configured remote by default. That remote may be public.
+Use `--no-push` to prepare local commits for review and check the outgoing
+history for secrets, credentials and private data before publishing. Committed
+task-file deletions that reconcile without conflict are applied by the folder
+import and permanently retire the task IDs. Use the explicit folder import
+preview when you need to inspect incoming removals before applying them.
+A fetched commit must match the enrolled project and notes profile before
+sync merges it. For a branch that includes project memories, use the explicit
+folder export and import commands with `--include-memories`.
 
 ## Reconciliation storage foundation
 

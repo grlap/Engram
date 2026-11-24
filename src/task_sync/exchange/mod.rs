@@ -33,6 +33,8 @@ pub use successor::apply_planning_successor;
 mod fixture_diagnostics;
 #[cfg(windows)]
 mod process;
+#[cfg(windows)]
+pub(crate) use process::confined_command;
 /// Confined process control exists only on Windows. Elsewhere every launch is
 /// refused before spawn, behind the same awaited interface.
 #[cfg(not(windows))]
