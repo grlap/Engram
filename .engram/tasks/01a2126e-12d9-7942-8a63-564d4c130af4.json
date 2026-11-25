@@ -1,0 +1,27 @@
+{
+  "id": "01a2126e-12d9-7942-8a63-564d4c130af4",
+  "external_ref": null,
+  "title": "Stop task-sync receipts from asking to confirm an already confirmed export",
+  "outcome": "Export receipts show confirmation instructions only when a write still needs confirmation.",
+  "acceptance": [
+    "An ordinary JSON export that only confirmed an exact committed publication does not ask the operator to confirm it again.",
+    "A memory-only export that reports unchanged still names confirmation when it produced a new publication requiring a commit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
