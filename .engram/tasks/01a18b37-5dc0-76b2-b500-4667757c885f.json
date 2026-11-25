@@ -21,12 +21,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "cancelled",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
-  "disposal_reason": null,
+  "disposal_reason": "Cancelled by Engram::Fable (coordinator), 2026-11-25. Greg objected to this workaround via Engram::Asistant (mailbox 43498a6e #1929, message 8ca070d2, 2026-11-24 01:27:45Z), verbatim: „Możemy. Ale czemu? Problemy sa z sesja jak musze zmienic subscrypcje. Wtedy generalnie nic nie działa. Takie obejscia nie pomogą.” In the 2026-10-30 case, TermAl's structured-result read blocked the landing, not the Engram text, and during a subscription switch no eligible session exists, so a deputy rule doesn't help. No Engram rule change. The real fix is TermAl w-10daa08df91c (result publication independent of the parent). Candidate c27f1d02 stays unpublished and unlanded.",
   "completion": null
 }

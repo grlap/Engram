@@ -1,0 +1,29 @@
+{
+  "id": "01a2111f-c0b9-7111-9242-a111875818d2",
+  "external_ref": null,
+  "title": "Make an identical note retry in the same session replay even after the item's planning fields changed",
+  "outcome": "Make an identical note retry in the same session replay even after the item's planning fields changed",
+  "acceptance": [
+    "A keyless note retried with identical text and refs by the same session on the same item and claim epoch returns the original receipt, with no second note, even when a label, title or priority of the item changed between the two calls",
+    "A note with different text, from a different session, or under a different claim fence is still recorded as a new note",
+    "The supported way to learn a note's outcome after a lost response is documented in one place: read `show REF --notes` (or `search` for its text) and retry only if absent; behaviour tests cover the retry cases through the public words"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
