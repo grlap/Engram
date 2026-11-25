@@ -1,0 +1,26 @@
+{
+  "id": "01a211e5-1ea6-7f11-9bed-f1e0195cfd51",
+  "external_ref": null,
+  "title": "Validate task-sync import basis flags at argument parsing",
+  "outcome": "Validate task-sync import basis flags at argument parsing",
+  "acceptance": [
+    "Validate task-sync import basis flags at argument parsing is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

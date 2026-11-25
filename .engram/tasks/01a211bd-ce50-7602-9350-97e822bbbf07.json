@@ -1,0 +1,30 @@
+{
+  "id": "01a211bd-ce50-7602-9350-97e822bbbf07",
+  "external_ref": null,
+  "title": "Keep a registered run's work claim live for the whole launcher run so its record is not refused on a lapsed claim",
+  "outcome": "Keep a registered run's work claim live for the whole launcher run so its record is not refused on a lapsed claim",
+  "acceptance": [
+    "A registered launcher run longer than the claim's TTL (for example a 70-minute FULL under a 60-minute claim) ends with its verification record accepted: the run keeps the holder's claim live, for example by renewing it with the existing same-holder claim renewal at the launcher heartbeat, without changing the claim's identity or fence",
+    "If the claim is genuinely released, handed off or recovered by another session during the run, the record is still refused with field claim, as today",
+    "A behaviour test runs a registered run across the claim's original expiry and observes the record acknowledged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

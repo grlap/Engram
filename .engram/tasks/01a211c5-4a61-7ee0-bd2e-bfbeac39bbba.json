@@ -1,0 +1,27 @@
+{
+  "id": "01a211c5-4a61-7ee0-bd2e-bfbeac39bbba",
+  "external_ref": null,
+  "title": "Check consistency of imported proof whose original bytes were altered before first arrival (deferred with signing)",
+  "outcome": "Check consistency of imported proof whose original bytes were altered before first arrival (deferred with signing)",
+  "acceptance": [
+    "When signed or otherwise authenticated evidence exchange is designed, decide whether an imported child evaluation or child seal whose original bytes were rewritten before its first arrival (an evaluation claiming a later label-edited snapshot; a seal selecting the first pass with a shorter completion cut) must be detected, and how"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 4,
+  "labels": [
+    "deferred",
+    "review-out-of-scope"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
