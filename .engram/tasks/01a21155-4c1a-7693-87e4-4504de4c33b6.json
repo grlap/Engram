@@ -1,0 +1,29 @@
+{
+  "id": "01a21155-4c1a-7693-87e4-4504de4c33b6",
+  "external_ref": null,
+  "title": "Derive the acceptance basis once per read snapshot instead of walking history repeatedly per show or evaluation",
+  "outcome": "Derive the acceptance basis once per read snapshot instead of walking history repeatedly per show or evaluation",
+  "acceptance": [
+    "One show or evaluation read derives each item's acceptance basis at most once per read snapshot and reuses it, instead of repeating the acceptance-basis history walk for each check (src/storage/work/query/canonical.rs and judgment_is_current)",
+    "A behaviour test on an item with many distinct planning revisions shows the work done by one read grows with the item's revisions, not with revisions times checks"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-performance",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -20,12 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Delivered the portable evidence-based delivery and team-coordination skills. The focused Markdown link check passed on the exact changed tree. Commit 1d0d104487d90dc32d6df5bf9d801c0e06c1cf5f is on master and origin/master; its release build fingerprint af410d4ded05530ff7a6cd44774cee1ff91aaa0ef4974355cf7b7b28a7c43135 was installed. Fresh post-landing independent acceptance evaluation 1c05b5a9c64e43318f8739e9fc635461 passed all 3 criteria on the exact clean commit/tree. Recorded the installation-before-push sequence deviation and disclosed it to both coordinators and Opus2.",
+    "completed_at": "2026-11-25T06:08:46.716461800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
