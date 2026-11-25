@@ -1,0 +1,28 @@
+{
+  "id": "01a2115f-a570-7672-8a78-adeaaaf2c458",
+  "external_ref": null,
+  "title": "Name the note word, not work_update:note, in the allowed_next lists agents read",
+  "outcome": "Name the note word, not work_update:note, in the allowed_next lists agents read",
+  "acceptance": [
+    "show, update and the other word results list next actions in the agent-facing vocabulary (the note word, the update action names) so no result suggests an update action named note",
+    "A behaviour test reads show and update results through the public words and finds no next action that would map to an update action the update word refuses"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
