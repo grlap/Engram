@@ -1,0 +1,26 @@
+{
+  "id": "01a20fb9-613c-7b73-a5dd-5745cfd0416a",
+  "external_ref": null,
+  "title": "Reuse selected Git objects during journal-free task import recovery",
+  "outcome": "Retained legacy Written recovery reads each selected object body once even if both the rooted task delta and recovery history need it.",
+  "acceptance": [
+    "A legacy Written fixture with an overlapping changed task observes its old and new Git object bodies once each without opening unrelated task bodies or increasing the Git process count."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,26 @@
+{
+  "id": "01a20fd2-bc24-72a2-b1b5-5faa70de86da",
+  "external_ref": null,
+  "title": "Use the fast confirmation guidance for a bound task-sync rebuild",
+  "outcome": "Export receipts tell operators to confirm a bound rebuild in the ordinary path and name complete import only when the recorded head requires it.",
+  "acceptance": [
+    "A JSON receipt after rebuilding over an admitted tip names ordinary same-profile confirmation. A receipt for an unbound rebuild names the saved-basis complete import, preserving the memory-selection option."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,26 @@
+{
+  "id": "01a20e04-2711-71b3-9727-64dcbbc58b2a",
+  "external_ref": null,
+  "title": "Inject the denied diagnostic write in the commit-input launcher test without matching exact source text",
+  "outcome": "Inject the denied diagnostic write in the commit-input launcher test without matching exact source text",
+  "acceptance": [
+    "The commit-input diagnostic-retention test injects its denied write through a behaviour-level fixture or seam, and its successful case does not depend on matching the launcher's source text"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

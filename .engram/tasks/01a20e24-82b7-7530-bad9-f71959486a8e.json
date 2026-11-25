@@ -1,0 +1,27 @@
+{
+  "id": "01a20e24-82b7-7530-bad9-f71959486a8e",
+  "external_ref": null,
+  "title": "Document the doctor landing Git bound, the process-identity query bound and the source-observation watchdog",
+  "outcome": "Document the doctor landing Git bound, the process-identity query bound and the source-observation watchdog",
+  "acceptance": [
+    "The operator and launcher documentation, or the operation-limit inventory, state the 60 s doctor --check-landings Git query bound with its finishing-output allowance, the 60 s launcher process-identity query bound and the 75 s source-observation child watchdog"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

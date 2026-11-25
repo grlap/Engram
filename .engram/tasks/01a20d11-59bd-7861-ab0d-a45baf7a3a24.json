@@ -1,0 +1,26 @@
+{
+  "id": "01a20d11-59bd-7861-ab0d-a45baf7a3a24",
+  "external_ref": null,
+  "title": "Align the task-sync architecture guide with the dedicated data worktree",
+  "outcome": "Align the task-sync architecture guide with the dedicated data worktree",
+  "acceptance": [
+    "The Git task-sync section in docs/architecture.md describes the dedicated orphan data branch and MAIN/.engram-data worktree, links to the ordinary CLI setup and sync instructions, and removes the obsolete code-branch and sparse-checkout directions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -20,12 +20,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed on landed commit b7b3ab8fa29c6b81b511abe5900f06b8bed30e0c. Fresh independent acceptance evaluation b6d93488410f4bdc8a4be5f040952050 passed all 3 criteria with no findings on the clean landed tree. Complete cargo test --lib verification passed on that exact commit/tree (verification 47a67ccc36ce42549180bca332b4c12a).",
+    "completed_at": "2026-11-24T11:54:57.953400200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

@@ -1,0 +1,27 @@
+{
+  "id": "01a20ec6-5dc8-7831-bd1d-974c6183bf45",
+  "external_ref": null,
+  "title": "Document the backup fetch's hard wait: decode deadline, two-second margin and one-minute cleanup grace",
+  "outcome": "Document the backup fetch's hard wait: decode deadline, two-second margin and one-minute cleanup grace",
+  "acceptance": [
+    "docs/features/cli-host-and-operator.md describes the fetch's cooperative decode deadline separately from the hard wait for its worker, including the two-second decode margin and the one-minute grace for partial-file cleanup, so --deadline-secs 60 is not read as a 60 s hard exit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

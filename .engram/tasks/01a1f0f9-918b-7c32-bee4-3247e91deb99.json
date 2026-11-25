@@ -14,8 +14,7 @@
   "labels": [
     "gate",
     "host-integration",
-    "launcher",
-    "ready-to-land"
+    "launcher"
   ],
   "assigned_to": null,
   "deferred_until": null,

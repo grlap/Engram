@@ -1,0 +1,27 @@
+{
+  "id": "01a21032-ca1f-7c11-b737-4025be5ebba4",
+  "external_ref": null,
+  "title": "Make the launcher watcher-ordering test wait for the warning instead of holding its fixture a fixed ten seconds",
+  "outcome": "Make the launcher watcher-ordering test wait for the warning instead of holding its fixture a fixed ten seconds",
+  "acceptance": [
+    "The test \"a blocking call still running at its warning time is named once while it runs\" in scripts/test-launcher-tests/registration.mjs parks its nested fixture until the parent observes the warning, then releases it and verifies its return marker, with a watchdog for a missing warning; it no longer holds a fixed ten-second sleep on every run"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-speed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

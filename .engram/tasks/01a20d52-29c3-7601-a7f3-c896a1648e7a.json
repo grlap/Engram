@@ -1,0 +1,27 @@
+{
+  "id": "01a20d52-29c3-7601-a7f3-c896a1648e7a",
+  "external_ref": null,
+  "title": "Name a slow stop-request read once, not twice",
+  "outcome": "Name a slow stop-request read once, not twice",
+  "acceptance": [
+    "A stop-request read that succeeds after more than ten seconds inside the stop controller writes exactly one warning, shown by a behaviour test",
+    "A standalone run-record read keeps its own single warning"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

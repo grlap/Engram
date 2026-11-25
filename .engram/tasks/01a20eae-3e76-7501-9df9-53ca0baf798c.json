@@ -1,0 +1,28 @@
+{
+  "id": "01a20eae-3e76-7501-9df9-53ca0baf798c",
+  "external_ref": null,
+  "title": "Document disposition recording for append-only READY manifests",
+  "outcome": "Document disposition recording for append-only READY manifests",
+  "acceptance": [
+    "The portable delivery skill explains how to record a disposition against the same manifest when the original record is immutable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "skills",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

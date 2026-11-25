@@ -1,0 +1,26 @@
+{
+  "id": "01a20fb9-60cd-7bd2-b55c-e44e6273f389",
+  "external_ref": null,
+  "title": "Name the supported task-sync rebuild command in recovery refusals",
+  "outcome": "Git delta and inexact-export refusals name the saved-basis rebuild command with the memory option when the folder includes it.",
+  "acceptance": [
+    "A delta over the combined old/new byte limit names the complete import command with --rebuild --basis and the required memory selection. An inexact own export in a combined folder names the same supported recovery route."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

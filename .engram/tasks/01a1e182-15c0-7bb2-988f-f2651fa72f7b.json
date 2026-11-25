@@ -13,7 +13,6 @@
   "priority": 2,
   "labels": [
     "area-storage",
-    "ready-to-land",
     "testing"
   ],
   "assigned_to": null,

@@ -1,0 +1,26 @@
+{
+  "id": "01a20def-47b0-7b62-b2ad-321d0a97ded8",
+  "external_ref": null,
+  "title": "Exercise backup fetch expiry during an admitted decode, not only a zero budget",
+  "outcome": "Exercise backup fetch expiry during an admitted decode, not only a zero budget",
+  "acceptance": [
+    "A backup fetch test expires the budget after the target listing is admitted, during decode or staging, and asserts the output and staging state and an exact successful retry"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

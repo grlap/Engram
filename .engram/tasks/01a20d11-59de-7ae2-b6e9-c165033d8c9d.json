@@ -1,0 +1,26 @@
+{
+  "id": "01a20d11-59de-7ae2-b6e9-c165033d8c9d",
+  "external_ref": null,
+  "title": "Describe SSH client selection for ordinary task-sync",
+  "outcome": "Describe SSH client selection for ordinary task-sync",
+  "acceptance": [
+    "The ordinary sync documentation states how it chooses the noninteractive OpenSSH client and what to configure when ordinary Git relies on a custom SSH command or agent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

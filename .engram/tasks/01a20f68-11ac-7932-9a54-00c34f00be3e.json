@@ -1,0 +1,27 @@
+{
+  "id": "01a20f68-11ac-7932-9a54-00c34f00be3e",
+  "external_ref": null,
+  "title": "Name a usable task-sync rebuild basis after later local edits",
+  "outcome": "The inexact-own-export refusal and operator workflow identify a basis that matches current local planning and preserve the merged data commit when the saved own envelope is stale.",
+  "acceptance": [
+    "The inexact-export remedy and task-planning documentation explain that the saved own project envelope must match current local planning and how to obtain a fresh basis while preserving the committed merged folder.",
+    "A regression covers saving the original export envelope, another local edit, a merged commit preserving the later edit, and the documented rebuild recovery."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

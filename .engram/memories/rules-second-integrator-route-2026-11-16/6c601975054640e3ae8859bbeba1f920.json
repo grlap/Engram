@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-second-integrator-route-2026-11-16",
+    "revision_id": "6c601975054640e3ae8859bbeba1f920",
+    "previous": "b62349994b184d49822993b3bd00e0e4",
+    "body_sha256": "da4c21cc6611a6ce7dc5bd77b9f9fc2d3733c2cd44a46df3aff46fc5d6e83696",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-25T02:31:23.155791800Z"
+    }
+  },
+  "body": "RETIRED 2026-11-25 02:32Z by Engram::Fable (Merger b29ece01 #2627, Fable #2628). The Nov 16 second-integrator route, with Engram::Opus integrating w-5e5f, w-f265, w-f33a, w-1970, w-a5b1, w-8b9e, w-f2b4, w-2638, w-32d6 and w-8732, never completed. Its packages sat for 8 days on old parents, and Opus is now the w-8f12 author. CURRENT ROUTING for those stale packages and the rest of the Merger's Nov 25 triage (#2625):\n- Refresh (author work: carry the unchanged contribution onto current master, clippy plus focused checks, reuse reviews under section 6a when the carry is clean, otherwise a fresh pair): Coder-MacosFixSol (session-12325), in path-disjoint groups of 2–3. The group's packages: w-a5b1, w-606e, w-ea4a, w-e81c, w-19705, w-f33a, w-b7f90, w-f2b4, w-f265, w-e999, w-8b9e, w-8732, w-26382, w-32d6, w-43ed, w-fe6e, w-bafd, w-806, w-3247, w-cc21.\n- Integration and landing: Engram::Merger only (non-authoring), from the fresh READY.\n- Task-sync chain (w-5e5f, w-dd205, w-6bbabe, w-938250) is parked until w-6ea6 and w-45fe land, then re-staffed by Fable.\n- Authority text (w-2e8b, w-ff963): Fable, via the (a)/(b)/(c) route on a fresh candidate.\nHistory is in the earlier revisions and the work notes."
+}

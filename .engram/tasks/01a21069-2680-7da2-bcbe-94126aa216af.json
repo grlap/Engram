@@ -1,0 +1,27 @@
+{
+  "id": "01a21069-2680-7da2-bcbe-94126aa216af",
+  "external_ref": null,
+  "title": "Prove the save warning reaches stderr before a synchronous save completes, with the real sink in a subprocess",
+  "outcome": "Prove the save warning reaches stderr before a synchronous save completes, with the real sink in a subprocess",
+  "acceptance": [
+    "A behaviour test runs a synchronous save in a subprocess with the real warning sink, a prior queued warning and an injected rename clock, and observes the save warning on stderr before the save completes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-gap"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,26 @@
+{
+  "id": "01a20d9c-fcbc-7213-9c94-9140025162f4",
+  "external_ref": null,
+  "title": "Apply the CLI's slow-warning opt-in before --version reads the build identity",
+  "outcome": "Apply the CLI's slow-warning opt-in before --version reads the build identity",
+  "acceptance": [
+    "A bare `engram --version` whose build-identity read passes ten seconds writes no slow-operation warning unless --warn-slow is given, shown by a behaviour test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

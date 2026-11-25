@@ -1,0 +1,26 @@
+{
+  "id": "01a20fc7-92fa-7ed3-b462-4763ed1b1008",
+  "external_ref": null,
+  "title": "Name a slow Windows process identity query once, not also its inner scratch preparation",
+  "outcome": "Name a slow Windows process identity query once, not also its inner scratch preparation",
+  "acceptance": [
+    "A Windows process identity query whose PowerShell scratch preparation alone takes over ten seconds writes one slow-operation warning, for the query, and not a second one for the inner scratch preparation. A behaviour test shows it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": "Engram::Opus",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

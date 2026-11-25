@@ -1,0 +1,26 @@
+{
+  "id": "01a20f46-d188-7ee0-8172-c239b07f8a54",
+  "external_ref": null,
+  "title": "Stop the diagnostic-write launcher test from pinning production source text",
+  "outcome": "Stop the diagnostic-write launcher test from pinning production source text",
+  "acceptance": [
+    "The successful-retention case of the long diagnostic test in scripts/test-launcher-tests/commit-input.mjs no longer depends on the exact text of the launcher's writeFileSync call. Only the refusal case injects the write failure, and a behaviour-preserving rewrite of that call leaves the successful case passing."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": "Engram::Opus",
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a2108a-1c9f-7b51-af85-15c8af500750",
+  "disposal_reason": "w-15c8af500750 (filed from R58 of w-8f127d78e960) covers this R43 Low and more: it replaces source-substitution fault injection across the launcher tests, including this commit-input.mjs:447 diagnostic-write fixture. One item owns the fix, per Fable #4739.",
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a2108a-1c9f-7b51-af85-15c8af500750",
+  "external_ref": null,
+  "title": "Replace launcher-test fault injection by source substitution with runtime injection",
+  "outcome": "Replace launcher-test fault injection by source substitution with runtime injection",
+  "acceptance": [
+    "Launcher tests inject faults (diagnostic write refusals, native cleanup stalls, timing constants) through runtime seams or fixtures rather than by rewriting a copied launcher's or helper's source text, so a refactor that keeps behaviour does not break a fixture",
+    "The affected tests still assert the same observable behaviour (retained results, diagnostic output, receipts, warnings)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

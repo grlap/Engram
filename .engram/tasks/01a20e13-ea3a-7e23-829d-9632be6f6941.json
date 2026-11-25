@@ -1,0 +1,26 @@
+{
+  "id": "01a20e13-ea3a-7e23-829d-9632be6f6941",
+  "external_ref": null,
+  "title": "Check slow-operation warning tests by operation name, not the English warning sentence",
+  "outcome": "Check slow-operation warning tests by operation name, not the English warning sentence",
+  "acceptance": [
+    "The operation-time and launcher warning tests assert the warning count, order and operation name without matching the surrounding warning sentence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

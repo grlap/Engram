@@ -1,0 +1,27 @@
+{
+  "id": "01a20fd2-bd74-7110-b998-bf4249ceefec",
+  "external_ref": null,
+  "title": "Refresh task-sync byte totals recorded by older CRLF checkouts",
+  "outcome": "Operators can recover a committed comparison that stored checkout lengths before Git-byte accounting without adding inventory scans to ordinary import.",
+  "acceptance": [
+    "A fixture carrying an older CRLF-sized committed folder head demonstrates the problem and shows that a named rebuild with its own saved basis refreshes the raw Git byte total.",
+    "The operator recovery documentation names the explicit rebuild for affected stores."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

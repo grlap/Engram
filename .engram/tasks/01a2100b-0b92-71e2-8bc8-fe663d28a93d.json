@@ -1,0 +1,28 @@
+{
+  "id": "01a2100b-0b92-71e2-8bc8-fe663d28a93d",
+  "external_ref": null,
+  "title": "Make the Windows job cleanup test supply its short confirmation timing through the fixture instead of rewriting the helper's C# source text",
+  "outcome": "Make the Windows job cleanup test supply its short confirmation timing through the fixture instead of rewriting the helper's C# source text",
+  "acceptance": [
+    "The Windows job cleanup test in scripts/test-launcher-tests/stop.mjs no longer rewrites or matches launcher-process-job.cs source text; it supplies the shortened confirmation timing and observed membership through the fixture and asserts the unconfirmed receipt and the single warning",
+    "Renaming a private constant in launcher-process-job.cs, with behaviour unchanged, leaves that test passing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-pinning"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

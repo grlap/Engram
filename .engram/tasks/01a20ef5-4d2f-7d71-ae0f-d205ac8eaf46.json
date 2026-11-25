@@ -1,0 +1,26 @@
+{
+  "id": "01a20ef5-4d2f-7d71-ae0f-d205ac8eaf46",
+  "external_ref": null,
+  "title": "Describe the backup push request floor in the transport-deadline procedure",
+  "outcome": "Describe the backup push request floor in the transport-deadline procedure",
+  "acceptance": [
+    "docs/features/cli-host-and-operator.md's \"At the transport deadline\" procedure describes a running request ending at its effective deadline: the time left, or the request floor when that is longer. It keeps the rule that no new request starts once the shared transport budget is spent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

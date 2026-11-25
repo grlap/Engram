@@ -1,0 +1,26 @@
+{
+  "id": "01a20e64-a050-7163-b57f-eecafa55df72",
+  "external_ref": null,
+  "title": "Test that a control-host open refuses at SQLite's locking-protocol error once its call allowance is spent",
+  "outcome": "Test that a control-host open refuses at SQLite's locking-protocol error once its call allowance is spent",
+  "acceptance": [
+    "A behaviour test opens a store for a control host inside a call whose allowance is already spent, injects SQLite's locking-protocol refusal, and shows the open returns the busy refusal without starting again"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

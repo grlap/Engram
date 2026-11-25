@@ -1,0 +1,26 @@
+{
+  "id": "01a20def-37dc-7173-b554-94759e41ff59",
+  "external_ref": null,
+  "title": "Bound the Windows launcher's wait for its job supervisor to close after an accepted stop",
+  "outcome": "Bound the Windows launcher's wait for its job supervisor to close after an accepted stop",
+  "acceptance": [
+    "After an accepted Windows stop, a job supervisor that never closes ends the parent's wait after at least 60 s with cleanup reported unconfirmed, as the POSIX path does, shown by a launcher test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
