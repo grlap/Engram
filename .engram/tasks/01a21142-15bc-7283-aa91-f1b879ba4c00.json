@@ -1,0 +1,27 @@
+{
+  "id": "01a21142-15bc-7283-aa91-f1b879ba4c00",
+  "external_ref": null,
+  "title": "Make the operation-warning tests check the warning's behaviour, not its exact English sentence",
+  "outcome": "Make the operation-warning tests check the warning's behaviour, not its exact English sentence",
+  "acceptance": [
+    "The launcher warning tests (scripts/test-launcher-tests/registration.mjs and the other launcher suites) and the Rust operation_time warning tests assert warning count, timing, operation name, attempt and the operation's unchanged outcome, and match the warning sentence's wording only where it is part of a documented output contract, so rewording 'is still running after 10 seconds' leaves them passing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

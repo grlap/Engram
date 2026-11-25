@@ -15,12 +15,12 @@
   ],
   "assigned_to": "Engram::Opus",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "superseded",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
-  "superseded_by": null,
-  "disposal_reason": null,
+  "superseded_by": "01a2108a-1c9f-7b51-af85-15c8af500750",
+  "disposal_reason": "w-15c8af500750 (filed from R58 of w-8f127d78e960) covers this R47 Low and more: it replaces source-substitution fault injection across the launcher tests, including this lifecycle.mjs worker diagnostic-failure fixture. One item owns the fix, as Fable asked in #4739 for the same overlap.",
   "completion": null
 }
