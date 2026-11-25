@@ -20,12 +20,19 @@
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "LANDED + INSTALLED. Candidate ecf180527a5f1929dce4d8f287355a9cf6d11c11 (tree 5eaf3a14372ed957222f767c3ead69df32f51be2, sole parent 86692bff062e8634ce55e939187027fc53725e58) was fast-forwarded onto local master and pushed as origin/master at 2026-11-25T23:21:45Z. Readiness on the candidate build and again after install returned ready=true for the live project store; installed build_fingerprint 53bdd09370e39568da94bd5592fd7fad004e709d3d6fa989d82eb67d305fdbe8, executable SHA-256 fad529a73d35c90d71d19c59b436bc2ee58eea47b6fd22aab37f784b4f40c0e2. Previous executable preserved at C:\\Users\\grzeg\\.engram\\backups\\engram-pre-ecf18052-20261125T232201Z.exe. Main checkout is clean and origin/master equals ecf18052. Post-code-push task data sync: `task-sync sync` correctly refused the already memory-capable branch; exported with `task-sync export .engram-data/.engram --include-memories`, reviewed all 13 staged JSON files and confirmed no secrets, credentials or private personal data, committed `489c660d717c376c0c731d31613036124e951718`, pushed only origin/engram-data at 2026-11-25T23:24:28Z, then imported with `--include-memories` successfully (incremental route, 2,395 tasks, changed=false, memory histories duplicate/applied). Data worktree clean and origin/engram-data matches. Fresh pre-landing independent evaluation 524db0d60ce549b98a1a089afa1b8939 was 3/3 pass on the exact candidate; TermAl verification settlement remains separately unconfirmed and was not treated as a gate per Fable/Fable2 ruling. No TermAl restart was performed.",
+    "completed_at": "2026-11-25T23:25:52.679491500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
