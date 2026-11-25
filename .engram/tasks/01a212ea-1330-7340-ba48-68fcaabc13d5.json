@@ -1,0 +1,31 @@
+{
+  "id": "01a212ea-1330-7340-ba48-68fcaabc13d5",
+  "external_ref": null,
+  "title": "Cover remaining show window continuation behavior under intervening writes",
+  "outcome": "Cover remaining show window continuation behavior under intervening writes",
+  "acceptance": [
+    "An ordinary observations continuation after a newer same-run source report returns every older original once in order and counts the appended report as newer.",
+    "History and notes-with-gates continuations after newer matching records return the announced older rows once in order.",
+    "A cursor with a genuine boundary but a changed older-row count is refused.",
+    "An evaluation continuation shows an older row reassessed using evidence added since the previous page."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
