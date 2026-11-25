@@ -1,148 +1,73 @@
 ---
 name: team-coordination
-description: Coordinate a multi-session engineering team when work must continue through gates, handoffs, and resource limits. Use for dispatch, merger queues, stalled lanes, or throughput recovery; not for ordinary single-session coding.
+description: Coordinate multi-session engineering work through handoffs, shared runners, and integration. Use when dispatch, capacity, or stalled work needs coordination across owners.
 ---
 
 # Team coordination
 
+Use the repository's own instructions for authority, review and landing
+requirements, and cross-host execution and data exchange. Read the
+instructions for each repository involved. Use the supported runner,
+communication, and task-state routes those instructions identify.
+Acts reserved to the user wait for the user's word; explicit user pauses, build and capacity limits, install and restart rules, and landing gates stay in force.
+
 Treat a coordinator as a scheduler and recovery owner. It must not become a
 serial approval point. Scheduling the serial gate and the landing windows
-stays its job; that is scheduling, not approval.
+stays its job; that is scheduling, not approval. Approval stays with the role
+named by the repository.
 
-## Keep work continuous
+## Keep work moving
 
-Every active lane has exactly one current state recorded in durable host state:
+Record each lane's owner and next action in the existing work record. For a
+wait, name the exact dependency, what releases it, who or what wakes the
+owner, and the recovery route. Use the host's completion notification where
+available. On wake, verify the result in its original record and resume the
+next action. Recover an existing run or handoff when delivery is interrupted.
 
-- a runnable next action, with its owner; or
-- a concrete blocker and a machine-checkable release condition.
+At a scheduling decision, check current session and work status. Track active
+work, blocked work and its release condition, and the next ready candidate.
+Recover a dispatchable lane from its recorded next action. If the host and work
+record disagree, report the discrepancy with the owner, last recorded action,
+and observed state. Use existing automation for recurring coordination and
+address concrete delivery gaps through the supported route. Keep routine scans
+focused on work that changed or is pending.
 
-Mailbox prose, a remembered plan, or a coordinator's intention is not a
-durable lane state. When a lane finishes a turn with an executable next action,
-the host must re-wake it when its release condition holds. Do not require a
-human status request or a coordinator's manual "go".
+## Schedule shared capacity
 
-If an owner becomes idle with an unapplied fix or another executable action,
-first recover the lane. Then record a product follow-up for the missing
-dispatch obligation; a one-off wake is containment, not a fix.
+Dispatch independent work in separate workspaces when the project permits it.
+Coordinate overlapping paths with the owners. Apply the project's build and
+review limits to the jobs that use those resources. While a lane waits, keep
+useful preparation separate from the input undergoing validation. Reviewers
+inspect the frozen input in read-only mode.
 
-## Use capacity deliberately
+Use the project's supported runner and handoff channel for cross-host work.
+Give the runner the exact input and check scope. Follow each repository's
+rules for transferring work records. Recover the terminal result, artifact
+locations, and diagnostics relevant to the next action. See
+[Coder test execution](../coder-test-execution/SKILL.md) for test handoffs.
 
-Separate source concurrency from build concurrency:
+## Move ready candidates through integration
 
-- Dispatch independent coding, failing-test (RED) design, carry preparation
-  and documentation work in separate worktrees whenever their scopes do not
-  overlap. Reviewers are read-only leaves on the frozen input and need no
-  worktree of their own.
-- Respect the declared build/backpressure limits. Do not infer that an idle
-  source worker can start a build.
-- A lane waiting for a build slot continues useful non-build work when one is
-  available: inspect a review finding, prepare a carry, write the exact test
-  plan, or make the next patch on an input that is not frozen. While the
-  lane's own input is in its gate or review, it does only non-mutating
-  preparation of the next item: no worktree or index edits and no change of
-  claim or focus. Mutating work goes to another session with its own claim
-  and worktree.
-- If many items are ready but builds are serialized, state that the build cap
-  is the bottleneck. Do not describe this as a lack of work or worker capacity.
+Use the existing integration queue and the candidate's
+[READY manifest](../evidence-based-delivery/SKILL.md#keep-one-ready-manifest).
+Order eligible candidates by dependencies, overlap, and available capacity.
+The integration owner checks for conflicts, records the exact input
+being validated, and follows local rules for reusing reviews and checks.
+Group independent changes when the project's validation can account for each.
 
-At scheduling boundaries, publish a compact map: **active** (owner and action),
-**blocked** (release condition), **candidates** (carry/merge order), and the
-next gate. Run this scan without waiting for the user to request status.
+The integration owner never edits product code, tests, fixtures, documentation
+or configuration as a fix, even for a one-line correction. It returns merge
+conflicts and defects to the implementation owner with the exact input,
+affected paths and relevant diagnostic, and resumes only from the
+worker-delivered result.
 
-## Run a merge queue
+Assign implementation, including tests, documentation, and configuration, to
+a coding model suited to the work. Follow the project's model and reasoning
+guidance where provided. When transferring a repair because of a role or
+model concern, verify the receiving session's effective settings. Involve an
+architect for changes to durable meaning or unresolved design decisions
+across component boundaries.
 
-Keep two or three independent candidates moving in parallel when the backlog
-allows it. Parallelize implementation, tests, review and carry preparation.
-Carry candidates onto current mainline one at a time. Record the combined
-input's complete `source_id` and validate that input. Reviews and gates cite
-the recorded value for their input. A completed Coder review round may be
-adopted across a clean carry under `/review-changes` section 6a. Gate credit
-stays with its own source input. Re-carry when mainline movement requires it.
-
-Choose candidates with non-overlapping owned paths where possible. When their
-surfaces overlap, serialize the implementation or explicitly give one owner
-the shared boundary. The Merger owns queue order and conflict detection; it
-returns a conflicted package to its Coder and does not replace the required
-project validation or reviews.
-
-### Keep the Merger non-authoring
-
-The Merger only receives worker-delivered patches, returns a package with an
-actual merge conflict to its Coder, carries candidates onto the selected
-mainline, records the combined input's `source_id`, coordinates validation
-and reviews, and lands a result that meets the
-project's landing conditions (in Engram, the Authority and Git section of
-AGENTS.md). It never
-edits product code, tests, fixtures, documentation, or configuration as a
-fix, even for a one-line correction.
-
-When a merge, gate, review, or landing reveals a defect, the Merger
-classifies each failure, records the gate as the project requires, and
-reports the classification, the exact failure, the affected paths and the
-frozen input to the owning implementer or the coordinator. A
-claimed implementation worker fixes it in its own worktree and returns patch
-and evidence. The Merger resumes only from that worker-delivered result.
-
-Batch two or three path-disjoint candidates when the project can attribute
-validation and acceptance to the whole frozen batch. If the host or tracker
-can only credit one item per run, keep the carry preparation parallel but do
-not pretend that one gate proves every candidate; file the attribution gap.
-
-## Match implementation work to the model
-
-Use the project's designated strong coding model for product, test, fixture,
-documentation, and configuration edits. Do not assign those edits to a
-lightweight or medium-reasoning session merely because it is idle. Such a
-session may perform bounded read-only inspection, coordination, evidence
-collection, or merger duties.
-
-Before transferring a repair after a role or model concern, verify the target
-session's effective model and reasoning level from the host. Preserve an
-earlier lightweight draft only as evidence; the replacement worker derives
-and tests its own patch from the frozen input and failure evidence.
-
-## Centralize test execution
-
-Use the host's supported runner for gates and focused checks. For a remote
-runner, send the job through the host's existing remote mailbox to the runner's
-registered native session on that host. Follow step 3 of
-[Coder test execution](../coder-test-execution/SKILL.md) for the exact Git commit
-and for returning the terminal result and artifact locators through that mailbox.
-
-Implementers should receive pass/fail metadata and only the bounded diagnostics
-needed to fix a failure, rather than routine full logs. Keep full logs as runner
-artifacts for the coordinator and reviewer when inspection is necessary.
-
-## Use architects sparingly
-
-Ask an architect only when a change crosses an architecture boundary, changes
-durable meaning or format, or leaves a real design conflict unresolved.
-Routine decomposition, local implementation choices, and bounded repair
-decisions belong to the coordinator and implementer so coding capacity stays
-available.
-
-## Observe before reporting
-
-Do not report a last mailbox update as a current execution state. Before
-claiming that a lane is active, inspect the host's current session/work status.
-Classify an apparent idle lane as one of: completed, running a detached
-operation, resource-blocked, awaiting an external decision, or dispatchable.
-Wake every dispatchable lane immediately.
-
-When a host's projection disagrees with observed session state, report the
-discrepancy with session id, owner, last durable next action and time. Do not
-paper over it with a status summary.
-
-## Preserve authority boundaries
-
-Questions for the user belong in design when a choice genuinely changes scope.
-Where authority permits, continue reversible work under the recorded default;
-acts reserved to the user still wait for the user's word. Do not let an
-unanswered question block unrelated work. Keep explicit user pauses, build
-caps, installation/restart rules and project-specific landing gates intact.
-
-For cross-host work, keep the control plane and task-state model separate:
-TermAl can centralize mailbox/control delivery, while Engram task text moves
-through the selected Git task-text exchange (planned; today only its
-authorized pilot). Do not silently turn either into replicated SQLite or an
-automatic merge service.
+Keep responsibility through landing and any required live check or cleanup.
+Name the owner and next action in the same work record when responsibility
+changes.
