@@ -57,8 +57,10 @@ selection. There is no store identity or runtime cursor.
 
 ## Git folder exchange
 
-`task-sync export` and `task-sync import` are the folder route; no other
-command exchanges this folder profile. Private snapshots may be retained under
+`task-sync export` and `task-sync import` operate on this folder profile.
+The [ordinary task-sync command](git-task-sync.md#run-the-ordinary-sync-command)
+combines them with Git exchange for an enrolled task folder.
+Private snapshots may be retained under
 `target/` for merge bases; they are not accepted as public import/export paths.
 
 Each export and import records a folder head per project and note selection:

@@ -16,6 +16,7 @@ use std::{
 // A partial folder import keeps admitted changes but must not advance the
 // caller's incoming-commit base as if every incoming document was consumed.
 const PARTIAL_IMPORT_EXIT: u8 = 3;
+const REDACTOR_NOTICE: &str = "REDACTOR: development no-op; task planning fields are shared text";
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct TaskSyncArgs {
@@ -33,6 +34,25 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Run a full two-way exchange, the task-data equivalent of git pull plus git push.
+    ///
+    /// Pushes to the configured remote, which may be public. Use --no-push to
+    /// prepare local commits and review them for secrets and private data.
+    Sync {
+        #[arg(long, default_value = "origin")]
+        remote: String,
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
+        /// This host's export alias. Required for its first notes-enabled export.
+        /// Eligible machine activity can be shared under this alias even with notes off.
+        #[arg(long)]
+        origin_machine: Option<String>,
+        /// Prepare local commits for disclosure review without pushing.
+        #[arg(long)]
+        no_push: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Execute one explicit ledger/data step; never dispatches network or merges.
     Step {
         /// Typed action as JSON or @FILE; retain it unchanged for exact retries.
@@ -413,6 +433,35 @@ async fn run_observed(
         return Ok(ExitCode::SUCCESS);
     }
     match args.operation {
+        TaskSyncCommand::Sync {
+            remote,
+            branch,
+            origin_machine,
+            no_push,
+            json,
+        } => {
+            eprintln!("{REDACTOR_NOTICE}");
+            let receipt = Box::pin(service.sync_task_folder(
+                project_file,
+                &remote,
+                &branch,
+                origin_machine.as_deref(),
+                no_push,
+            ))
+            .await?;
+            attribution.print_notices();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+            } else if no_push && receipt.remote_head.as_deref() != Some(receipt.local_head.as_str())
+            {
+                println!(
+                    "Project task data prepared at {}; push skipped",
+                    receipt.local_head
+                );
+            } else {
+                println!("Project task data synchronized at {}", receipt.local_head);
+            }
+        }
         TaskSyncCommand::Step { request } => {
             let request = crate::parse_bounded_json_input::<engram::task_sync::driver::StepRequest>(
                 &request,
@@ -745,7 +794,7 @@ fn run_folder_exchange(
                     None
                 };
                 attribution.print_notices();
-                eprintln!("REDACTOR: development no-op; task planning fields are shared text");
+                eprintln!("{REDACTOR_NOTICE}");
                 report_superseded(&receipt.superseded);
                 if json
                     || include_memories
