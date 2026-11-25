@@ -1,0 +1,29 @@
+{
+  "id": "01a210c2-485d-7a80-bc34-8d0243f80d1a",
+  "external_ref": null,
+  "title": "A label-only item revision must not invalidate a pending registered verification record",
+  "outcome": "A label-only item revision must not invalidate a pending registered verification record",
+  "acceptance": [
+    "A registered verification record whose delivery was deferred is accepted when the only change to the item since registration is a label or other non-acceptance planning edit; it is still refused when acceptance, claim, fence, run or named root changed",
+    "A behaviour test registers a run, applies a label-only update, then submits the record and observes it acknowledged; a second test changes acceptance and observes verification_record_refused naming work_revision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-work-lifecycle",
+    "greg-directed",
+    "verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

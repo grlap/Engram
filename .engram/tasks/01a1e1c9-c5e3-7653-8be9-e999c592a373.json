@@ -11,11 +11,12 @@
   "acceptance_bindings": [],
   "evaluation_mode": null,
   "kind": "bug",
-  "priority": 1,
+  "priority": 0,
   "labels": [
     "acceptance-evaluation",
     "agent-ergonomics",
-    "coordination"
+    "coordination",
+    "greg-directed"
   ],
   "assigned_to": null,
   "deferred_until": null,
