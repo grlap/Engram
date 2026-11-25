@@ -1,0 +1,29 @@
+{
+  "id": "01a212b5-3a60-72f3-8edf-09850a5c9fd7",
+  "external_ref": null,
+  "title": "Continue a show notes or history window after a newer record is appended instead of refusing it as changed",
+  "outcome": "Continue a show notes or history window after a newer record is appended instead of refusing it as changed",
+  "acceptance": [
+    "A show notes/history/observations/evaluations continuation keeps returning the older rows it announced when a newer record (for example an ordinary note) is appended to the same item after the first page; it is refused only when the rows at or before its boundary actually changed or the item's run or policy changed",
+    "A behaviour test pages a notes window, appends a note to the same item, then follows the continuation and receives the remaining older rows without duplicates or gaps"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

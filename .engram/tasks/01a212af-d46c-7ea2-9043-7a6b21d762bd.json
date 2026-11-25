@@ -1,0 +1,27 @@
+{
+  "id": "01a212af-d46c-7ea2-9043-7a6b21d762bd",
+  "external_ref": null,
+  "title": "Include the data-folder argument in loose bootstrap recovery commands",
+  "outcome": "The enrol-unbound receipt names executable saved-basis recovery commands with the target folder and applicable options.",
+  "acceptance": [
+    "Both recovery commands in a loose bootstrap receipt include the required data-folder argument or an explicit placeholder and preserve the selected branch and memory and note options.",
+    "The loose bootstrap CLI regression verifies the command arguments and executes the equivalent recovery sequence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
