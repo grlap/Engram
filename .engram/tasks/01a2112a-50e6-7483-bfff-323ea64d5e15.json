@@ -1,0 +1,31 @@
+{
+  "id": "01a2112a-50e6-7483-bfff-323ea64d5e15",
+  "external_ref": null,
+  "title": "Tell agents that a write without an answer after a dropped connection is unknown and how to check it",
+  "outcome": "Let an agent always learn a write's outcome after its MCP connection drops",
+  "acceptance": [
+    "Engram's MCP server instructions and the descriptions of its write words state that a write which returned no answer because the connection dropped has an UNKNOWN outcome and may still complete, and that the agent checks the result later with show REF --notes (or the item's read)",
+    "The text states a time bound or says that a retry is safe only where the code actually guarantees it; the implementer first establishes from the code whether an abandoned handler's lifetime is bounded and when an identical retry replays, records that evidence on this item, and words the text from it",
+    "Engram neither reports success nor failure for such a write and adds no new parameter, queue, status query or stored state for it",
+    "docs/features/cli-and-mcp.md states the same rule in one place, consistent with w-d52974fbf3d4"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
