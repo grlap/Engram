@@ -1,0 +1,27 @@
+{
+  "id": "01a213cf-3ce4-7c92-82d7-4797cc0ea45b",
+  "external_ref": null,
+  "title": "Sweep stale Engram worktrees on Central whose items have closed",
+  "outcome": "Sweep stale Engram worktrees on Central whose items have closed",
+  "acceptance": [
+    "Every Engram worktree on Central under .worktrees/ whose item(s) are completed or cancelled and whose evidence is recorded is removed with non-forced git worktree remove by a Codex session, after the repository's cleanup checks (path inside the repo, no live process or claim, no frozen input, no unique unpushed change); worktrees still serving open work are kept and listed with their owner",
+    "The sweep records what was removed and what was kept, and why, on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "cleanup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

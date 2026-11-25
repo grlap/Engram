@@ -1,0 +1,27 @@
+{
+  "id": "01a21301-74c8-7c70-915d-07a6d8f64d36",
+  "external_ref": null,
+  "title": "Name clock reversal in a show continuation refusal",
+  "outcome": "Name clock reversal in a show continuation refusal",
+  "acceptance": [
+    "Continuing a live show window at a read time earlier than its cursor reports the reversed clock and offers the existing fresh-window command."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

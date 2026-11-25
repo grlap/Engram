@@ -14,7 +14,8 @@
   "labels": [
     "acceptance-evaluation",
     "agent-ergonomics",
-    "area-host-integration"
+    "area-host-integration",
+    "ready-to-land"
   ],
   "assigned_to": null,
   "deferred_until": null,

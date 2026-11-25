@@ -1,0 +1,28 @@
+{
+  "id": "01a21323-0f37-7653-b8d0-0ede1d687ef1",
+  "external_ref": null,
+  "title": "Limit the lost-answer docs' cross-session rule to notes and re-wrap that paragraph",
+  "outcome": "Limit the lost-answer docs' cross-session rule to notes and re-wrap that paragraph",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md 'A write whose answer was lost' no longer says that every call from another session is a new attempt: the rule is stated for note, and other words keep their own retry rules (for example, forget of an already retired key reports the existing tombstone)",
+    "The paragraph's line breaks follow the file's usual wrap"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

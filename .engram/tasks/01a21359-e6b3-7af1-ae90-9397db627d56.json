@@ -1,0 +1,28 @@
+{
+  "id": "01a21359-e6b3-7af1-ae90-9397db627d56",
+  "external_ref": null,
+  "title": "Expose a verification producer's aggregate run outcome in the acceptance verification read, opt-in and versioned",
+  "outcome": "Expose a verification producer's aggregate run outcome in the acceptance verification read, opt-in and versioned",
+  "acceptance": [
+    "The host acceptance_verification_read can return, for each verification's producer, the stored aggregate run outcome (the producer's run_outcome) alongside the existing stage outcome, for portable and bound records; a host that does not opt in receives the unchanged current shape, so TermAl's strict parser keeps working",
+    "A behaviour test records a run whose aggregate failed with one passing stage and observes the read reporting the passing stage and the failed aggregate when opted in, and the current shape otherwise"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

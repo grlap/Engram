@@ -1,0 +1,28 @@
+{
+  "id": "01a21322-ff30-7b92-acab-51fd3718452d",
+  "external_ref": null,
+  "title": "Decide note-retry liveness when a peer's claim lapses during the note's writer wait",
+  "outcome": "Decide note-retry liveness when a peer's claim lapses during the note's writer wait",
+  "acceptance": [
+    "The note's keyless retry identity and the observation write agree on whether the item's claim is live when the writer admits the note, or the docs state that a claim lapsing during the writer wait can make an identical resend a new note",
+    "A behaviour test covers a peer claim that lapses between a non-holder note's dispatch and its admitted write"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

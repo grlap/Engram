@@ -1,0 +1,28 @@
+{
+  "id": "01a21301-74e3-7662-be9d-89b298afaf29",
+  "external_ref": null,
+  "title": "Clarify which show modes accept an after cursor",
+  "outcome": "Clarify which show modes accept an after cursor",
+  "acceptance": [
+    "The CLI guide explains that a notes or history continuation retains its original mode and that observation and evaluation windows accept their own after cursors."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
