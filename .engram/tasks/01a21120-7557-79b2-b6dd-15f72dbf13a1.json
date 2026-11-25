@@ -1,0 +1,28 @@
+{
+  "id": "01a21120-7557-79b2-b6dd-15f72dbf13a1",
+  "external_ref": null,
+  "title": "Keep show's diagnostic context when a historical acceptance basis cannot be reconstructed",
+  "outcome": "Keep show's diagnostic context when a historical acceptance basis cannot be reconstructed",
+  "acceptance": [
+    "When show cannot reconstruct a historical acceptance basis, it still reports the item, the basis it tried to read and why it could not, instead of dropping that context",
+    "A behaviour test covers the unreconstructable case through the public show word"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

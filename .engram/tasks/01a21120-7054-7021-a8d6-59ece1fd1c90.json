@@ -1,0 +1,28 @@
+{
+  "id": "01a21120-7054-7021-a8d6-59ece1fd1c90",
+  "external_ref": null,
+  "title": "Name the acceptance basis distinctly from the work revision in conflict diagnostics",
+  "outcome": "Name the acceptance basis distinctly from the work revision in conflict diagnostics",
+  "acceptance": [
+    "A refusal or conflict caused by a stale acceptance basis names the acceptance basis (and its expected and current values) rather than the general work revision, and a refusal caused by a stale work revision still names work_revision",
+    "A behaviour test triggers each case through the public words and observes the distinct field names"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
