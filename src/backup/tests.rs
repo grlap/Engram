@@ -666,7 +666,7 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
         "{error}; steps began at {:?}; copy sub-steps: {trace:?}",
         steps.borrow()
     );
-    // The ordinary five-second lock wait was cut to the time left. Retained
+    // The ordinary one-minute lock wait was cut to the time left. Retained
     // limit: it is the product's behaviour, with 3.5 s beyond the deadline here.
     assert!(
         took < Duration::from_secs(5),

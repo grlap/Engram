@@ -252,6 +252,8 @@ pub fn short_revision(revision: &str) -> String {
 }
 
 fn executable_digest() -> io::Result<String> {
+    // Hashing a large or cold executable can pass ten seconds.
+    let _warning = crate::operation_time::Warning::start("build identity read");
     let mut executable = File::open(std::env::current_exe()?)?;
     let mut digest = Sha256::new();
     io::copy(&mut executable, &mut digest)?;

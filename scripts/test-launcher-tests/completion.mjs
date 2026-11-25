@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { basename, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
-import { completionMetadata, createRun, diagnostics, executeRun, inspectFailure, notifyRun, requiredStages, summarize } from "../test-launcher.mjs";
+import { completionMetadata, createRun, diagnostics, executeRun, heartbeatStaleAfterMs, inspectFailure, notifyRun, requiredStages, summarize } from "../test-launcher.mjs";
 
 export function registerCompletionDiagnostics(support) {
   const { env, stage, git, repository } = support;
@@ -650,7 +650,7 @@ test("compact summaries preserve running, interrupted, recovered and unknown out
     const saveResult = () => writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     saveResult();
     assert.match(await summarize(runDir, { compact: true, now: at }), /^RUNNING .* exit=unknown/mu);
-    assert.match(await summarize(runDir, { compact: true, now: at + 4000 }), /^INTERRUPTED .* exit=unknown/mu);
+    assert.match(await summarize(runDir, { compact: true, now: at + heartbeatStaleAfterMs(1000) + 1 }), /^INTERRUPTED .* exit=unknown/mu);
     delete result.heartbeat;
     saveResult();
     assert.match(await summarize(runDir, { compact: true }), /^UNKNOWN .* exit=unknown/mu);

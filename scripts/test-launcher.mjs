@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureCommitInputStatus, compareSourceIds, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./launcher-source-id.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { asOneOperation, endWithinWarningBound, namedIfSlow, nextAttempt, operationMinimumMs, warnAfterMs, warningSink, warnWhileBlocking, warnWhileRunning } from "./operation-warning.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
 
@@ -67,26 +68,30 @@ function completionRequest(runDir) {
   // Historical completion projection can read a pre-snapshot request. New
   // execution admission separately requires the immutable admitted snapshot.
   // A damaged snapshot never falls back to the mutable execution request.
-  return readJson(existsSync(snapshot) ? snapshot : join(runDir, "request.json"));
+  return readJson(exists(snapshot) ? snapshot : join(runDir, "request.json"));
 }
 
 // Publish complete immutable retry material, including under concurrent sends.
 function publish(path, text) {
   const temporary = `${path}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
-    try { linkSync(temporary, path); }
-    catch (error) { if (error.code !== "EEXIST") throw error; }
-  } finally { rmSync(temporary, { force: true }); }
+  namedIfSlow("run record publication", () => {
+    try {
+      writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
+      try { linkSync(temporary, path); }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    } finally { rmSync(temporary, { force: true }); }
+  });
 }
 // A run without terminal results is alive while its heartbeat is fresh: the
 // launcher refreshes `heartbeat.at` every `heartbeat.everyMs`, and a heartbeat
 // older than this many intervals means the launcher has most likely stopped,
-// whatever process now holds its pid. The one-second floor normally keeps that
-// window wider than the launcher's own synchronous steps; an unusually slow
-// input capture or executor identity query can briefly read as interrupted
-// until the next beat.
+// whatever process now holds its pid. The window is never shorter than the
+// shared minute plus two beats, so a launcher blocked for up to a minute with
+// no beat, as in an identity query, still reads as running; an unusually slow
+// input capture can briefly read as interrupted until the next beat.
 export const HEARTBEAT_STALE_INTERVALS = 3;
+export const heartbeatStaleAfterMs = (everyMs) =>
+  Math.max(HEARTBEAT_STALE_INTERVALS * everyMs, operationMinimumMs + 2 * everyMs);
 const validHeartbeatEveryMs = (value) => Number.isInteger(value) && value >= 1_000 && value <= 600_000;
 function heartbeatEveryMs(env) {
   const raw = env.ENGRAM_LAUNCHER_HEARTBEAT_MS;
@@ -98,17 +103,36 @@ function heartbeatEveryMs(env) {
   return value;
 }
 
+// Refreshes only the heartbeat of the record already saved at `path`, never
+// a terminal one, so a reader sees a live run without provisional fields.
+function startSavedHeartbeat(path, everyMs) {
+  if (!validHeartbeatEveryMs(everyMs)) return undefined;
+  const timer = setInterval(() => {
+    try {
+      const saved = readJson(path);
+      if (isTerminal(saved) || !saved.heartbeat) return;
+      saved.heartbeat.at = new Date().toISOString();
+      save(path, saved, { renameWindowMs: beatRenameWindowMs });
+    } catch { /* retried on the next beat */ }
+  }, everyMs);
+  timer.unref();
+  return timer;
+}
+
 // A reader holding results.json open can make one save fail on Windows;
 // the next beat retries, and a missed beat never fails the run.
 function startHeartbeat(path, result, everyMs) {
   const timer = setInterval(() => {
     result.heartbeat.at = new Date().toISOString();
-    try { save(path, result); } catch { /* retried on the next beat */ }
+    try { save(path, result, { renameWindowMs: beatRenameWindowMs }); } catch { /* retried on the next beat */ }
   }, everyMs);
   timer.unref();
   return timer;
 }
-const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+// Run records are small local files; a read or probe that returns after ten
+// seconds is named as it returns.
+const readJson = (path) => namedIfSlow("run record read", () => JSON.parse(readFileSync(path, "utf8")));
+const exists = (path) => namedIfSlow("run record lookup", () => existsSync(path));
 function readResults(runDir) {
   try { return readJson(join(runDir, "results.json")); }
   catch (error) {
@@ -117,16 +141,44 @@ function readResults(runDir) {
 }
 const transientRenameCodes = new Set(["EPERM", "EACCES", "EBUSY"]);
 // Windows can refuse a rename for a moment while another process, such as an
-// indexer or antivirus scanner, holds the target open. Retry that I/O briefly
-// so a transient refusal cannot cost a run its terminal result; this never
-// reruns a test.
-export function renameWithRetry(from, to, { rename = renameSync, attempts = 20, delayMs = 25 } = {}) {
-  for (let attempt = 1; ; attempt += 1) {
-    try { rename(from, to); return; }
+// indexer or antivirus scanner, holds the target open. Retry that I/O for up
+// to the shared minute, with one warning after ten seconds, so a transient
+// refusal cannot cost a run its terminal result; this never reruns a test.
+// One warning for one save, however its steps end: `warning` is shared by the
+// write, the rename retries and the cleanup of a single save. A save keeps
+// this thread until it ends, so its line goes at once to a writer thread
+// rather than queued behind a retry loop that would hold it until the loop
+// ended; the save never waits for stderr.
+function saveWarning(to, warning, waited) {
+  if (warning.warned || waited < warnAfterMs) return;
+  warning.warned = true;
+  try { warningSink.write(`warning: saving ${basename(to)} is still running after 10 seconds; attempt=${nextAttempt()}; elapsed_ms=${Math.round(waited)}\n`); }
+  catch { /* observation never fails the save */ }
+}
+// `saveStarted` is when the whole save began, for its warning; the retry
+// window still starts at the rename, so the write never shortens it.
+export function renameWithRetry(from, to, { rename = renameSync, windowMs = operationMinimumMs, delayMs = 25,
+  now = () => performance.now(), saveStarted, warning = { warned: false } } = {}) {
+  const started = now();
+  const warnFrom = saveStarted ?? started;
+  // Checked whenever the time is read, on a refusal, a success or the end of
+  // the window, so a save that took ten seconds or more is named once.
+  // One clock read per check serves both the warning and the window.
+  const warnAt = (at) => saveWarning(to, warning, at - warnFrom);
+  while (true) {
+    try { rename(from, to); }
     catch (error) {
-      if (!transientRenameCodes.has(error.code) || attempt >= attempts) throw error;
+      const at = now();
+      warnAt(at);
+      // A permanent refusal, first or after transient ones, ends the save.
+      if (!transientRenameCodes.has(error.code)) throw error;
+      if (at - started >= windowMs) throw error;
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+      continue;
     }
+    // A first rename that itself took ten seconds is named too.
+    warnAt(now());
+    return;
   }
 }
 // The host reads each run artifact through the same one-MiB file bound.
@@ -141,7 +193,11 @@ export function encodeRunRecord(value, name = "run JSON") {
   }
   return text;
 }
-function save(path, value) {
+// A beat, which the next beat repeats, tries its rename only briefly: it must
+// not hold the launcher's thread. Every other save waits out the minute.
+const beatRenameWindowMs = 500;
+export function save(path, value, { renameWindowMs = operationMinimumMs, write = writeFileSync, remove = rmSync,
+  rename = renameSync, now = () => performance.now() } = {}) {
   const name = basename(path);
   const text = encodeRunRecord(value, name);
   // Before every stage, leave room for a complete matching S1 and the
@@ -153,10 +209,18 @@ function save(path, value) {
       reason: "input-unverified", error: "results.json exceeds the one-MiB run artifact bound (output_limit)" }, name);
   }
   const temporary = `${path}.${randomUUID()}.tmp`;
+  // The whole save is one operation for its warning: the temporary write,
+  // the rename with its retries, and the cleanup.
+  const saveStarted = now(), warning = { warned: false };
+  const check = () => saveWarning(path, warning, now() - saveStarted);
+  // Checked as each step ends, whether it returns or throws: a slow write is
+  // named before the rename starts, and a failing cleanup still names the save.
   try {
-    writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
-    renameWithRetry(temporary, path);
-  } finally { rmSync(temporary, { force: true }); }
+    try { write(temporary, text, { flag: "wx", mode: 0o600 }); } finally { check(); }
+    renameWithRetry(temporary, path, { windowMs: renameWindowMs, rename, now, saveStarted, warning });
+  } finally {
+    try { remove(temporary, { force: true }); } finally { check(); }
+  }
 }
 
 function unavailableResultInput(result, error) {
@@ -182,7 +246,7 @@ function boundedRunError(message, runDir) {
   const diagnosticPath = join(runDir, name);
   let suffix;
   try {
-    writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 });
+    namedIfSlow("run diagnostic write", () => writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 }));
     suffix = ` [full diagnostic in ${name}]`;
   } catch {
     // Raw diagnostic retention must never prevent core terminal publication.
@@ -571,7 +635,12 @@ function isFile(candidate, platform, probes) {
   }
 }
 
-export function executable(command, cwd, env, { platform = process.platform, probes = fileProbes } = {}) {
+// Each lookup probes the file system once per candidate; one that returns
+// after ten seconds, as on a slow PATH entry, is named as it returns.
+export function executable(command, cwd, env, options = {}) {
+  return namedIfSlow("executable lookup", () => findExecutable(command, cwd, env, options));
+}
+function findExecutable(command, cwd, env, { platform = process.platform, probes = fileProbes } = {}) {
   let lastError;
   const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
   const bases = /[\\/]/u.test(command) || isAbsolute(command)
@@ -605,7 +674,7 @@ function systemPowerShell(env) {
 // How long one identity query may take. A run whose executor could not ask
 // records that, and recover then treats it as a record without a creation
 // time, so a short bound costs nothing but that.
-const identityQueryMs = 15_000;
+const identityQueryMs = operationMinimumMs;
 
 // Where macOS keeps ps.
 const systemPs = "/bin/ps";
@@ -631,9 +700,10 @@ export const systemProbes = {
   // The system's own ps, never one found on PATH, in one clock and one
   // language, so that every query gives a process the same start text.
   ps(pid) {
-    if (!existsSync(systemPs)) return { error: new Error(`${systemPs} is not present`) };
-    return spawnSync(systemPs, ["-o", "lstart=", "-p", String(pid)],
-      { encoding: "utf8", timeout: identityQueryMs, env: { ...process.env, TZ: "UTC", LC_ALL: "C" } });
+    return existsSync(systemPs)
+      ? spawnSync(systemPs, ["-o", "lstart=", "-p", String(pid)],
+        { encoding: "utf8", timeout: identityQueryMs, env: { ...process.env, TZ: "UTC", LC_ALL: "C" } })
+      : { error: new Error(`${systemPs} is not present`) };
   },
 };
 
@@ -643,7 +713,7 @@ export const systemProbes = {
 export function processHost() {
   let pidNamespace = null;
   if (process.platform === "linux") {
-    try { pidNamespace = readlinkSync("/proc/self/ns/pid"); } catch { pidNamespace = null; }
+    try { pidNamespace = namedIfSlow("process host lookup", () => readlinkSync("/proc/self/ns/pid")); } catch { pidNamespace = null; }
   }
   return { platform: process.platform, hostname: hostname(), pidNamespace };
 }
@@ -701,7 +771,12 @@ export function sameCreation(recorded, found) {
 // that tells it from a later process given the same id; gone, only when the
 // system says no such process exists; or unknown when the query cannot say.
 // It only asks: it never opens, waits on or signals the process.
-export function processIdentity(pid, { platform = process.platform, probes = systemProbes, env,
+// One process identity query is one operation on every platform, its probes
+// and the reading of their answer included: named once after ten seconds.
+export function processIdentity(pid, options = {}) {
+  return warnWhileBlocking("process identity query", () => queryProcessIdentity(pid, options));
+}
+function queryProcessIdentity(pid, { platform = process.platform, probes = systemProbes, env,
   root = repository, cacheKey = identityScratchKey } = {}) {
   const gone = { state: "gone" };
   const unknown = (why) => ({ state: "unknown", why });
@@ -786,14 +861,16 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   // The caller's discovery ceiling bounds where artifacts may be allocated.
   // It does not redirect Git and is not part of the owner's input measurement.
   if (env.GIT_CEILING_DIRECTORIES !== undefined) directoryEnv.GIT_CEILING_DIRECTORIES = env.GIT_CEILING_DIRECTORIES;
-  const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
+  // A Git subprocess can be slow on a busy host; name it once after ten seconds.
+  const git = warnWhileBlocking("run directory lookup", () => spawnSync("git",
+    ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true,
-      ...(runInput === "commit" || selectInput ? { env: directoryEnv } : {}) });
+      ...(runInput === "commit" || selectInput ? { env: directoryEnv } : {}) }));
   if (git.error || git.status !== 0) throw usageFailure(
     "git-run-directory-unavailable; run the launcher from a repository worktree with Git available");
   const runId = `test-${randomUUID()}`;
   const runDir = join(git.stdout.trim(), runId);
-  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  namedIfSlow("run directory creation", () => mkdirSync(runDir, { recursive: true, mode: 0o700 }));
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     ...(sourceBinary ? { sourceBinary } : {}),
     creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
@@ -887,12 +964,13 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
 }
 
 export async function runCommand(command, args, { cwd, env, log }) {
-  const fd = openSync(log, "wx", 0o600);
+  const fd = namedIfSlow("command log creation", () => openSync(log, "wx", 0o600));
   try {
     return await new Promise((done) => {
       let error;
       let child;
-      try { child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["ignore", fd, fd] }); }
+      // Creating the process is synchronous and can block on a cold load.
+      try { child = namedIfSlow("command start", () => spawn(command, args, { cwd, env, windowsHide: true, stdio: ["ignore", fd, fd] })); }
       catch (failure) { throw because("spawn-failed", failure); }
       child.on("error", (value) => { error = value.message; });
       child.on("close", (code, signal) => done({ code, signal, ...(error ? { error } : {}) }));
@@ -979,10 +1057,20 @@ function validateNotification(request, env) {
   catch { throw usageFailure("notification-cli-unavailable"); }
 }
 
+// A stage is the caller's workload: nothing stops it for its time. Still
+// running after ten seconds, it is named once on stderr, and its outcome
+// passes through unchanged. The launcher's own steps inside it, such as its
+// cleanup confirmation, keep their own names.
+export async function runStage(run, options) {
+  const settled = warnWhileRunning("stage run", options);
+  try { return await run(); }
+  finally { settled(); }
+}
+
 export async function executeRun(runDir, env = process.env, ready = () => {}) {
   // Exclusive admission: an interrupted run is not a retryable test command.
   // A losing invocation must not overwrite the admitted owner's results.
-  try { closeSync(openSync(join(runDir, "execution.lock"), "wx", 0o600)); }
+  try { namedIfSlow("execution lock", () => closeSync(openSync(join(runDir, "execution.lock"), "wx", 0o600))); }
   catch (error) {
     throw because(error.code === "EEXIST" ? "execution-lock-held" : "execution-admission-failed", error);
   }
@@ -1025,10 +1113,15 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     reserveCommandResult(result, { name, log, started: new Date().toISOString(), command: [command, ...args] },
       "preflight", result.preflight.length, runDir);
     let outcome;
-    try { outcome = await commandRun(command, args, log); }
+    // The launcher's own version probes are its setup: one operation, its
+    // log, process start and wait included, named once.
+    try { outcome = await asOneOperation("preflight command", () => commandRun(command, args, log)); }
     catch (error) { if (["stopped", "helper-start-failed"].includes(error.reason)) throw error; throw because("preflight-failed", error); }
-    result.preflight.push({ name, ...outcome, log,
-      diagnostics: await diagnostics(log, outcome.code !== 0 || Boolean(outcome.error)) });
+    const processing = warnWhileRunning("preflight log processing");
+    let excerpt;
+    try { excerpt = await diagnostics(log, outcome.code !== 0 || Boolean(outcome.error)); }
+    finally { processing(); }
+    result.preflight.push({ name, ...outcome, log, diagnostics: excerpt });
     save(resultPath, result);
     if (outcome.code !== 0 || outcome.error) throw because("preflight-failed", new Error(`${name} preflight failed (${outcome.error ?? outcome.code}); see ${log}`));
   };
@@ -1181,25 +1274,30 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       pending[index] = running;
       save(resultPath, { ...result, stages: pending });
       Object.assign(entry, running);
-      const outcome = await commandRun(stage.command, stage.args, entry.log);
+      const outcome = await runStage(() => commandRun(stage.command, stage.args, entry.log));
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
-      if (stage.kind === "test") {
-        entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage)
-          || (runnerName(stage.command) === "cargo" && commandKind(stage.command, stage.args) === "test") });
-        // Attribute known focused counts to the runner we started, never to
-        // the shape of its output. Full gates keep their stage-kind contract.
-        if (!request.full && entry.tests.executed !== "unknown"
-          && runnerName(stage.command) === "node" && commandKind(stage.command, stage.args) === "test") {
-          entry.tests.runner = "node-test";
+      // Counting and excerpting read the whole log, which a verbose stage
+      // can make long; that processing is named once after ten seconds.
+      const processing = warnWhileRunning("stage log processing");
+      try {
+        if (stage.kind === "test") {
+          entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage)
+            || (runnerName(stage.command) === "cargo" && commandKind(stage.command, stage.args) === "test") });
+          // Attribute known focused counts to the runner we started, never to
+          // the shape of its output. Full gates keep their stage-kind contract.
+          if (!request.full && entry.tests.executed !== "unknown"
+            && runnerName(stage.command) === "node" && commandKind(stage.command, stage.args) === "test") {
+            entry.tests.runner = "node-test";
+          }
+          // The one thing besides its exit that fails a stage: its runners'
+          // own complete summaries counting failed tests.
+          if (entry.state === "passed" && entry.tests.failures > 0) {
+            entry.state = "failed";
+            entry.reported = `the runners' summaries count ${entry.tests.failures} failed tests and the command exited 0`;
+          }
         }
-        // The one thing besides its exit that fails a stage: its runners'
-        // own complete summaries counting failed tests.
-        if (entry.state === "passed" && entry.tests.failures > 0) {
-          entry.state = "failed";
-          entry.reported = `the runners' summaries count ${entry.tests.failures} failed tests and the command exited 0`;
-        }
-      }
-      entry.diagnostics = await diagnostics(entry.log, entry.state === "failed");
+        entry.diagnostics = await diagnostics(entry.log, entry.state === "failed");
+      } finally { processing(); }
       save(resultPath, result);
       if (entry.state === "failed") break;
     }
@@ -1242,7 +1340,11 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
     for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = result.error; }
   }
+  // The live result now holds provisional terminal fields. Through the waits
+  // before the terminal save, the stop lock and the last stop check, only the
+  // saved running record's heartbeat moves; the terminal save stops it.
   clearInterval(heartbeat);
+  const savedHeartbeat = startSavedHeartbeat(resultPath, result.heartbeat?.everyMs);
   // The same lock orders stop acceptance against this final terminal save.
   // No process is launched or waited on while the lock is held.
   const commit = async () => {
@@ -1259,6 +1361,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       delete result.interrupted;
       delete result.stop;
     }
+    clearInterval(savedHeartbeat);
     result.ended = new Date().toISOString();
     if (result.input?.kind === "commit" && (result.state !== "passed" || result.input.outcome !== "clean")) result.input.eligible = false;
     try { encodeRunRecord(result, "results.json"); }
@@ -1285,7 +1388,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       }
     } else await commit();
   }
-  finally { control?.close(); }
+  finally { clearInterval(savedHeartbeat); control?.close(); }
   return result;
 }
 
@@ -1301,7 +1404,7 @@ export function runLiveness(result, now = Date.now()) {
   const at = Date.parse(result.heartbeat?.at ?? "");
   const everyMs = result.heartbeat?.everyMs;
   if (!Number.isFinite(at) || !Number.isInteger(everyMs) || everyMs <= 0) return "unknown";
-  return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
+  return now - at > heartbeatStaleAfterMs(everyMs) ? "interrupted" : "running";
 }
 
 const completionReasons = new Set(["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed", "request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "preflight-failed",
@@ -1532,7 +1635,7 @@ export async function recoverRun(runDir, {
   }
   const lock = join(runDir, "recovery.lock");
   let locked = false;
-  try { closeSync(openSync(lock, "wx", 0o600)); locked = true; }
+  try { namedIfSlow("recovery lock", () => closeSync(openSync(lock, "wx", 0o600))); locked = true; }
   catch (error) { if (error.code !== "EEXIST") throw error; }
   try {
     // Gone is final: a dead executor writes nothing more. Read again under
@@ -1566,7 +1669,7 @@ export async function recoverRun(runDir, {
     write(path, result);
     return { settled: true, result };
   } finally {
-    if (locked) rmSync(lock, { force: true });
+    if (locked) namedIfSlow("recovery lock release", () => rmSync(lock, { force: true }));
   }
 }
 
@@ -1574,10 +1677,10 @@ export async function notifyRun(runDir, env = process.env, send = runCommand, la
   const targetFile = join(runDir, "notification.target.json");
   const messageFile = join(runDir, "notification.message.txt");
   let request = launchRequest;
-  if (!request && (!existsSync(targetFile) || !existsSync(messageFile))) request = completionRequest(runDir);
+  if (!request && (!exists(targetFile) || !exists(messageFile))) request = completionRequest(runDir);
   // New runs pin the route before execution; old frozen bodies keep their
   // original request route and key. Only new targets pin a second recipient.
-  if (!existsSync(targetFile)) {
+  if (!exists(targetFile)) {
     // Pin a legacy run's single recipient before its first retry. Never add
     // a next-owner send to a historical body. Concurrent retries read the
     // same published winner rather than use a local, possibly different intent.
@@ -1588,7 +1691,7 @@ export async function notifyRun(runDir, env = process.env, send = runCommand, la
   const result = readJson(join(runDir, "results.json"));
   if (!["passed", "failed"].includes(result.state) || !result.ended) throw usageFailure("cannot notify before terminal results are saved");
   const cli = validateNotification(target, env);
-  if (!existsSync(messageFile)) {
+  if (!exists(messageFile)) {
     publish(messageFile, await summarize(runDir, { request, result }));
   }
   const recipients = [{ to: target.notifyTo, key: `engram-tests:${target.runId}` }];
@@ -1601,7 +1704,9 @@ export async function notifyRun(runDir, env = process.env, send = runCommand, la
       "--idempotency-key", key, "--json"];
     const log = join(runDir, `notification-${randomUUID()}.log`);
     let outcome;
-    try { outcome = await send(cli, args, { cwd: target.root, env, log }); }
+    // The mailbox CLI can be slow on a busy host; a send still running after
+    // ten seconds is named once, and the warning never changes its outcome.
+    try { outcome = await asOneOperation("completion notification", () => send(cli, args, { cwd: target.root, env, log })); }
     catch (error) { outcome = { code: null, error: error.message }; }
     deliveries.push({ ...outcome, log, attempted: new Date().toISOString(), to, key });
   }
@@ -1654,7 +1759,10 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
   if (request.detached !== true) throw new Error("detached launch requires a run created with detached: true");
   if (request.notifyTo) validateNotification(request, env);
   // No inherited terminal handles: process lifetime is independent of the turn.
-  const fd = openSync(join(runDir, "launcher.log"), "wx", 0o600);
+  const fd = namedIfSlow("worker log creation", () => openSync(join(runDir, "launcher.log"), "wx", 0o600));
+  // From the spawn to the worker's readiness message: a cold start past ten
+  // seconds is named. Settled once the worker is ready or has failed.
+  const starting = warnWhileRunning("worker startup");
   try {
     const child = spawn(process.execPath, [script, "_run", runDir],
       { detached: true, windowsHide: true, stdio: ["ignore", fd, fd, "ipc"], env });
@@ -1678,12 +1786,14 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
         done();
       });
     });
+    starting();
     child.unref();
     write(startupReceipt(runDir, child.pid, request.notifyTo ? `mailbox:${request.notifyTo}` : "host-test-run-wait")
       + "End your turn; do not poll. Missing terminal results mean running/interrupted, not PASS; "
       + `\`node scripts/test-launcher.mjs summary "${runDir}"\` tells which from the heartbeat.\n`);
     return { child, completion };
   } catch (error) {
+    starting();
     // A worker can finish an already-recorded input refusal before it sends
     // readiness. Preserve that fixed reason instead of calling it a crash.
     let reason = "worker-startup-failed";
@@ -1710,7 +1820,7 @@ function workerFailure(runDir, error) {
     const workerLog = join(runDir, `worker-error-${randomUUID()}.log`);
     const text = `${inspect({ stack: error?.stack ?? String(error), cause: error?.cause },
       { customInspect: false, depth: 8 })}\n`;
-    writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 });
+    namedIfSlow("run diagnostic write", () => writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 }));
     failure.workerDiagnosticLog = workerLog;
   } catch {
     // Missing paths, disk space or permissions cannot mask the worker failure.
@@ -1837,7 +1947,7 @@ export function selectDefaultInput(root, env = process.env, status = captureComm
 
 // Node resolves this module's own path through links (macOS temp paths run
 // through /var -> /private/var), so resolve the invoked path the same way.
-if (process.argv[1] && realpathSync(process.argv[1]) === script) {
+if (process.argv[1] && namedIfSlow("launcher entry", () => realpathSync(process.argv[1])) === script) {
   main(process.argv.slice(2)).catch(async (error) => {
     if (error.runDir) {
       if (error.reason === "input-capture-failed"
@@ -1851,5 +1961,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === script) {
       if (error.retry === "notify") process.stderr.write(`retry: notify ${quote(error.runDir)}\n`);
     } else console.error(`FAIL launcher: ${error.safeCompletionText ?? "request-or-runtime-failed"}`);
     process.exitCode = 1;
+  }).finally(async () => {
+    // A warning still on its way out, including one a watcher thread is
+    // writing, gets at most the bound before the process ends.
+    endWithinWarningBound();
+    await warningSink.flush();
   });
 }

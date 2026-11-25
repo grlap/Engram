@@ -542,7 +542,7 @@ explicit rollback succeeded before `COMMIT`. Retry only the exact retained
 operation and unchanged payload, with its original idempotency key if it has
 one, on the current connection. It does not resolve an earlier uncertain
 attempt, prove the request was unsent or mean that no process started. A host
-timeout without this response remains unknown. For the cooperative 15-second
+timeout without this response remains unknown. For the cooperative one-minute
 allowance, late commit settlement and bounded escalation after repeated
 expiry, see [Request allowance](execution-observability.md#request-allowance).
 

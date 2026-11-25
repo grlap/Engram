@@ -5,7 +5,8 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { CutoverError, fingerprint, inventory, verifyPreservation } from "./eo-cutover-values.mjs";
+import { CutoverError, fingerprint as hashFile, inventory, verifyPreservation } from "./eo-cutover-values.mjs";
+import { asOneOperation, endWithinWarningBound, warningSink, warnWhileRunning } from "./operation-warning.mjs";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const helper = path.join(repository, "scripts", "eo-cutover-host.ps1");
@@ -57,9 +58,21 @@ async function child(command, args) {
     });
   });
 }
+// Each command this script waits for, and each store copy, fingerprint or
+// export validation, is named once on stderr if it is still running after
+// ten seconds. A step inside one of them is covered by it and not named again;
+// a command's own stderr is not read.
+async function waited(operation, run) {
+  return asOneOperation(operation, run);
+}
+// Hashing a whole store or binary file is one operation on its own; inside a
+// store copy or fingerprint it is covered by that operation.
+async function fingerprint(file) {
+  return waited("cutover file fingerprint", () => hashFile(file));
+}
 async function host(action, target) {
   if (process.platform !== "win32") fail("windows_required", "preflight");
-  const result = await child("pwsh", ["-NoProfile", "-NonInteractive", "-File", helper, "-Action", action, "-Target", target, "-EnginePid", String(process.pid)]);
+  const result = await waited(`cutover host ${action}`, () => child("pwsh", ["-NoProfile", "-NonInteractive", "-File", helper, "-Action", action, "-Target", target, "-EnginePid", String(process.pid)]));
   if (result.code !== 0) fail("host_check_failed", action);
   return result.stdout.trim();
 }
@@ -68,7 +81,7 @@ async function guard(scope, home) {
   if (await host(scope === "live" ? "Consumers" : "RehearsalConsumers", home) !== "0") fail("engram_consumer_running", "quiescence");
 }
 async function cli(binary, args, stage, project, invoke) {
-  const result = await invoke(binary, args);
+  const result = await waited(`cutover ${stage}`, () => invoke(binary, args));
   if (result.code !== 0) fail("engram_command_failed", stage, project, { exit_code: result.code });
   try { return JSON.parse(result.stdout); } catch { fail("engram_response_invalid", stage, project); }
 }
@@ -109,27 +122,34 @@ function storePath(home, project) {
   const directory = createHash("sha256").update(project.id).digest("hex");
   return path.join(home, "projects", directory, "engram.db");
 }
+// Hashing every file of a store is one operation.
 async function snapshot(database) {
-  const result = {};
-  for (const suffix of suffixes) {
-    const file = database + suffix;
-    await noLinks(file);
-    if (await exists(file)) {
-      const stat = await fs.stat(file);
-      if (!stat.isFile()) fail("store_packet_not_file", "preflight");
-      result[suffix] = { bytes: stat.size, fingerprint: await fingerprint(file) };
+  return waited("cutover store fingerprint", async () => {
+    const result = {};
+    for (const suffix of suffixes) {
+      const file = database + suffix;
+      await noLinks(file);
+      if (await exists(file)) {
+        const stat = await fs.stat(file);
+        if (!stat.isFile()) fail("store_packet_not_file", "preflight");
+        result[suffix] = { bytes: stat.size, fingerprint: await fingerprint(file) };
+      }
     }
-  }
-  if (!result[""]) fail("store_missing", "preflight");
-  return result;
+    if (!result[""]) fail("store_missing", "preflight");
+    return result;
+  });
 }
 async function sameSnapshot(database, expected) {
   return JSON.stringify(await snapshot(database)) === JSON.stringify(expected);
 }
+// Copying a store's files and hashing both sides is one operation, named once
+// if a large store keeps it past ten seconds.
 async function copyPacket(from, to, expected) {
-  await fs.mkdir(path.dirname(to), { recursive: true, mode: 0o700 });
-  for (const suffix of Object.keys(expected)) await fs.copyFile(from + suffix, to + suffix, fs.constants.COPYFILE_EXCL);
-  if (!await sameSnapshot(from, expected) || !await sameSnapshot(to, expected)) fail("source_changed_during_capture", "capture");
+  return waited("cutover store copy", async () => {
+    await fs.mkdir(path.dirname(to), { recursive: true, mode: 0o700 });
+    for (const suffix of Object.keys(expected)) await fs.copyFile(from + suffix, to + suffix, fs.constants.COPYFILE_EXCL);
+    if (!await sameSnapshot(from, expected) || !await sameSnapshot(to, expected)) fail("source_changed_during_capture", "capture");
+  });
 }
 async function census(home, projects) {
   const expected = new Set(projects.map(project => path.basename(path.dirname(storePath(home, project)))));
@@ -217,7 +237,14 @@ async function validateRecovery(journal) {
   }
 }
 
+// A recovery or a rollback is one command, named once if it is still running
+// after ten seconds, journal writes and file moves included; the commands,
+// copies and fingerprints inside it still name themselves.
 export async function recover(journalFile, options = {}) {
+  const settled = warnWhileRunning("cutover recovery");
+  try { return await recoverSteps(journalFile, options); } finally { settled(); }
+}
+async function recoverSteps(journalFile, options) {
   const emit = options.emit ?? (value => console.log(JSON.stringify(value)));
   let journal;
   try { journal = JSON.parse(await fs.readFile(safePath(journalFile), "utf8")); } catch { fail("journal_unreadable", "recovery"); }
@@ -319,7 +346,14 @@ export async function recover(journalFile, options = {}) {
   }
 }
 
+// A cutover is one command, named once if it is still running after ten
+// seconds, journal writes, binary copies and file moves included; the
+// commands, copies and fingerprints inside it still name themselves.
 export async function executePlan(input, options) {
+  const settled = warnWhileRunning("cutover plan");
+  try { return await executePlanSteps(input, options); } finally { settled(); }
+}
+async function executePlanSteps(input, options) {
   const started = performance.now();
   const plan = validatePlan(input);
   const scope = options.apply ? "live" : "rehearsal";
@@ -389,7 +423,7 @@ export async function executePlan(input, options) {
     if (!ready.ready || !identity(plan.old, ready) || !selectedStore(ready, project, project.captured)) fail("old_readiness_identity_differs", "old_readiness", project.name);
     project.export = path.join(work, `${project.name}.old.jsonl`);
     await cli(binaries.old, ["migration", "export", "--database", project.captured, "--out", project.export], "export", project.name, invoke);
-    project.before = await inventory(project.export);
+    project.before = await waited("cutover export validation", () => inventory(project.export));
     const count = [...project.before.formerPlanning.values()].reduce((sum, value) => sum + value, 0);
     emit({ stage: "old_planning_count", project: project.name, count });
     for (const [id, value] of project.before.formerPlanning) emit({ stage: "old_planning_project_count", project: project.name,
@@ -409,7 +443,8 @@ export async function executePlan(input, options) {
     if ((importedPacket["-wal"]?.bytes ?? 0) || (importedPacket["-journal"]?.bytes ?? 0)) fail("prepared_writes_pending", "import", project.name);
     const nextExport = path.join(work, `${project.name}.new.jsonl`);
     await cli(binaries.final, ["migration", "export", "--database", project.prepared, "--out", nextExport], "new_export", project.name, invoke);
-    project.comparison = verifyPreservation(project.before, await inventory(nextExport), project.importReport);
+    const exportedAgain = await waited("cutover export validation", () => inventory(nextExport));
+    project.comparison = verifyPreservation(project.before, exportedAgain, project.importReport);
     const ready = await cli(binaries.final, [...context(project, preparedHome), "readiness", "--json"], "prepared_readiness", project.name, invoke);
     if (!ready.ready || !identity(plan.final, ready) || !selectedStore(ready, project, project.prepared)) fail("prepared_readiness_identity_differs", "prepared_readiness", project.name);
     const packet = await snapshot(project.prepared);
@@ -498,10 +533,17 @@ async function main(args) {
   }
   if (!flags.has("--plan") || !flags.has("--work-directory")) fail("arguments_invalid", "preflight");
   let plan;
-  try { plan = JSON.parse(await fs.readFile(safePath(flags.get("--plan")), "utf8")); } catch { fail("plan_unreadable", "preflight"); }
+  // Reading the plan, before the cutover starts, is an operation of its own.
+  try { plan = await waited("cutover plan read", async () => JSON.parse(await fs.readFile(safePath(flags.get("--plan")), "utf8"))); }
+  catch { fail("plan_unreadable", "preflight"); }
   return executePlan(plan, { apply: flags.has("--apply"), workDirectory: flags.get("--work-directory") });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main(process.argv.slice(2)).catch(error => { console.error(JSON.stringify(safeError(error))); process.exitCode = 1; });
+  main(process.argv.slice(2)).catch(error => { console.error(JSON.stringify(safeError(error))); process.exitCode = 1; })
+    .finally(async () => {
+      // A warning still on its way out gets at most the bound before the end.
+      endWithinWarningBound();
+      await warningSink.flush();
+    });
 }

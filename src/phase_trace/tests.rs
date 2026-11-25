@@ -183,8 +183,7 @@ pub(super) fn observe_begin_immediate_start(event: &rusqlite::trace::TraceEvent<
 // call waits in BEGIN IMMEDIATE until the other writer commits. The hold is
 // counted from that statement's start, so a host too busy to reach it soon
 // cannot shorten the wait it measures. Retained limit: the releaser must commit
-// inside the product's 5 s busy timeout, about 4.6 s after its hold, or the
-// write is refused.
+// inside the product's one-minute busy timeout, or the write is refused.
 #[test]
 fn a_contending_writer_raises_begin_immediate() {
     let agent = agent("phase-trace-contention");
@@ -1371,6 +1370,14 @@ fn try_add(
 // SQLITE_BUSY too, so the timed-out BEGIN IMMEDIATE shows its wait.
 #[test]
 fn a_busy_timeout_is_unchanged_by_the_trace() {
+    // The stores wait a short busy timeout, so both writers wait it out on the
+    // real clock in seconds rather than the product's minute.
+    crate::storage::with_store_lock_wait(BUSY_WAIT, busy_timeout_is_unchanged_by_the_trace);
+}
+
+const BUSY_WAIT: Duration = Duration::from_secs(5);
+
+fn busy_timeout_is_unchanged_by_the_trace() {
     let home = crate::test_support::temp_home().expect("temporary home");
     let database = home.path().join("engram.sqlite3");
     let traced_verbs = verbs_on(&database, "phase-trace-traced");
@@ -1430,9 +1437,10 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
         crate::storage::StoreError::WorkWriterAdmissionRefused { budget_ms, .. } => *budget_ms,
         other => panic!("not a writer admission refusal: {other:?}"),
     };
-    assert_eq!(configured(&traced.error), 5_000);
-    assert_eq!(configured(&untraced.error), 5_000);
-    let bound = Duration::from_secs(4);
+    let busy_ms = u64::try_from(BUSY_WAIT.as_millis()).unwrap();
+    assert_eq!(configured(&traced.error), busy_ms);
+    assert_eq!(configured(&untraced.error), busy_ms);
+    let bound = BUSY_WAIT.saturating_sub(Duration::from_secs(1));
     assert!(traced_elapsed >= bound, "{traced_elapsed:?}");
     assert!(untraced_elapsed >= bound, "{untraced_elapsed:?}");
     assert_eq!(

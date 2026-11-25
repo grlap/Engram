@@ -9,7 +9,7 @@ use super::{
     ProjectMemoryAdvertisement, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
     ProjectMemoryListingCut, ProjectMemoryMutationReceipt, Redactor, RememberProjectMemoryRequest,
     SCHEMA_VERSION, Scope, Sensitivity, SessionId, SqliteStore, StoreError, StoredProjectMemory,
-    TransactionBehavior, fts_query, normalize_project_memory_query, params,
+    fts_query, normalize_project_memory_query, params,
 };
 
 mod delivery;
@@ -293,9 +293,10 @@ impl SqliteStore {
         let work_schema_version = self.opened_work_schema_version();
         // Refuse invalid input before registering a process-default session.
         validate_remember_request(request, edit, redactor)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "project memory write admission",
+        )?;
         if let Some(now) = register_at {
             super::work::register_process_default_in_write(
                 &transaction,
@@ -606,9 +607,10 @@ impl SqliteStore {
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
         validate_forget_request(request, redactor)?;
         let work_schema_version = self.opened_work_schema_version();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "project memory write admission",
+        )?;
         if let Some(now) = register_at {
             super::work::register_process_default_in_write(
                 &transaction,

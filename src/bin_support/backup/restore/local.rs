@@ -268,8 +268,11 @@ fn finish(
 /// The existing local replacement policy: fold and truncate WAL under an
 /// exclusive SQLite lock. Continued destination exclusion is the host's job.
 fn checkpoint_replacement(database: &Path) -> Result<()> {
+    let _warning = engram::operation_time::Warning::start("restore replacement lock");
     let old = engram::storage::open_sqlite_file(database, rusqlite::OpenFlags::default())
         .with_context(|| format!("failed to open {} for replacement", database.display()))?;
+    // Wait the shared minute for a writer, not SQLite's shorter default.
+    old.busy_timeout(engram::operation_time::MINIMUM)?;
     old.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN IMMEDIATE; COMMIT;")
         .context("failed to take the store being replaced; is another Engram process using it?")?;
     let (busy, log_frames, checkpointed): (i64, i64, i64) = old

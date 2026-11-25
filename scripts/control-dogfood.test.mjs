@@ -152,6 +152,8 @@ const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
 const CONTROL_TRACE_KEY = "engram_control_phase_trace";
 // Ends a wait for what will never come. It says nothing about speed.
 const HANG_GUARD_MS = 60000;
+// Engram's one-minute store wait, plus a minute for process start and answer.
+const STARTUP_BUSY_GUARD_MS = 2 * HANG_GUARD_MS;
 
 function controlTraceLines(stderr) {
   return stderr
@@ -1428,7 +1430,9 @@ test("failed control startup answers one frame, exits, and never dispatches muta
     };
     const before = snapshot();
     writer = await holdSqliteWriter(database, home);
-    const busy = spawnNative(args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: HANG_GUARD_MS });
+    // Retained limit: startup really waits out its one-minute allowance on the
+    // held store before it answers busy, so this hang guard sits well above it.
+    const busy = spawnNative(args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: STARTUP_BUSY_GUARD_MS });
     assert.equal(busy.error, undefined);
     assertRefusal(busy, "control_startup_busy", "Engram control startup could not acquire the store.");
     await writer.close();

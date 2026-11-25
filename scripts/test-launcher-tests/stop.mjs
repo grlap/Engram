@@ -6,7 +6,8 @@ import { once } from "node:events";
 import { basename, dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { pathToFileURL } from "node:url";
-import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "../launcher-stop.mjs";
+import { removeWithRetry, requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "../launcher-stop.mjs";
+import { warningSink } from "../operation-warning.mjs";
 import { createRun, executable, executeRun, machineRecord, notifyRun, processIdentity, recoverRun, sameCreation, summarize } from "../test-launcher.mjs";
 import { fixtureHome, removeFixtureHomes } from "../test-temp.mjs";
 
@@ -82,12 +83,13 @@ test("unreadable stop requests have a named terminal completion reason", async (
   });
 });
 
-test("stop intent reads retry transient errors before stopping or latching failure", () => {
+test("stop intent reads retry transient errors for a minute before stopping or latching failure", () => {
   const request = { runId: `test-${randomUUID()}` };
-  let calls = 0, cancellations = 0;
+  let calls = 0, cancellations = 0, clock = 0;
+  const now = () => clock;
   const intent = { actor: "operator", reason: "superseded" };
   const transient = () => Object.assign(new Error("scanner holds request"), { code: "EPERM" });
-  const control = stopController("fixture", request, { retryAttempts: 3, readIntent() {
+  const control = stopController("fixture", request, { now, readIntent() {
     calls += 1;
     if (calls < 3) throw transient();
     return intent;
@@ -99,24 +101,80 @@ test("stop intent reads retry transient errors before stopping or latching failu
     assert.deepEqual([calls, cancellations], [3, 1]);
   } finally { control.close(); }
 
+  // Refusals within the minute neither end the run nor latch; one warning
+  // marks ten seconds of them, and the minute's end latches the failure.
   let failedCalls = 0;
-  const unreadable = stopController("fixture", request, { retryAttempts: 3, readIntent() {
+  const warnings = [];
+  clock = 0;
+  const unreadable = stopController("fixture", request, { now, warn: (text) => warnings.push(text), readIntent() {
     failedCalls += 1;
     throw Object.assign(new Error("scanner holds request"), { code: "EBUSY" });
   } });
   try {
-    assert.doesNotThrow(() => unreadable.check());
-    assert.doesNotThrow(() => unreadable.check());
+    for (const at of [0, 200, 10_000, 30_000, 59_999]) {
+      clock = at;
+      assert.doesNotThrow(() => unreadable.check(), `refused at ${at} ms`);
+    }
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /^warning: stop request read is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=10000\n$/u);
+    clock = 60_000;
     assert.throws(() => unreadable.check(), (error) => error.reason === "stop-request-unreadable");
-    assert.equal(failedCalls, 3);
+    assert.equal(failedCalls, 6);
   } finally { unreadable.close(); }
+
+  // An episode past ten seconds is named once however it ends: by a read that
+  // succeeds, by a refusal first seen past the minute, or by a permanent error.
+  for (const [steps, outcome] of [
+    [[[0, "busy"], [9_990, "busy"], [10_020, "read"]], "read"],
+    [[[0, "busy"], [60_000, "busy"]], "unreadable"],
+    [[[0, "busy"], [9_990, "busy"], [10_020, "invalid"]], "invalid"],
+  ]) {
+    warnings.length = 0;
+    let state = "busy";
+    const episode = stopController("fixture", request, { now, warn: (text) => warnings.push(text), readIntent() {
+      if (state === "read") return null;
+      if (state === "invalid") throw Object.assign(new Error("malformed request"), { reason: "stop-request-invalid" });
+      throw Object.assign(new Error("scanner holds request"), { code: "EBUSY" });
+    } });
+    try {
+      let ended = "read";
+      for (const [at, next] of steps) {
+        clock = at;
+        state = next;
+        try { episode.check(); } catch (error) {
+          ended = { "stop-request-unreadable": "unreadable", "stop-request-invalid": "invalid" }[error.reason] ?? "other";
+        }
+      }
+      assert.equal(ended, outcome);
+      assert.equal(warnings.length, 1, `${outcome}: ${warnings.join("")}`);
+    } finally { episode.close(); }
+  }
+
+  // A single read that itself takes eleven seconds is named too, whether it
+  // finds no request or a malformed one.
+  for (const [read, outcome] of [[() => null, "read"],
+    [() => { throw Object.assign(new Error("malformed request"), { reason: "stop-request-invalid" }); }, "invalid"]]) {
+    warnings.length = 0;
+    clock = 0;
+    const slow = stopController("fixture", request, { now, warn: (text) => warnings.push(text), readIntent() {
+      clock += 11_000;
+      return read();
+    } });
+    try {
+      let ended = "read";
+      try { slow.check(); } catch (error) { ended = error.reason === "stop-request-invalid" ? "invalid" : "other"; }
+      assert.equal(ended, outcome);
+      assert.equal(warnings.length, 1, `${outcome}: ${warnings.join("")}`);
+      assert.match(warnings[0], /elapsed_ms=11000\n$/u);
+    } finally { slow.close(); }
+  }
 });
 
 test("final stop check settles a transient request before terminal commitment", async () => {
   const request = { runId: `test-${randomUUID()}` };
   const intent = { actor: "operator", reason: "superseded" };
   let calls = 0;
-  const control = stopController("fixture", request, { retryAttempts: 3, retryDelayMs: 0, readIntent() {
+  const control = stopController("fixture", request, { retryDelayMs: 0, readIntent() {
     calls += 1;
     if (calls === 1) throw Object.assign(new Error("scanner holds request"), { code: "EPERM" });
     return intent;
@@ -178,13 +236,62 @@ test("stop lock removal retries transient refusals without losing an action's re
     assert.equal(result, "committed");
     assert.equal(calls, 3);
     assert.equal(existsSync(join(runDir, "stop.control.lock")), false);
+    // A refusal lasting a whole second, well past the old twenty tries, is
+    // still waited out, so no lock is left for the next stop to wait on.
+    const refusedUntil = performance.now() + 1_000;
+    assert.equal(await withStopLock(runDir, () => "waited out", { remove(path) {
+      if (performance.now() < refusedUntil) throw Object.assign(new Error("scanner holds lock"), { code: "EBUSY" });
+      unlinkSync(path);
+    } }), "waited out");
+    assert.equal(existsSync(join(runDir, "stop.control.lock")), false);
+    // One refused past its window is reported, and the action still committed.
     const failures = [];
     assert.equal(await withStopLock(runDir, () => "still committed", {
+      releaseWindowMs: 0,
       remove() { throw Object.assign(new Error("retained"), { code: "EBUSY" }); },
       onReleaseError(error) { failures.push(error.code); },
     }), "still committed");
     assert.deepEqual(failures, ["EBUSY"]);
   });
+});
+
+test("a removal refused past the warning time names itself once and still completes", async (t) => {
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
+  const refusedUntil = performance.now() + 200;
+  let removed = false;
+  await removeWithRetry("fixture", { warnAfter: 50, operation: "stop control lock release", remove() {
+    if (performance.now() < refusedUntil) throw Object.assign(new Error("scanner holds lock"), { code: "EPERM" });
+    removed = true;
+  } });
+  assert.equal(removed, true);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^warning: stop control lock release is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=\d+\n$/u);
+});
+
+// A synchronous removal can hold the warning timer back past its time; the
+// removal still names itself once as it settles, by success or by refusal.
+test("a removal whose last call crosses ten seconds is named as it settles", async (t) => {
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
+  for (const [steps, outcome] of [
+    [[[9_990, "EPERM"], [20, null]], "removed"],
+    [[[11_000, "ENOENT"]], "refused"],
+  ]) {
+    warnings.length = 0;
+    let clock = 0, call = 0;
+    let ended = "removed";
+    try {
+      await removeWithRetry("fixture", { now: () => clock, delayMs: 0, remove() {
+        const [took, code] = steps[call++];
+        clock += took;
+        if (code) throw Object.assign(new Error(code), { code });
+      } });
+    } catch { ended = "refused"; }
+    assert.equal(ended, outcome);
+    assert.equal(warnings.length, 1, `${outcome}: ${warnings.join("")}`);
+    assert.match(warnings[0], new RegExp(`elapsed_ms=${steps.reduce((sum, [took]) => sum + took, 0)}\n$`, "u"));
+  }
 });
 
 for (const code of ["EPERM", "EACCES", "EBUSY"]) test(`stop lock retries ${code} acquisition and still saves its terminal action`, async () => {
@@ -206,16 +313,33 @@ for (const code of ["EPERM", "EACCES", "EBUSY"]) test(`stop lock retries ${code}
   });
 });
 
-// Retained limit: this waits out the launcher's real 5 s stop lock, which is product
-// behaviour. The test timeout is only a hang guard well above it.
-test("a leftover stop lock cannot discard a terminal result or its notification", { timeout: 120_000 }, async () => {
+// Retained limit: this waits out the launcher's real one-minute stop lock, which is
+// product behaviour. The test timeout is only a hang guard well above it.
+test("a leftover stop lock cannot discard a terminal result or its notification", { timeout: 180_000 }, async () => {
   await repository(async (root) => {
-    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")], notifyTo: "fixture-parent" },
+      { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "1000" });
     const path = join(runDir, "request.json");
     writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
     await requestStop(basename(runDir), { root, actor: "operator", reason: "superseded" });
     writeFileSync(join(runDir, "stop.control.lock"), "left by a dead caller");
-    const result = await executeRun(runDir, env);
+    // While the terminal save waits out the lock, the saved record stays a
+    // running one whose heartbeat keeps moving.
+    const beats = new Set();
+    let provisional = false;
+    const watch = setInterval(() => {
+      try {
+        const saved = json(join(runDir, "results.json"));
+        if (saved.ended) return;
+        beats.add(saved.heartbeat.at);
+        if (saved.exitCode !== undefined && saved.exitCode !== null) provisional = true;
+      } catch { /* the launcher may be mid-save */ }
+    }, 250);
+    let result;
+    try { result = await executeRun(runDir, env); }
+    finally { clearInterval(watch); }
+    assert.ok(beats.size >= 10, `the heartbeat moved through the lock wait: ${beats.size} beats`);
+    assert.equal(provisional, false, "no provisional terminal field was saved before the terminal save");
     assert.deepEqual([result.state, result.reason, result.interrupted], ["failed", "stopped", true]);
     assert.ok(result.ended);
     assert.match(result.stopLockWarning, /timed out/u);
@@ -466,11 +590,15 @@ if (process.platform === "win32") test("native cleanup confirmation returns an u
     const path = join(root, "scripts", "launcher-process-job.cs");
     const source = readFileSync(path, "utf8");
     // The real job is empty; inject only the observed membership count and a
-    // shorter confirmation allowance, simulating an OS cleanup that stalls.
-    const changed = source.replace("const int CleanupBudgetMs = 30000;", "const int CleanupBudgetMs = 100;")
+    // shorter confirmation allowance and warning time, simulating an OS
+    // cleanup that stalls.
+    // Keyed on the names, so the production values can change freely.
+    const changed = source.replace(/(\bCleanupBudgetMs = )[^;]+;/u, (_, name) => `${name}100;`)
+      .replace(/(\bWarnAfterMs = )[^;]+;/u, (_, name) => `${name}50;`)
       .replace("active = accounting.ActiveProcesses;", "active = accounting.ActiveProcesses + 1;");
-    assert.notEqual(changed, source);
-    assert.ok(changed.includes("active = accounting.ActiveProcesses + 1;"));
+    for (const injected of ["CleanupBudgetMs = 100;", "WarnAfterMs = 50;", "active = accounting.ActiveProcesses + 1;"]) {
+      assert.ok(changed.includes(injected), injected);
+    }
     writeFileSync(path, changed);
     const module = await import(pathToFileURL(local).href);
     const runDir = await module.createRun({ root, stages: [stage("contained")] }, env);
@@ -481,6 +609,10 @@ if (process.platform === "win32") test("native cleanup confirmation returns an u
     const receipt = readdirSync(runDir).find((name) => /^job-.*\.json$/u.test(name));
     assert.deepEqual([json(join(runDir, receipt)).CleanupConfirmed, json(join(runDir, receipt)).ActiveProcesses], [false, 1]);
     assert.ok(result.ended);
+    // The stalled confirmation named itself once in the stage log.
+    const warned = readFileSync(logPath(runDir, result.stages[0]), "utf8")
+      .match(/^warning: process job cleanup confirmation is still running after 10 seconds; attempt=\d+\/0; elapsed_ms=\d+\r?$/gmu);
+    assert.equal(warned?.length, 1);
   });
 });
 
@@ -597,8 +729,8 @@ if (process.platform === "win32") for (const ancestor of ["target", "target/tmp"
   });
 }
 
-// Retained limit: the same real 5 s stop lock, under the same hang guard.
-if (process.platform === "win32") test("a leftover stop lock after a clean stage preserves the passing terminal save", { timeout: 120_000 }, async () => {
+// Retained limit: the same real one-minute stop lock, under the same hang guard.
+if (process.platform === "win32") test("a leftover stop lock after a clean stage preserves the passing terminal save", { timeout: 180_000 }, async () => {
   await repository(async (root) => {
     const { module, runDir } = await containedFixture(root, (source) => source,
       "require('node:fs').writeFileSync(process.env.FIXTURE_STOP_LOCK, 'stale');");

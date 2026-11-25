@@ -164,7 +164,7 @@ or skip-worktree flags; this is an accepted limitation of the status check.
 SHA-256 repositories remain unsupported. Git's file-mode and line-ending rules,
 repository ignores, local excludes and attributes, and stat-cache limits remain
 part of this predicate; it is not a raw-byte identity claim. All queries share
-an eight-second deadline and a 1 MiB output bound. Exceeding either reports the
+a one-minute deadline and a 1 MiB output bound. Exceeding either reports the
 root unavailable rather than clean.
 
 Original producer attribution and current operation authority remain separate.

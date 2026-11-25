@@ -17,7 +17,7 @@ use engram::{HostPathPolicy, ProjectId, SqliteStore, storage::RecordedLanding};
 use super::refusals::{Phase, report_error, with_build};
 
 /// How long one git call may run before the check gives up on it.
-const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const GIT_TIMEOUT: Duration = engram::operation_time::MINIMUM;
 
 /// The most output the check reads from one git call; the one call it reads
 /// prints a single object name.
@@ -82,6 +82,7 @@ fn spawn_failure(error: &std::io::Error) -> GitRun {
 }
 
 fn run(mut command: Command) -> GitRun {
+    let _warning = engram::operation_time::Warning::start("doctor landing Git check");
     match command.spawn() {
         Ok(mut child) => wait(&mut child, GIT_TIMEOUT),
         Err(error) => spawn_failure(&error),
@@ -103,6 +104,7 @@ fn run_reading(command: Command) -> (GitRun, String) {
 /// answer. A git that exits right at the bound still gets a second for its
 /// output to arrive.
 fn run_reading_within(mut command: Command, bound: Duration) -> (GitRun, String) {
+    let _warning = engram::operation_time::Warning::start("doctor landing Git check");
     command.stdout(Stdio::piped());
     let started = Instant::now();
     let mut child = match command.spawn() {
@@ -393,6 +395,9 @@ pub(crate) fn check_landings(
     repository: &Path,
     json: bool,
 ) -> Result<()> {
+    // A sweep of many individually quick Git checks can pass ten seconds;
+    // each check still names its own wait.
+    let _warning = engram::operation_time::Warning::start("doctor landing audit");
     let store = match SqliteStore::open_with_host_path_identity(database, identity) {
         Ok(store) => store,
         Err(error) => return report_error(database, project_id, &error, json, Phase::Open),

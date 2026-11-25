@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-const GIT_BOUND: Duration = Duration::from_secs(30);
+const GIT_BOUND: Duration = crate::operation_time::MINIMUM;
 
 pub(super) fn inspect(
     marker: &Path,

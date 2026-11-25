@@ -54,6 +54,8 @@ mod restore_copy;
 mod store_copy;
 mod verification_applicability;
 use lock_wait::LockWait;
+#[cfg(test)]
+pub(crate) use lock_wait::with_store_lock_wait;
 use open_guard::OpenGuard;
 #[cfg(test)]
 pub(crate) use open_guard::again_while_another_opens;
@@ -131,13 +133,15 @@ impl SqliteStore {
     /// Never retry a refusal with a writable connection. SQLite may recreate
     /// a shared-memory coordination sidecar, but not write database/WAL bytes.
     pub(crate) fn open_existing_read_only(path: &Path) -> Result<Self, StoreError> {
+        // A read-only open can wait a minute for a writer, as a writable one can.
+        let _warning = crate::operation_time::Warning::start("store read-only open");
         let started = crate::phase_trace::start();
         let opened = Self::open_existing_read_only_untraced(path);
         Self::traced_open(started, opened)
     }
 
     fn open_existing_read_only_untraced(path: &Path) -> Result<Self, StoreError> {
-        Self::open_existing_read_only_with(path, ProtocolRetry::Once)
+        Self::open_existing_read_only_with(path, ProtocolRetry::UntilWaitEnds)
     }
 
     fn open_existing_read_only_with(path: &Path, retry: ProtocolRetry) -> Result<Self, StoreError> {
@@ -146,7 +150,7 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(lock_wait::store_lock_wait()),
             retry,
         )
     }
@@ -179,6 +183,9 @@ impl SqliteStore {
         host_path_policy: Option<HostPathPolicy>,
     ) -> Result<super::StoreReadiness, StoreError> {
         let store = Self::open_existing_read_only(path)?;
+        // The open names its own wait. Verifying a long policy history after
+        // it is a separate step that can pass ten seconds.
+        let _warning = crate::operation_time::Warning::start("store readiness verification");
         let snapshot = store.connection.unchecked_transaction()?;
         Self::preflight_host_path_policy(&snapshot, host_path_policy)?;
         let policy = Self::verify_control_policy_history(&snapshot)?;
@@ -213,6 +220,7 @@ impl SqliteStore {
     pub fn diagnose_control_policy_recovery(
         path: &Path,
     ) -> Result<ControlPolicyRecoveryReport, StoreError> {
+        let _warning = crate::operation_time::Warning::start("control policy recovery read");
         if !path.is_file() {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control-policy recovery target {} is not an existing file",
@@ -220,7 +228,7 @@ impl SqliteStore {
             )));
         }
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(lock_wait::store_lock_wait())?;
         connection.pragma_update(None, "query_only", true)?;
         Self::diagnose_control_policy_records_on(&connection)
     }
@@ -241,6 +249,8 @@ impl SqliteStore {
     /// current and valid, repair cannot commit, or post-repair verification
     /// fails.
     pub fn repair_rebuildable_projections(path: &Path) -> Result<IntegrityReport, StoreError> {
+        // Covers the open, the writer wait, the rebuild and verification alike.
+        let _warning = crate::operation_time::Warning::start("projection repair");
         let connection = Self::open_projection_maintenance(path, false)?;
 
         let work_schema_version = work::schema_version(&connection)?;
@@ -515,7 +525,7 @@ impl SqliteStore {
         let store = Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
+            LockWait::Timeout(lock_wait::store_lock_wait()),
             ProtocolRetry::Never,
         )?;
         if let Some(interrupt) = interrupt {
@@ -557,15 +567,15 @@ impl SqliteStore {
         path: impl AsRef<Path>,
         identity: Option<HostPathPolicy>,
     ) -> Result<Self, StoreError> {
-        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::Once)
+        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::UntilWaitEnds)
     }
 
     /// Opens a store as [`Self::open_with_host_path_identity`] does, for a
-    /// control host's call, which its host bounds by a deadline. The open
-    /// does not start again after SQLite's locking-protocol refusal: that
-    /// refusal already took SQLite about ten seconds, and another attempt
-    /// could pass the host's deadline. The refusal names its phase and is
-    /// classified as a busy store; the host opens again on a later call.
+    /// control host's call, which its host bounds by a deadline. After
+    /// SQLite's locking-protocol refusal the open starts again while the
+    /// call's allowance lasts, as an ordinary open does for its minute. Once
+    /// the allowance has ended, the refusal names its phase and is classified
+    /// as a busy store; the host opens again on a later call.
     ///
     /// # Errors
     ///
@@ -575,7 +585,7 @@ impl SqliteStore {
         path: impl AsRef<Path>,
         identity: Option<HostPathPolicy>,
     ) -> Result<Self, StoreError> {
-        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::Never)
+        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::UntilWaitEnds)
     }
 
     /// Opens a store file only this process can reach, such as a staged
@@ -588,8 +598,8 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(Duration::from_secs(5)),
-            ProtocolRetry::Once,
+            LockWait::Timeout(lock_wait::store_lock_wait()),
+            ProtocolRetry::UntilWaitEnds,
         )
     }
 
@@ -601,7 +611,22 @@ impl SqliteStore {
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionOpen,
         );
-        let lock_wait = LockWait::Timeout(Duration::from_secs(5));
+        let ordinary = lock_wait::store_lock_wait();
+        // Inside a control allowance, such as a control host's startup, every
+        // lock wait of the open, for the open lock, each statement and each
+        // retry, ends when the allowance does: the clock-read wait a copy uses
+        // keeps that one expiry, so a busy store is refused while the host
+        // still waits for the answer.
+        let expiry = super::control_runtime::request_budget::expiry();
+        // An open can wait a minute for another opener or writer. It is its
+        // own operation, named even inside a control startup or request.
+        let _warning = crate::operation_time::Warning::start("store open");
+        let _expiry = expiry.map(|expiry| lock_wait::CopyWaitScope::enter(Some(expiry)));
+        let lock_wait = if expiry.is_some() {
+            LockWait::CopyDeadline
+        } else {
+            LockWait::Timeout(ordinary)
+        };
         // Before SQLite opens the file: see `open_guard`.
         let mut guard = OpenGuard::acquire(path, lock_wait)?;
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::default())?;
@@ -614,7 +639,12 @@ impl SqliteStore {
                 Some(crate::phase_trace::control::sql_event),
             );
         }
-        Self::admit(connection, identity, lock_wait, retry, &mut guard)
+        let store = Self::admit(connection, identity, lock_wait, retry, &mut guard)?;
+        if expiry.is_some() {
+            // The allowance bounded the open; the store keeps its own wait.
+            store.connection.busy_timeout(ordinary)?;
+        }
+        Ok(store)
     }
 
     /// The filesystem identity this opener resolved, if any.
@@ -724,8 +754,8 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             host_path_policy,
-            LockWait::Timeout(Duration::from_secs(5)),
-            ProtocolRetry::Once,
+            LockWait::Timeout(lock_wait::store_lock_wait()),
+            ProtocolRetry::UntilWaitEnds,
         )
     }
 
@@ -734,8 +764,9 @@ impl SqliteStore {
     /// is new before they take its write lock, so one may find under the lock
     /// that another has initialized it meanwhile; that opener starts again
     /// once, from the top, against the initialized store. An attempt ended by
-    /// SQLite's locking-protocol refusal also starts again from the top, once
-    /// when `retry` allows it; the two allowances are separate.
+    /// SQLite's locking-protocol refusal also starts again from the top, until
+    /// the lock wait ends when `retry` allows it; the two allowances are
+    /// separate.
     fn from_connection_with_lock_wait(
         connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
@@ -766,6 +797,12 @@ impl SqliteStore {
         let mut restarted = false;
         // Where the refusal ended the first attempt, once the open retried.
         let mut retried_after: Option<OpenPhase> = None;
+        // SQLite's refusal comes after its own ten seconds; the open starts
+        // again until its lock wait ends, never earlier.
+        let retry_until = match retry {
+            ProtocolRetry::UntilWaitEnds => lock_wait.retry_limit(std::time::Instant::now()),
+            ProtocolRetry::Never => None,
+        };
         loop {
             let mut phase = OpenPhase::ProbeSnapshot;
             let attempt = Self::open_attempt(
@@ -802,7 +839,7 @@ impl SqliteStore {
                 Ok(OpenAttempt::InitializedMeanwhile) => restarted = true,
                 Err(error) if protocol_retry::is_locking_protocol(&error) => {
                     protocol_retry::end_attempt(&connection, phase)?;
-                    if retried_after.is_some() || retry == ProtocolRetry::Never {
+                    if retry_until.is_none_or(|until| std::time::Instant::now() >= until) {
                         #[cfg(test)]
                         super::copy_trace::dispose(connection, "open admission failure");
                         return Err(protocol_retry::locking_protocol_refusal(
@@ -810,7 +847,7 @@ impl SqliteStore {
                             retried_after,
                         ));
                     }
-                    retried_after = Some(phase);
+                    retried_after = retried_after.or(Some(phase));
                 }
                 // Dropping the connection ends any transaction the attempt
                 // began.

@@ -232,6 +232,12 @@ impl HostControlServer {
         mut reader: impl BufRead,
         mut writer: impl Write,
     ) -> std::io::Result<()> {
+        if reader.fill_buf()?.is_empty() {
+            return Ok(());
+        }
+        // As on a live server, the frame from its first byte through the
+        // flushed answer is one control request.
+        let _warning = crate::operation_time::Warning::start("control request");
         match read_control_frame_with_policy(&mut reader, OversizedFramePolicy::Stop)? {
             None => return Ok(()),
             Some(Err(())) => {
@@ -242,11 +248,21 @@ impl HostControlServer {
             }
             Some(Ok(_)) => {}
         }
+        // A store busy for the whole allowance, including SQLite's
+        // locking-protocol refusal met until the allowance ended, is safe to
+        // open again on a later call.
         let (code, message) = if matches!(
             error,
             StoreError::Sqlite(error)
-                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy)
-        ) {
+                if matches!(
+                    error.sqlite_error_code(),
+                    Some(
+                        rusqlite::ErrorCode::DatabaseBusy
+                            | rusqlite::ErrorCode::FileLockingProtocolFailed
+                    )
+                )
+        ) || matches!(error, StoreError::ControlRequestExpired)
+        {
             (
                 "control_startup_busy",
                 "Engram control startup could not acquire the store.",
@@ -375,6 +391,11 @@ impl HostControlServer {
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
+        // Startup's lock waits and its connection write share one control
+        // allowance, so a busy store is refused while the host still waits.
+        let _startup = crate::storage::ControlRequestScope::ensure()?;
+        // One warning covers all of startup, its connection write included.
+        let _warning = crate::operation_time::Warning::start("control startup");
         let diagnostic_store = crate::diagnostics::Fingerprint::store(database.as_ref());
         let mut store = SqliteStore::open_for_control_host(database, identity)?;
         crate::phase_trace::control::enter(
@@ -708,6 +729,8 @@ impl HostControlServer {
             // The first byte is available. Keep parsing and all transaction
             // admission on this frame's allowance; do not reset it at dispatch.
             let _budget = crate::storage::ControlRequestScope::frame();
+            // The same frame, parse to response, is what a slow-request warning names.
+            let _warning = crate::operation_time::Warning::start("control request");
             let diagnostic_timing = self
                 .diagnostics
                 .as_ref()

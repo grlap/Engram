@@ -6,8 +6,8 @@ use super::{
     ActorContext, CanonicalObject, ForgetProjectMemoryRequest,
     MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES, MemoryProjectionMode, MemoryStatus, ObjectId,
     RememberProjectMemoryRequest, Sensitivity, SqliteStore, StoreError, StoredProjectMemory,
-    TransactionBehavior, history, lookup_project_memory_history_on, prepare_project_memory,
-    project_memory_history_on, project_memory_state_on, resolve_retiring_target_on, state,
+    history, lookup_project_memory_history_on, prepare_project_memory, project_memory_history_on,
+    project_memory_state_on, resolve_retiring_target_on, state,
     validate_project_memory_actor_shape, validate_project_memory_authorization,
     validated_project_memory_actor,
 };
@@ -564,9 +564,10 @@ impl SqliteStore {
         &mut self,
         request: &ImportRequest<'_>,
     ) -> Result<ImportOutcome, StoreError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "project memory write admission",
+        )?;
         let outcome = Self::import_project_memory_sync_on(&transaction, request)?;
         if request.dry_run {
             transaction.rollback()?;

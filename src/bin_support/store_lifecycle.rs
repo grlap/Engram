@@ -29,6 +29,8 @@ pub(crate) fn initialize(database: &Path, identity: Option<HostPathPolicy>) -> R
 }
 
 pub(crate) fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
+    // The copy and its verification can pass ten seconds on a large store.
+    let _warning = engram::operation_time::Warning::start("local backup");
     let store = SqliteStore::open_unresolved(database)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let out = if let Some(out) = out {
@@ -67,6 +69,7 @@ pub(crate) fn restore(
         super::backup::fetch::ReadSettings::new(super::backup::fetch::DEFAULT_READ_DEADLINE),
     );
     if abandon_pending {
+        let _warning = engram::operation_time::Warning::start("local restore abandon");
         let abandoned = super::backup::restore::abandon_local(
             home,
             project,
@@ -78,6 +81,8 @@ pub(crate) fn restore(
         println!("{}", serde_json::to_string_pretty(&abandoned)?);
         return Ok(());
     }
+    // Verifying, copying and installing the backup can pass ten seconds.
+    let _warning = engram::operation_time::Warning::start("local restore");
     let restored =
         super::backup::restore::restore_local(home, project, database, from, replace, &settings)?;
     println!("{}", serde_json::to_string_pretty(&restored)?);

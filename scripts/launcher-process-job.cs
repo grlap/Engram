@@ -101,21 +101,88 @@ public static class LauncherProcessJob
         text.Append('\\', slashes * 2); text.Append('"'); return text.ToString();
     }
     // This bounds confirmation after cancellation or root exit, not stage
-    // execution. An OS wait that cannot settle is explicitly unconfirmed.
-    const int CleanupBudgetMs = 30000;
+    // execution: the shared minute, named once in the stage log after ten
+    // seconds. An OS wait that cannot settle is explicitly unconfirmed.
+    const int CleanupBudgetMs = 60000;
+    const int WarnAfterMs = 10000;
+    static void Warn(string operation, long elapsedMs) {
+        if (quiet) return;
+        Report("warning: " + operation + " is still running after 10 seconds; attempt="
+            + Process.GetCurrentProcess().Id + "/0; elapsed_ms=" + elapsedMs);
+    }
+    // Warnings reach stderr from their own writer thread, never from the
+    // thread doing the work, so a slow write delays only the line. Before the
+    // helper exits, FlushWarnings gives queued lines what remains of its one
+    // second.
+    static readonly System.Collections.Concurrent.BlockingCollection<string> warningLines =
+        new System.Collections.Concurrent.BlockingCollection<string>();
+    static readonly object writerGate = new object();
+    static Thread warningWriter;
+    public static void Report(string line) {
+        try {
+            lock (writerGate) {
+                if (warningWriter == null) {
+                    // Its own stderr stream, not the shared Console.Error
+                    // writer, so a slow write never holds the lock the
+                    // helper's own error output needs.
+                    warningWriter = new Thread(() => {
+                        System.IO.Stream stderr = null;
+                        try { stderr = Console.OpenStandardError(); } catch { /* lines are then not written */ }
+                        foreach (string text in warningLines.GetConsumingEnumerable()) {
+                            try {
+                                byte[] bytes = Encoding.UTF8.GetBytes(text + Environment.NewLine);
+                                stderr.Write(bytes, 0, bytes.Length);
+                                stderr.Flush();
+                            } catch { /* observation never fails the work */ }
+                        }
+                    });
+                    warningWriter.IsBackground = true;
+                    warningWriter.Start();
+                }
+            }
+            warningLines.Add(line);
+        } catch { /* observation never fails the work */ }
+    }
+    public static void FlushWarnings(int allowanceMs) {
+        try {
+            warningLines.CompleteAdding();
+            Thread writer;
+            lock (writerGate) { writer = warningWriter; }
+            if (writer != null) writer.Join(Math.Max(0, allowanceMs));
+        } catch { /* observation never fails the work */ }
+    }
     static bool ConfirmCleanup(IntPtr job, Stopwatch clock, out uint active) {
         active = UInt32.MaxValue;
+        bool warned = false;
         do {
             Accounting accounting;
-            if (!QueryInformationJobObject(job, 1, out accounting,
-                (uint)Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero)) return false;
+            bool queried = QueryInformationJobObject(job, 1, out accounting,
+                (uint)Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero);
+            long elapsed = clock.ElapsedMilliseconds;
+            if (!warned && elapsed >= WarnAfterMs) {
+                warned = true;
+                Warn("process job cleanup confirmation", elapsed);
+            }
+            if (!queried) return false;
             active = accounting.ActiveProcesses;
             if (active == 0) return true;
-            if (clock.ElapsedMilliseconds >= CleanupBudgetMs) return false;
+            if (elapsed >= CleanupBudgetMs) return false;
             Thread.Sleep(10);
         } while (true);
     }
-    public static Outcome Run(string command, string[] args, string cwd, string[] environment) {
+    static bool WaitWithWarning(IntPtr handle) {
+        if (WaitForSingleObject(handle, (uint)WarnAfterMs) == 0) return true;
+        Warn("suspended process cleanup confirmation", WarnAfterMs);
+        return WaitForSingleObject(handle, (uint)(CleanupBudgetMs - WarnAfterMs)) == 0;
+    }
+    // Set when the parent already names the operation this helper serves, such
+    // as a preflight probe: then this helper names nothing itself.
+    static bool quiet;
+    // `started` is told once the workload has resumed, which ends the
+    // supervisor's startup; the PowerShell bootstrap names a slow startup.
+    public static Outcome Run(string command, string[] args, string cwd, string[] environment,
+        Action started, bool parentNamesOperation) {
+        quiet = parentNamesOperation;
         IntPtr job = IntPtr.Zero, input = IntPtr.Zero, output = IntPtr.Zero, error = IntPtr.Zero;
         IntPtr environmentBlock = IntPtr.Zero;
         ProcessInfo process = new ProcessInfo();
@@ -143,6 +210,8 @@ public static class LauncherProcessJob
             Check(AssignProcessToJobObject(job, process.process));
             assigned = true;
             Check(ResumeThread(process.thread) != 0xffffffff);
+            // Startup ends here.
+            if (started != null) started();
             // A parent EOF also tears down the tree. Only the parent writes here.
             Task<string> cancellation = Task.Run(() => Console.In.ReadLine());
             while (true) {
@@ -170,8 +239,7 @@ public static class LauncherProcessJob
             else if (!assigned) {
                 // Assignment failure leaves only a suspended process. No
                 // workload instruction has run, but cleanup still needs proof.
-                cleanup = TerminateProcess(process.process, 1)
-                    && WaitForSingleObject(process.process, CleanupBudgetMs) == 0;
+                cleanup = TerminateProcess(process.process, 1) && WaitWithWarning(process.process);
                 if (!cleanup) active = 1;
             } else {
                 var clock = Stopwatch.StartNew();

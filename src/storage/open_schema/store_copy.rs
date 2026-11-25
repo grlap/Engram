@@ -250,7 +250,7 @@ impl SqliteStore {
             connection,
             None,
             LockWait::CopyDeadline,
-            ProtocolRetry::Never,
+            ProtocolRetry::UntilWaitEnds,
         );
         // On an error this includes closing the connection.
         #[cfg(test)]
@@ -312,7 +312,7 @@ impl SqliteStore {
             connection,
             None,
             LockWait::CopyDeadline,
-            ProtocolRetry::Never,
+            ProtocolRetry::UntilWaitEnds,
         )?);
         for sidecar in store_sidecars(path) {
             match std::fs::remove_file(&sidecar) {

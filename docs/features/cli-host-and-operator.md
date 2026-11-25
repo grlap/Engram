@@ -399,7 +399,13 @@ does not cover claims, control rows or delivery state.
 Capture and transport have separate deadlines, `--capture-deadline-secs`
 (900 by default, for the local copy and the compressed file prepared from
 it) and `--transport-deadline-secs` (1800 by default, for every request to
-the target together). A request to the target runs on a worker thread, and
+the target together). A deadline of 1 to 59 seconds lasts one minute instead,
+on every backup word, so no deadline cuts an operation shorter than that; 0
+still starts nothing. Each request to the target, once started, has at least
+a minute even when less of the deadline is left, and a file another program
+holds open is retried for up to a minute. Each backup word still running after ten seconds
+writes one `warning:` line under `--warn-slow`, as every word does outside
+`--json`. A request to the target runs on a worker thread, and
 one with no time left is not started. When a request before the receipt,
 resolving a pending attempt, confirming the newest copy or the put, passes
 its deadline, the push records the failure, keeps the push lock, and ends
@@ -470,8 +476,8 @@ This is the contract a host builds its push trigger on.
   and of the reads that build the compressed file, and once that file is
   written. When another connection holds a lock the copy needs, SQLite
   calls the copy's busy handler, which reads the clock after each short
-  sleep. One such wait ends at the deadline or five seconds after it
-  began, whichever comes first; a wait cut off by the five seconds fails
+  sleep. One such wait ends at the deadline or one minute after it
+  began, whichever comes first; a wait cut off by that minute fails
   the push with outcome `failed`, code `storage_error` and SQLite's
   "database is locked" message, not with the `busy` outcome, which means
   another push holds the lock. A sleep can last longer than asked, so a
@@ -566,8 +572,11 @@ otherwise it fails with its typed code, or warns about a stage it could not
 remove, and the push after it tries again.
 
 **The host's bound.** With the default deadlines a host terminates a push
-still running after 900 + 1800 + 60 = 2760 seconds; with other deadlines,
-their sum plus 60 seconds for the steps no deadline bounds. This is the
+still running after 900 + 1800 + 60 + 60 = 2820 seconds; with other
+deadlines, their sum as they take effect (1 to 59 seconds counting as 60)
+plus 120 seconds: 60 for a last request to the target, which once started
+has at least a minute even with less of the transport deadline left, and 60
+for the steps no deadline bounds. This is the
 host's threshold, not a promise that the process has ended by then: a read
 stuck in the kernel on a hung share can delay the end of any process,
 including one being terminated. On reaching it, the host terminates the
@@ -620,8 +629,8 @@ changes nothing. A confirmation renews only the copy's last confirmation,
 never the time the store's content was observed in it, so an old copy that
 is confirmed again still reads `backup_stale`. A check stalled inside the
 operating system past its deadline ends the process, which still exits 0.
-The check deadline is at least 1 second: `--check-deadline-secs 0` is a
-usage error, refused with exit 2 before anything is read, as every other
+The check deadline is at least 1 second, and one below a minute lasts a
+minute: `--check-deadline-secs 0` is a usage error, refused with exit 2 before anything is read, as every other
 usage error is. This differs from `backup push`, whose deadlines accept 0
 and expire at once.
 
@@ -697,8 +706,11 @@ when that cannot be told, a warning names it (`warnings` in JSON, a
 only the target's records under the home and the target itself, never open
 or create a store, and so work in a home that has only configured the
 target; without one they refuse with `backup_not_configured`. Their
-requests to the target run under one deadline, thirty minutes by default,
-and a request stalled past it ends the process with exit 1. Their `--json`
+requests to the target run under one deadline, thirty minutes by default
+and never less than a minute unless it is 0; each request, once started, has
+at least a minute even when less of the deadline is left, the decode of a
+fetched copy included. A request stalled past its time ends the process with
+exit 1. Their `--json`
 receipts carry `schema_version` 1; under `--json` a refusal is also printed
 on standard output as a JSON object with `code` and `message`.
 
@@ -889,7 +901,7 @@ The line carries:
     call;
   - `store_mutex_wait`;
   - `begin_immediate`, including any wait for the write lock, whether it
-    ends in the lock or in the 5-second busy timeout;
+    ends in the lock or in the one-minute busy timeout;
   - `commit`, which counts every `COMMIT`, read transactions' included;
   - `receipt_serialize`;
   - `read_snapshot`, including nested and reused `work_read_snapshot` calls,

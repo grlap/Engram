@@ -190,6 +190,7 @@ fn check_kind(
     let mut transport = Transport {
         budget: settings.deadline,
         used: Duration::ZERO,
+        floor: Duration::ZERO,
     };
     let answer = transport.run(move |left| {
         #[cfg(test)]

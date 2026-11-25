@@ -213,8 +213,8 @@ has both, the open holds the lock through its preflight probes, so writable
 opens of one store are briefly serialized. When several openers switch and
 initialize a new store at once,
 SQLite on Windows can refuse every one of them with its locking-protocol
-error, twice. Another opener waits for the lock within the open's
-five-second lock wait, then refuses as a busy store, safe to open again.
+error, again and again. Another opener waits for the lock within the open's
+one-minute lock wait, then refuses as a busy store, safe to open again.
 The open releases the lock explicitly, and the sidecar file holds no data
 and is never removed. The sidecar is named after the file the store's path
 resolves to, so a link to the store or to its directory names the same one.
@@ -242,22 +242,23 @@ while another connection holds a lock, is retried within the busy timeout.
 SQLite's locking-protocol refusal (`SQLITE_PROTOCOL`), which it returns after
 about ten seconds of failing to begin a read on the write-ahead log, ends an
 open attempt: the open rolls back the transaction the attempt had open and
-starts again from its first probe, once, separately from the restart above;
-that probe checks again whatever earlier steps of the attempt committed. An
-open for a host's work-session call or a store copy,
-which run under deadlines of their own, does not start again. When the
-refusal ends an open, its message names the step it ended (`probe_snapshot`,
-`connection_settings`, `journal_query`, `journal_switch`,
-`cold_initialization` or `store_setup`), and after a retry also the step that
-ended the first attempt; it is classified as a busy store, safe to open
+starts again from its first probe, separately from the restart above; that
+probe checks again whatever earlier steps of the attempt committed. It starts
+again for as long as its own lock wait lasts, never ending at SQLite's first
+ten seconds: the one-minute wait of an ordinary open, the allowance of a
+host's work-session call, the deadline of a store copy. When the refusal ends
+an open, once that wait is over, its message names the step it ended
+(`probe_snapshot`, `connection_settings`, `journal_query`, `journal_switch`,
+`cold_initialization` or `store_setup`), and after starting again also the
+step that ended the first attempt; it is classified as a busy store, safe to open
 again. A write transaction after the open does not start again on this
 refusal.
 
-Work-note writer admission uses one monotonic 10-second contention window
+Work-note writer admission uses one monotonic one-minute contention window
 across session registration, focus, attempt recording, note capture and result
 recording. Each `BEGIN IMMEDIATE` from autocommit uses SQLite's native busy
 handler for the remaining window, then restores the connection's prior
-timeout before running the transaction body (five seconds for ordinary store
+timeout before running the transaction body (one minute for ordinary store
 opening). There is no manual retry loop;
 transaction bodies, commits, words and transport calls are never replayed by
 this wait. Other work words retain their ordinary admission timeout.

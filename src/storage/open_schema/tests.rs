@@ -1141,7 +1141,7 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
             current,
             Some(HostPathPolicy::host_default()),
             super::LockWait::Timeout(Duration::from_millis(25)),
-            super::ProtocolRetry::Once,
+            super::ProtocolRetry::UntilWaitEnds,
         )
         .expect("a current warm open remains read-only while another writer is active"),
     );
@@ -1164,7 +1164,7 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
         candidate,
         Some(HostPathPolicy::host_default()),
         super::LockWait::Timeout(Duration::from_millis(25)),
-        super::ProtocolRetry::Once,
+        super::ProtocolRetry::UntilWaitEnds,
     );
     let Err(StoreError::Sqlite(error)) = result else {
         panic!("a required path-policy binding must contend for the writer slot");

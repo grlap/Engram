@@ -209,7 +209,6 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
 #[cfg(windows)]
 #[tokio::test]
 async fn task_sync_real_locked_store_failure_keeps_its_generic_storage_code() {
-    use std::time::Duration;
     let fixture = Fixture::new();
     let candidate = fixture.candidate("candidate");
     let target = fixture.store("target");
@@ -222,7 +221,9 @@ async fn task_sync_real_locked_store_failure_keeps_its_generic_storage_code() {
         fixture.staged_snapshot_command(&target, "import", &candidate, true),
     );
     command.kill_on_drop(true);
-    let output = tokio::time::timeout(Duration::from_secs(60), command.output())
+    // Retained limit: the CLI really waits out its one-minute busy wait first,
+    // so this hang guard sits a further minute above it.
+    let output = tokio::time::timeout(engram::operation_time::MINIMUM * 2, command.output())
         .await
         .expect("task-sync import must finish within its bounded SQLite wait and CLI watchdog")
         .unwrap();

@@ -11,6 +11,7 @@ use crate::storage::{
 };
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
+use rusqlite::TransactionBehavior;
 
 mod fts_terms;
 mod fts_verification;
@@ -2225,5 +2226,46 @@ fn short_caller_reads_and_restores_a_historical_oversized_project_memory_actor_w
     assert_eq!(
         version.actor.session_id.as_ref().map(|id| id.0.as_str()),
         Some(historical.0.as_str())
+    );
+}
+
+// A memory write still waiting for the write lock at ten seconds says so once
+// on stderr and goes on: the warning neither ends the wait nor changes the
+// stored memory.
+#[test]
+fn a_memory_write_still_waiting_after_ten_seconds_warns_once_and_still_stores() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let clock = std::rc::Rc::new(crate::operation_time::test_clock::Probe::install());
+    let waiting = std::rc::Rc::clone(&clock);
+    let request = project_memory_request(
+        "project-memory-slow-writer",
+        "memory-session",
+        Some("slow-writer"),
+        "stored after a slow wait",
+        1_700_000_000_000,
+    );
+    let past_warning = crate::operation_time::WARN_AFTER + std::time::Duration::from_secs(1);
+    let created = crate::storage::with_writer_admission_test_policy(
+        None,
+        move || waiting.advance(past_warning),
+        || {
+            store
+                .remember_project_memory(&request, &DevelopmentNoopRedactor)
+                .expect("remember")
+        },
+    );
+    assert_eq!(created.key, "slow-writer");
+    assert!(!created.duplicate);
+    let warned: Vec<_> = clock
+        .events()
+        .into_iter()
+        .map(|(operation, _, elapsed)| (operation, elapsed))
+        .collect();
+    assert_eq!(
+        warned,
+        [(
+            "project memory write admission",
+            crate::operation_time::WARN_AFTER
+        )]
     );
 }

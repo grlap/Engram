@@ -98,6 +98,14 @@ impl SqliteStore {
         self.connection.busy_timeout(timeout)
     }
 
+    pub(crate) fn test_busy_timeout(&self) -> Duration {
+        let milliseconds: u32 = self
+            .connection
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        Duration::from_millis(u64::from(milliseconds))
+    }
+
     /// Installs passive historical task visibility for memory-reader fixtures.
     pub(crate) fn historical_task_scope(
         &mut self,

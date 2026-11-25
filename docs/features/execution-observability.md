@@ -1019,7 +1019,7 @@ policy, and requirement 5 applies.
 
 ### Request allowance
 
-The work-session producer gives each input frame a fixed 15,000-millisecond
+The work-session producer gives each input frame a fixed 60,000-millisecond
 cooperative allowance, measured from its first available byte. It takes no
 new request field. Admission checks the same monotonic allowance before
 dispatch, before `BEGIN IMMEDIATE`, after acquisition, and before `COMMIT`.
@@ -1051,9 +1051,13 @@ reply, the outcome remains unknown until exact-key reconciliation succeeds;
 the host must never infer `control_request_expired` from its own timeout. A
 late or lost successful response is recovered from the original stored
 operation result. This is a cooperative pre-commit bound and eventual
-settlement contract, not a promise of delivery within 15 seconds under
-arbitrary OS or I/O stalls. Startup before the first frame is outside this
-allowance.
+settlement contract, not a promise of delivery within one minute under
+arbitrary OS or I/O stalls. Startup before the first frame has its own
+allowance of the same length, described under terminal startup failures.
+A frame still running after ten seconds writes one `warning:` line to stderr,
+naming `control request`, and goes on; the warning never ends the frame.
+A host whose own deadline is no longer than this allowance can time out
+before the typed answer arrives; that outcome is unknown, as above.
 
 `redaction_refused` answers a request whose text the pre-write redactor
 refused. It is a definitive refusal: nothing was recorded, and the same
@@ -1078,11 +1082,17 @@ and `message`. The two reserved terminal codes and fixed messages are:
 {"status":"error","error":{"code":"control_startup_refused","message":"Engram control startup was refused; inspect the startup diagnostic."}}
 ```
 
-Only a typed SQLite `DatabaseBusy` error selects `control_startup_busy`.
-Other startup errors select `control_startup_refused`; their original
-diagnostic stays on stderr. These codes are never emitted by a live server.
-The normal SQLite wait remains bounded at five seconds. The host bounds the
-wait for the first input frame with its request deadline.
+Only a typed SQLite `DatabaseBusy` error, SQLite's locking-protocol refusal
+(`SQLITE_PROTOCOL`) that remained when startup's open had started again until
+its allowance ended, or startup's spent allowance, selects
+`control_startup_busy`. Other startup errors select
+`control_startup_refused`; their original diagnostic stays on stderr. These
+codes are never emitted by a live server. Startup's waits for the open lock,
+for SQLite and for its connection write share one 60,000-millisecond
+allowance: each takes at most what is left of it, so a busy store is refused
+about a minute after startup began, not once per wait. The opened store keeps
+the ordinary one-minute wait for later frames. The host bounds the wait for
+the first input frame with its request deadline.
 
 The host must evict the process after either code. Busy permits bounded
 re-admission by starting a new process; refused fails closed. Neither code

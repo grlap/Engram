@@ -102,7 +102,12 @@ pub(crate) fn doctor(
         Ok(store) => store,
         Err(error) => return refuse(database, project_id, &error, json, Phase::Open, &backup),
     };
-    let report = match store.verify_all() {
+    let verified = {
+        // The canonical and projection scans of a large store can pass ten seconds.
+        let _warning = engram::operation_time::Warning::start("store integrity check");
+        store.verify_all()
+    };
+    let report = match verified {
         Ok(report) => report,
         Err(error) => {
             return refuse(

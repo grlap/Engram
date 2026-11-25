@@ -19,6 +19,13 @@ thread_local! {
 fn now() -> Instant {
     CLOCK.with(Cell::get)
 }
+/// A connection timeout longer than the allowance, which the allowance caps.
+const CONFIGURED: Duration = Duration::from_secs(CONTROL_REQUEST_ALLOWANCE.as_secs() + 5);
+
+fn ms(duration: Duration) -> u32 {
+    u32::try_from(duration.as_millis()).unwrap()
+}
+
 fn expire() {
     CLOCK.with(|clock| clock.set(clock.get() + CONTROL_REQUEST_ALLOWANCE));
 }
@@ -29,7 +36,7 @@ fn fixture() -> (Connection, ControlRequestScope) {
     connection
         .execute_batch("CREATE TABLE payload (value INTEGER)")
         .unwrap();
-    connection.busy_timeout(Duration::from_secs(20)).unwrap();
+    connection.busy_timeout(CONFIGURED).unwrap();
     (connection, ControlRequestScope::with_clock(now))
 }
 
@@ -59,7 +66,7 @@ fn expired_request_never_enters_begin_or_the_body() {
     assert!(!called.get());
     assert!(connection.is_autocommit());
     assert_eq!(count(&connection), 0);
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
 }
 
 #[test]
@@ -93,14 +100,14 @@ fn delayed_begin_rolls_back_before_the_body_and_restores_timeout() {
     assert!(!called.get());
     assert_eq!(rollbacks.load(Ordering::SeqCst), 1);
     assert!(connection.is_autocommit());
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
 }
 
 #[test]
 fn expired_body_rolls_back_its_write_and_the_same_connection_can_retry() {
     let (mut connection, _scope) = fixture();
     let error = control_transaction(&mut connection, |transaction| {
-        assert_eq!(timeout(transaction), 15_000);
+        assert_eq!(timeout(transaction), ms(CONTROL_REQUEST_ALLOWANCE));
         transaction.execute("INSERT INTO payload VALUES (1)", [])?;
         expire();
         Ok(())
@@ -109,7 +116,7 @@ fn expired_body_rolls_back_its_write_and_the_same_connection_can_retry() {
     assert!(matches!(error, StoreError::ControlRequestExpired));
     assert_eq!(count(&connection), 0);
     assert!(connection.is_autocommit());
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
     let _fresh = ControlRequestScope::with_clock(now);
     control_transaction(&mut connection, |transaction| {
         transaction.execute("INSERT INTO payload VALUES (1)", [])?;
@@ -117,7 +124,7 @@ fn expired_body_rolls_back_its_write_and_the_same_connection_can_retry() {
     })
     .unwrap();
     assert_eq!(count(&connection), 1);
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
 }
 
 #[test]
@@ -145,7 +152,7 @@ fn expired_body_with_failed_rollback_is_not_certified() {
     .unwrap_err();
     assert_eq!(crate::host::store_error_code(&error), "storage_error");
     assert!(!connection.is_autocommit());
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
     connection
         .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
         .unwrap();
@@ -169,7 +176,7 @@ fn commit_that_finishes_after_the_allowance_remains_successful() {
     .unwrap();
     assert_eq!(result, "settled");
     assert_eq!(count(&connection), 1);
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
 }
 
 #[test]
@@ -184,5 +191,5 @@ fn unwind_restores_the_busy_policy_and_discards_uncommitted_changes() {
     assert!(result.is_err());
     assert!(connection.is_autocommit());
     assert_eq!(count(&connection), 0);
-    assert_eq!(timeout(&connection), 20_000);
+    assert_eq!(timeout(&connection), ms(CONFIGURED));
 }

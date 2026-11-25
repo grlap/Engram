@@ -87,6 +87,9 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
                 destination_kind,
                 chrono::Utc::now(),
             )?;
+            // Serializing a large snapshot and syncing its file can pass ten
+            // seconds after the store's own save warning has ended.
+            let _publication = engram::operation_time::Warning::start("graph snapshot publication");
             let bytes = export.document.container_bytes()?;
 
             // All notices are deliberately delayed until the disclosure audit
@@ -147,16 +150,21 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
             }
         }
         GraphCommand::Load { file, dry_run } => {
-            let metadata = fs::metadata(&file)
-                .with_context(|| format!("failed to inspect snapshot {}", file.display()))?;
-            if metadata.len() > MAX_GRAPH_SNAPSHOT_BYTES {
-                bail!(
-                    "snapshot {} exceeds the {MAX_GRAPH_SNAPSHOT_BYTES}-byte load limit",
-                    file.display()
-                );
-            }
-            let bytes = fs::read(&file)
-                .with_context(|| format!("failed to read snapshot {}", file.display()))?;
+            let bytes = {
+                // Reading a large snapshot can pass ten seconds before the
+                // store's own load warning starts.
+                let _read = engram::operation_time::Warning::start("graph snapshot file read");
+                let metadata = fs::metadata(&file)
+                    .with_context(|| format!("failed to inspect snapshot {}", file.display()))?;
+                if metadata.len() > MAX_GRAPH_SNAPSHOT_BYTES {
+                    bail!(
+                        "snapshot {} exceeds the {MAX_GRAPH_SNAPSHOT_BYTES}-byte load limit",
+                        file.display()
+                    );
+                }
+                fs::read(&file)
+                    .with_context(|| format!("failed to read snapshot {}", file.display()))?
+            };
             let service = LocalWorkService::new_with_attribution(
                 context.database,
                 context.project_id,

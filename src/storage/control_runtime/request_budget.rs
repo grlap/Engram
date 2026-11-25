@@ -10,7 +10,7 @@ use crate::storage::StoreError;
 /// Product behaviour (cli-mcp-and-work-protocols.md). Retained limit: a test that
 /// serves frames on the real clock is refused if one frame stalls this long at a
 /// check.
-pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = Duration::from_secs(15);
+pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = crate::operation_time::MINIMUM;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Allowance {
@@ -82,6 +82,12 @@ thread_local! {
 
 pub(super) fn current() -> Option<ControlRequestBudget> {
     CURRENT.with(Cell::get)
+}
+
+/// When the current control allowance ends, on the real clock; `None`
+/// outside one.
+pub(crate) fn expiry() -> Option<Instant> {
+    current().map(|budget| Instant::now() + budget.remaining())
 }
 
 /// This synchronous scope restores the previous frame on return or unwind.

@@ -5,9 +5,8 @@ use super::{
     ControlDiagnostics, ControlPolicy, ControlPolicyOperationFingerprint, DateTime,
     MAX_CONTROL_POLICY_AUTHORITY_BYTES, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES, ObjectId,
     ObligationRuleSet, ObligationRuleSetUpdateReceipt, ProjectPolicyAuthorityDecision,
-    ProjectPolicyEpoch, ProjectPolicyOperation, Redactor, SqliteStore, StoreError,
-    TransactionBehavior, Utc, normalize_control_policy_actor,
-    normalize_control_policy_idempotency_key, params,
+    ProjectPolicyEpoch, ProjectPolicyOperation, Redactor, SqliteStore, StoreError, Utc,
+    normalize_control_policy_actor, normalize_control_policy_idempotency_key, params,
 };
 use rusqlite::OptionalExtension;
 
@@ -61,9 +60,10 @@ impl SqliteStore {
             )));
         }
 
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "control policy write admission",
+        )?;
         if let Some(receipt) =
             Self::replay_control_policy_operation::<ObligationRuleSetUpdateReceipt>(
                 &transaction,
@@ -284,9 +284,10 @@ impl SqliteStore {
             )));
         }
 
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "control policy write admission",
+        )?;
         if let Some(receipt) = Self::replay_control_policy_operation::<
             crate::storage::AcceptanceEvaluationPolicyUpdateReceipt,
         >(
@@ -450,6 +451,8 @@ impl SqliteStore {
         &self,
         _now: DateTime<Utc>,
     ) -> Result<ControlDiagnostics, StoreError> {
+        // Re-verifying a long policy history can pass ten seconds.
+        let _warning = crate::operation_time::Warning::start("control diagnostics read");
         let policy = if self.connection.is_autocommit() {
             let snapshot = self.connection.unchecked_transaction()?;
             let policy = Self::verify_control_policy_history(&snapshot)?;

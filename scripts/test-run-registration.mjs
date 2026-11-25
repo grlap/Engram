@@ -1,10 +1,31 @@
 // Optional TermAl transport adapter. The host owns indexing, waits and credit.
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { operationMinimumMs, warnWhileRunning } from "./operation-warning.mjs";
+
+// Sends one request to the host. Node's fetch gives up on a connection after
+// ten seconds of its own; this adds no limit, so only the caller's signal, the
+// registration's minute, ends an exchange. A redirect is never followed.
+function exchange(url, { method = "GET", headers, body, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const start = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const outgoing = start(url, { method, headers, signal }, (incoming) => {
+      resolve({ ok: incoming.statusCode >= 200 && incoming.statusCode < 300,
+        status: incoming.statusCode, body: incoming });
+    });
+    outgoing.on("error", reject);
+    outgoing.end(body);
+  });
+}
+
+// The transport a caller that passes none uses. Tests may replace `send`.
+export const hostTransport = { send: exchange };
 
 const contract = "termal-durable-test-run-registration";
 const version = 1;
-const budgetMs = 8_000;
+const budgetMs = operationMinimumMs;
 const responseLimit = 65_536;
 const hostMessageLimit = 384;
 const contextKeys = ["TERMAL_BASE_URL", "TERMAL_SESSION_ID", "TERMAL_CLI"];
@@ -112,14 +133,17 @@ async function query(request, directory, host, send, signal) {
 // A single shared budget covers POST, response bodies, confirmation and a
 // detached worker's confirmation. Even an unresponsive transport cannot
 // postpone execution past it. A timeout is not evidence of failed persistence.
-async function bounded(milliseconds, operation) {
+async function bounded(milliseconds, operation, { warning = {}, name = "TermAl test-run registration" } = {}) {
   const controller = new AbortController();
   let timer;
   const expired = new Promise((_, reject) => {
     timer = setTimeout(() => { controller.abort(); reject(new Error("registration-timeout")); }, milliseconds);
   });
+  // Registration and a detached worker's confirmation share one budget and
+  // one warning: the confirmation carries on from the registration's time.
+  const settled = warning.skip ? () => false : warnWhileRunning(name, { before: warning.before ?? 0 });
   try { return await Promise.race([operation(controller.signal), expired]); }
-  finally { clearTimeout(timer); controller.abort(); }
+  finally { warning.fired = settled(); clearTimeout(timer); controller.abort(); }
 }
 
 function reason(error) {
@@ -134,11 +158,12 @@ export async function registerTestRun(request, directory, env = process.env, opt
   try { validateRequestMessageSelection(request); host = configuration(request, env); }
   catch (error) { return unconfirmed(reason(error)); }
   if (host.standalone) return { state: "untracked", reason: "standalone", nativeWaitReady: false };
-  const send = options.fetch ?? globalThis.fetch;
+  const send = options.fetch ?? hostTransport.send;
   // Injection only shortens the production bound for deterministic fixtures.
   const allowance = Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs));
   const started = performance.now();
   const identity = requestIdentity(request);
+  const warning = {};
   let refusal;
   try {
     const source = await bounded(allowance, async (signal) => {
@@ -173,12 +198,13 @@ export async function registerTestRun(request, directory, env = process.env, opt
         return await query(request, directory, host, send, signal);
       }
       throw new Error("registration-unconfirmed");
-    });
+    }, { warning });
     if (requestIdentity(request) !== identity) return unconfirmed("request-changed");
     return { state: source === "index" ? "registered" : "registered-but-not-indexed", requestIdentity: identity,
       reason: source === "index" ? "confirmed-index" : "registration-only",
       nativeWaitReady: source === "index", hostOrigin: host.base.origin,
-      remainingMs: Math.max(0, allowance - (performance.now() - started)) };
+      remainingMs: Math.max(0, allowance - (performance.now() - started)),
+      ...(warning.fired ? { warned: true } : {}) };
   } catch (error) { return { ...unconfirmed(reason(error)), ...(refusal ?? {}) }; }
 }
 
@@ -194,8 +220,11 @@ export async function confirmDetachedRegistration(request, directory, env = proc
     if (registration.requestIdentity !== requestIdentity(request)) return unconfirmed("request-changed");
     const remaining = registration.remainingMs;
     if (!Number.isFinite(remaining) || remaining <= 0) return unconfirmed("registration-timeout");
+    // The confirmation spends what is left of the registration's budget and
+    // continues its warning: one warning for both, at ten seconds of the two.
     const source = await bounded(Math.min(budgetMs, remaining), (signal) =>
-      query(request, directory, host, options.fetch ?? globalThis.fetch, signal));
+      query(request, directory, host, options.fetch ?? hostTransport.send, signal),
+    { warning: { skip: registration.warned === true, before: Math.max(0, budgetMs - remaining) } });
     if (source === "registration" || registration.state === "registered-but-not-indexed") {
       return { ...registration, state: "registered-but-not-indexed", reason: "registration-only", nativeWaitReady: false, remainingMs: 0 };
     }
@@ -213,7 +242,7 @@ export async function registerOwnRunWait(request, directory, env = process.env, 
   try { host = configuration(request, env); }
   catch { return unavailable; }
   if (host.standalone || host.base.origin !== request.registration.hostOrigin) return unavailable;
-  const send = options.fetch ?? globalThis.fetch;
+  const send = options.fetch ?? hostTransport.send;
   let refusal;
   try {
     return await bounded(Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs)), async (signal) => {
@@ -244,7 +273,7 @@ export async function registerOwnRunWait(request, directory, env = process.env, 
       }
       return { state: "registered", waitId: ack.waitId, runId: request.runId, sessionId: host.session,
         hostOrigin: host.base.origin };
-    });
+    }, { name: "TermAl test-run wait registration" });
   } catch (error) {
     return { state: error?.message === "test-run-wait-refused" ? "refused" : "unconfirmed",
       reason: error?.message === "test-run-wait-refused" ? "test-run-wait-refused" : "test-run-wait-unconfirmed",

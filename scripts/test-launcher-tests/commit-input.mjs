@@ -442,8 +442,10 @@ export function registerCommitInputTests(support) {
       const local = copyLauncher(root, (source) => {
         source = source.replaceAll("captureCommitInputStatus(request.root, childEnv)",
           "JSON.parse(readFileSync(join(request.root, '.git', 'fixture-source.json'), 'utf8'))");
-        return denied ? source.replace('writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 });',
-          'throw Object.assign(new Error("fixture diagnostic denied"), { code: "EACCES" });') : source;
+        const refused = source.replace('writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 })',
+          '(() => { throw Object.assign(new Error("fixture diagnostic denied"), { code: "EACCES" }); })()');
+        assert.notEqual(refused, source, "the copied launcher must refuse the diagnostic write");
+        return denied ? refused : source;
       });
       const worker = await import(pathToFileURL(local).href);
       const current = captureCommitInputStatus(root, env);

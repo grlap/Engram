@@ -89,6 +89,7 @@ pub use writer_admission::WorkWriterAdmissionReason;
 pub(crate) use writer_admission::WriterAdmissionWindow;
 #[cfg(test)]
 pub(crate) use writer_admission::advance_writer_admission_window;
+pub(crate) use writer_admission::begin_immediate;
 #[cfg(test)]
 pub(crate) use writer_admission::last_writer_admission_allowance;
 #[cfg(test)]

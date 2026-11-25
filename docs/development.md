@@ -525,7 +525,11 @@ it when it creates the run and again when the run is admitted, then refreshes
 600 000. A reader tells running from interrupted without trusting the recorded
 `pid`, which a killed launcher leaves behind and the system may give to another
 process. A run with no terminal result is running while `heartbeat.at` is at
-most three intervals old. Once it is older the run is interrupted: the launcher
+most three intervals old, and never less than one minute plus two intervals,
+so a launcher blocked for up to a minute without a beat, in an identity
+query, still reads as running. While the terminal save waits for the stop
+lock and the last stop check, the saved running record's heartbeat keeps
+moving; the terminal save stops it. Once it is older the run is interrupted: the launcher
 has most likely stopped. A system sleep or clock change can also age a
 heartbeat, and a later beat then shows the run running again. `summary`
 reports a fresh heartbeat as `RUNNING` with reason `no-terminal-result`, and a
@@ -536,9 +540,12 @@ name is valid. A run with no terminal result and no valid heartbeat is
 reported as `UNKNOWN` with reason `no-terminal-result`. `summary` shows a
 `BLOCKER` line only when the launch declared a next transition
 (`--next-owner` with `--next-action`) and the verdict is not `PASS`. Saves of
-`results.json` retry a briefly refused rename, as Windows can refuse one while
-another process holds the file open; that retry is file I/O and never reruns a
-test.
+`results.json` retry a refused rename for up to a minute, with one `warning:`
+line after ten seconds, as Windows can refuse one while another process holds
+the file open; a heartbeat save tries only briefly, since the next beat
+repeats it. That retry is file I/O and never reruns a test. A stage still
+running after ten seconds writes one `warning: stage run` line to stderr;
+nothing stops a stage for its time.
 The snapshot checks are boundary checks, not proof against transient edits.
 Automatic runs report the source owner's ordinary Git normalization and
 ignored-path limits. Line-ending-only changes erased by Git normalization
@@ -628,8 +635,8 @@ test-run endpoint before publishing the admitted input. Implicit input selection
 reuses the same capture for admission. The worker checks it again before running
 stages. The initiating session
 owns the registration; a different `--notify` recipient does not change its
-project. Registration and a detached worker's confirmation share an eight-second
-budget. For foreground and different-session notification runs, outside TermAl
+project. Registration and a detached worker's confirmation share a one-minute
+budget, and one still waiting after ten seconds writes a `warning:` line. For foreground and different-session notification runs, outside TermAl
 or when that handshake is unavailable or unconfirmed,
 the command still executes and retains its ordinary result and notification
 retry behavior, unless it selected a retained request with
@@ -668,7 +675,7 @@ Own-run detachment refuses before stages when registration is unavailable
 (`test-run-wait-refused`), or its acknowledgement is uncertain
 (`test-run-wait-unconfirmed`). The receipt retains result/log paths and any
 bounded HTTP refusal diagnostic instead of claiming a completion wake.
-The wait request has its own eight-second budget and a 65,536-byte response
+The wait request has its own one-minute budget and a 65,536-byte response
 limit. A timeout or lost response may mean the wait was persisted. Wait POSTs
 have no deduplication contract: do not retry them automatically or rerun tests
 to repair delivery. Retain the original run and report the uncertain outcome.
@@ -749,16 +756,18 @@ The existing wire classification is retained: `state: "failed"`,
 machine record reports `overall=interrupted reason=stopped`, never a pass. The
 stop command emits no execution record. If cleanup cannot be confirmed, the
 result instead reports a cleanup failure and makes no successful-stop claim.
-An invalid stop request reports `stop-request-invalid`; one that remains
-unreadable after its bounded transient-read retries reports
-`stop-request-unreadable`. A requester whose post-publication temporary-file
+An invalid stop request reports `stop-request-invalid`; one that stays
+unreadable through a minute of transient read refusals, with one `warning:`
+line after ten seconds, reports `stop-request-unreadable`. A requester whose post-publication temporary-file
 cleanup remains refused receives a `warning:` line, while the published stop
 intent remains available to the worker.
 The reason is `process-cleanup-unconfirmed` in the result, summary and
-notification. Cleanup observation has a 30-second confirmation allowance;
+notification. Cleanup observation has a one-minute confirmation allowance,
+with one `warning:` line after ten seconds (in the stage log on Windows);
 Windows expiry reports the residual count, while POSIX expiry reports that
 group disappearance is unconfirmed, rather than waiting forever. A POSIX
-helper that does not close within 31 seconds of a stop is also unconfirmed.
+helper that does not close within a minute and a second of a stop, warned
+after ten seconds, is also unconfirmed.
 Missing helper outcome or cleanup-initiation proof remains uncertainty even
 if the group is absent. This does not
 promise that an OS call itself can be interrupted. A helper startup failure
@@ -770,8 +779,12 @@ startup. Compiler scratch uses the worktree's `target/tmp/launcher-jobs/` and
 is removed after helper exit; the workload receives the prepared stage
 environment, including its TEMP, TMP and PSModulePath.
 
-Stop-lock removal retries transient file-sharing refusals. A worker that cannot
-acquire the stop lock within five seconds rechecks the latest retained intent
+Stop-lock removal retries transient file-sharing refusals for a minute, with
+one `warning:` line after ten seconds, as do the removal of a stop request's
+temporary file and of the Windows helper's compiler scratch. A stop or terminal
+save still waiting for the stop lock after ten seconds writes one `warning:`
+line to stderr. A worker that cannot
+acquire the stop lock within one minute rechecks the latest retained intent
 and saves its terminal result with a warning; a leftover caller lock cannot
 silently discard completion or notification. It never deletes that lock on a
 guess about its owner. This fallback does not certify an intent that another

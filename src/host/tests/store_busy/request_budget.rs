@@ -11,8 +11,12 @@ thread_local! { static CLOCK: Cell<Instant> = Cell::new(Instant::now()); }
 fn now() -> Instant {
     CLOCK.with(Cell::get)
 }
+/// A stall just past the control request's allowance.
+fn stall() -> Duration {
+    crate::storage::CONTROL_REQUEST_ALLOWANCE + Duration::from_millis(1)
+}
 fn pre_apply_delay() {
-    CLOCK.with(|clock| clock.set(clock.get() + Duration::from_millis(15_001)));
+    CLOCK.with(|clock| clock.set(clock.get() + stall()));
 }
 
 /// Input is available before the frame starts; the remaining read then stalls.
@@ -55,7 +59,7 @@ fn serve_expired(fixture: &mut Fixture, request: &Value) -> Value {
     let mut output = Vec::new();
     let started = now();
     fixture.server.serve(reader, &mut output).unwrap();
-    assert_eq!(now().duration_since(started), Duration::from_millis(15_001));
+    assert_eq!(now().duration_since(started), stall());
     serde_json::from_slice(&output).unwrap()
 }
 

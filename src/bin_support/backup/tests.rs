@@ -1272,3 +1272,44 @@ fn a_reconcile_whose_read_passes_its_deadline_cannot_say_and_keeps_the_copy() {
         Reconciled::Completed
     );
 }
+
+// A request that starts while some of the budget is left is given at least
+// its floor, however little is left; with no time left, none starts, floor or
+// not.
+#[test]
+fn a_request_floor_gives_a_started_request_its_time_but_never_starts_a_spent_budget() {
+    use super::push::Transport;
+    let request = || {
+        std::thread::sleep(Duration::from_millis(50));
+        "answered"
+    };
+    let floor = Duration::from_secs(30);
+    let mut nearly_spent = Transport {
+        budget: Duration::from_millis(10),
+        used: Duration::from_millis(9),
+        floor,
+    };
+    let given = std::sync::Arc::new(std::sync::Mutex::new(Duration::ZERO));
+    let seen = std::sync::Arc::clone(&given);
+    assert_eq!(
+        nearly_spent
+            .run(move |left| {
+                *seen.lock().unwrap() = left;
+                request()
+            })
+            .ok(),
+        Some("answered")
+    );
+    assert_eq!(*given.lock().unwrap(), floor);
+    for (budget, used) in [
+        (Duration::from_millis(10), Duration::from_millis(10)),
+        (Duration::ZERO, Duration::ZERO),
+    ] {
+        let mut spent = Transport {
+            budget,
+            used,
+            floor,
+        };
+        assert!(matches!(spent.run(move |_| request()), Err(None)));
+    }
+}

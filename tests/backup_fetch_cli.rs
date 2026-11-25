@@ -247,8 +247,8 @@ fn a_fetch_out_of_time_leaves_neither_the_file_nor_its_staging_and_says_why_in_j
     let out_dir = homes.path("out");
     fs::create_dir_all(&out_dir).unwrap();
     let out = out_dir.join("fetched.db");
-    // Two seconds leave the decode no time of its own: it stops at once and
-    // removes what it wrote.
+    // A deadline of 0 starts no request: shorter positive deadlines last the
+    // shared minute, so this is the deadline an operator can make pass.
     let output = homes.engram(
         "origin",
         &[
@@ -258,7 +258,7 @@ fn a_fetch_out_of_time_leaves_neither_the_file_nor_its_staging_and_says_why_in_j
             "--out",
             out.to_str().unwrap(),
             "--deadline-secs",
-            "2",
+            "0",
             "--json",
         ],
     );

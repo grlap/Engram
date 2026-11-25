@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import test, { after } from "node:test";
-import { registerTestRun, confirmDetachedRegistration, registrationLine } from "../test-run-registration.mjs";
-import { createRun, executeRun, notifyRun, summarize } from "../test-launcher.mjs";
+import { fileURLToPath } from "node:url";
+import { hostTransport, registerTestRun, confirmDetachedRegistration, registrationLine } from "../test-run-registration.mjs";
+import { asOneOperation, namedIfSlow, warningSink, warnWhileRunning } from "../operation-warning.mjs";
+import { createRun, executeRun, notifyRun, runStage, summarize } from "../test-launcher.mjs";
 
 export function registerRegistrationTests(support) {
   const { env, stage, json, git, repository } = support;
@@ -274,7 +276,7 @@ test("registration and detached confirmation keep short-cadence heartbeats fresh
       return response(registrationQuery(request, directory));
     };
     const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("once")] }, hostEnv, { fetch });
-    t.mock.method(globalThis, "fetch", async () => {
+    t.mock.method(hostTransport, "send", async () => {
       const before = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
       t.mock.timers.tick(4000);
       assert.equal(Date.parse(json(join(runDir, "results.json")).heartbeat.at), before + 4000);
@@ -393,6 +395,447 @@ test("registration retains refusal status when its body exhausts the shared budg
       httpStatus: 503, hostMessage: null });
     assert.match(registrationLine(result), /POST HTTP 503; host message unavailable$/u);
   });
+});
+
+// A host that answers only after ten seconds is still waited for, and the wait
+// says so once on stderr. The test owns the timers; no real ten seconds pass.
+test("a registration still unanswered after ten seconds warns once and still registers", async (t) => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const written = [];
+    t.mock.method(warningSink, "write", (text) => { written.push(String(text)); });
+    let answer;
+    const answered = new Promise((done) => { answer = done; });
+    const pending = registerTestRun(request, root, registrationEnv, { fetch: async (_url, options) => {
+      if (options.method !== "POST") return response(registrationQuery(request, root));
+      await answered;
+      return response(registrationAck(request));
+    } });
+    t.mock.timers.tick(10_001);
+    answer();
+    const result = await pending;
+    t.mock.timers.reset();
+    assert.equal(result.state, "registered");
+    assert.deepEqual(written.filter((line) => line.startsWith("warning: ")).map((line) => line.split(";")[0]),
+      ["warning: TermAl test-run registration is still running after 10 seconds"]);
+  });
+});
+
+// Registration and a detached worker's confirmation share one budget and one
+// warning. A registration that itself warned leaves its slow confirmation
+// silent; after eight seconds spent registering, the confirmation's third
+// second is the handshake's eleventh and warns. The test owns the timers.
+test("a detached confirmation continues the registration's one warning", async (t) => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const answer = (options) => response(options.method === "POST" ? registrationAck(request) : registrationQuery(request, root));
+    const written = [];
+    t.mock.method(warningSink, "write", (text) => { written.push(text); });
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const held = () => { let release; const until = new Promise((done) => { release = done; }); return { until, release }; };
+
+    // A slow registration warns once; its slow confirmation adds nothing.
+    const posting = held();
+    const registering = registerTestRun(request, root, registrationEnv, { fetch: async (_url, options) => {
+      if (options.method === "POST") await posting.until;
+      return answer(options);
+    } });
+    t.mock.timers.tick(10_001);
+    posting.release();
+    const warnedRegistration = await registering;
+    assert.equal(warnedRegistration.state, "registered");
+    const querying = held();
+    const confirmingWarned = confirmDetachedRegistration({ ...request, registration: warnedRegistration }, root, registrationEnv, {
+      fetch: async () => { await querying.until; return answer({}); } });
+    t.mock.timers.tick(20_000);
+    querying.release();
+    assert.equal((await confirmingWarned).state, "registered");
+    assert.equal(written.length, 1, written.join(""));
+
+    // A fast registration that spent eight seconds: the confirmation warns.
+    written.length = 0;
+    const quick = await registerTestRun(request, root, registrationEnv, { fetch: async (_url, options) => answer(options) });
+    assert.equal(written.length, 0);
+    const late = held();
+    const confirming = confirmDetachedRegistration({ ...request, registration: { ...quick, remainingMs: 52_000 } }, root,
+      registrationEnv, { fetch: async () => { await late.until; return answer({}); } });
+    t.mock.timers.tick(2_001);
+    late.release();
+    assert.equal((await confirming).state, "registered");
+    assert.equal(written.length, 1, written.join(""));
+    t.mock.timers.reset();
+  });
+});
+
+// A synchronous call can hold the timer back past its time: settling then
+// writes the one warning, and an operation that settles in time writes none.
+test("an operation settling past ten seconds before its timer ran is named as it settles", (t) => {
+  const written = [];
+  t.mock.method(warningSink, "write", (text) => { written.push(text); });
+  let clock = 0;
+  const late = warnWhileRunning("fixture operation", { now: () => clock });
+  clock = 11_000;
+  assert.equal(late(), true);
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: fixture operation is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=11000\n$/u);
+  written.length = 0;
+  clock = 0;
+  const quick = warnWhileRunning("fixture operation", { now: () => clock });
+  clock = 9_000;
+  assert.equal(quick(), false);
+  assert.equal(written.length, 0);
+  // Its first settling is final: settling again later, past ten seconds,
+  // writes nothing for time spent after the operation ended.
+  clock = 30_000;
+  assert.equal(quick(), false);
+  assert.equal(written.length, 0);
+});
+
+// A synchronous step such as a file call is named once as it returns when it
+// took ten seconds or more, also when it throws; a quick one is never named.
+test("a slow synchronous step is named once as it returns, and its result is unchanged", (t) => {
+  const written = [];
+  t.mock.method(warningSink, "write", (text) => { written.push(text); });
+  let clock = 0;
+  const slow = () => { clock += 11_000; return "read"; };
+  assert.equal(namedIfSlow("fixture read", slow, { now: () => clock }), "read");
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: fixture read is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=11000\n$/u);
+  written.length = 0;
+  const failing = () => { clock += 12_000; throw new Error("refused"); };
+  assert.throws(() => namedIfSlow("fixture write", failing, { now: () => clock }), /refused/u);
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: fixture write is still running after 10 seconds;.*elapsed_ms=12000\n$/u);
+  written.length = 0;
+  assert.equal(namedIfSlow("fixture read", () => { clock += 9_000; return 1; }, { now: () => clock }), 1);
+  assert.equal(written.length, 0);
+});
+
+// One operation is named once: a slow step inside it is covered by the
+// operation's own warning and does not name itself as well. Outside any
+// operation the same step names itself.
+test("a slow step inside one operation is named once, by the operation", async (t) => {
+  const written = [];
+  t.mock.method(warningSink, "write", (text) => { written.push(text); });
+  let clock = 0;
+  const now = () => clock;
+  const step = () => namedIfSlow("fixture step", () => { clock += 11_000; return "read"; }, { now });
+  assert.equal(await asOneOperation("fixture operation", step, { now }), "read");
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: fixture operation is still running after 10 seconds;.*elapsed_ms=11000\n$/u);
+  written.length = 0;
+  assert.equal(step(), "read");
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: fixture step is still running after 10 seconds;/u);
+});
+
+// A stage still running after ten seconds is named once, as a stage, and is
+// never stopped for its time: its outcome and its failure pass through, and a
+// quick stage says nothing.
+test("a long stage is named once and runs to its own end", async (t) => {
+  const written = [];
+  t.mock.method(warningSink, "write", (text) => { written.push(text); });
+  let clock = 0;
+  const now = () => clock;
+  const long = async () => { clock += 45_000; return { code: 0 }; };
+  assert.deepEqual(await runStage(long, { now }), { code: 0 });
+  assert.equal(written.length, 1, written.join(""));
+  assert.match(written[0], /^warning: stage run is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=45000\n$/u);
+  written.length = 0;
+  await assert.rejects(runStage(() => { clock += 12_000; throw new Error("stage failed"); }, { now }), /stage failed/u);
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^warning: stage run is still running after 10 seconds;/u);
+  written.length = 0;
+  assert.deepEqual(await runStage(() => { clock += 2_000; return { code: 1 }; }, { now }), { code: 1 });
+  assert.deepEqual(written, []);
+  // While the stage is still running, its warning is already out; its end
+  // adds none and changes nothing about its outcome.
+  let release;
+  const running = runStage(() => new Promise((done) => { release = done; }), { after: 20 });
+  await new Promise((done) => setTimeout(done, 200));
+  assert.equal(written.length, 1, "the warning comes while the stage runs");
+  assert.match(written[0], /^warning: stage run is still running after 10 seconds;/u);
+  release({ code: 0 });
+  assert.deepEqual(await running, { code: 0 });
+  assert.equal(written.length, 1);
+});
+
+// A warning whose stderr reader has gone is contained: the launcher goes on
+// rather than dying on a stream error while its operation still settles.
+test("a warning to a stderr whose reader has gone never ends the process", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warnWhileRunning } = await import(${JSON.stringify(helper)});
+    warnWhileRunning("fixture operation", { after: 100 });
+    setTimeout(() => process.stdout.write("survived"), 600);`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  child.stderr.destroy();
+  let stdout = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+  const [code] = await once(child, "close");
+  assert.equal(code, 0);
+  assert.equal(stdout, "survived");
+});
+
+// A warning due while stderr is full, its reader paused, still leaves the
+// launcher's own thread free: its later timers run. The child cannot exit
+// while its own stderr write waits, so the test ends it once it has spoken.
+test("a warning to a full stderr leaves the operation's thread running", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink, warnWhileRunning } = await import(${JSON.stringify(helper)});
+    warningSink.write("x".repeat(1 << 22));
+    warnWhileRunning("fixture operation", { after: 100 });
+    setTimeout(() => process.stdout.write("survived"), 800);`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  // Listen for the exit from the start, so an early one fails the test.
+  const exited = once(child, "exit");
+  child.stderr.pause();
+  try {
+    const outcome = await new Promise((done) => {
+      const guard = setTimeout(() => done("timers stopped behind the warning"), 30_000);
+      exited.then(([code]) => { clearTimeout(guard); done(`the child exited early with ${code}`); });
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        if (chunk.includes("survived")) { clearTimeout(guard); done("survived"); }
+      });
+    });
+    assert.equal(outcome, "survived");
+  } finally {
+    child.kill();
+    await exited;
+  }
+});
+
+// Warnings due while stderr is full never take the file-system workers the
+// launcher's own work needs: after several of them, a file read still ends,
+// even when the process has only one such worker.
+test("warnings to a full stderr leave the launcher's file reads running", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { readFile } = await import("node:fs/promises");
+    const { warningSink, warnWhileRunning } = await import(${JSON.stringify(helper)});
+    warningSink.write("x".repeat(1 << 22));
+    for (let index = 0; index < 6; index += 1) warnWhileRunning("fixture operation " + index, { after: 10 });
+    setTimeout(async () => {
+      await readFile(${JSON.stringify(fileURLToPath(new URL("../operation-warning.mjs", import.meta.url)))});
+      process.stdout.write("read");
+    }, 300);`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, UV_THREADPOOL_SIZE: "1" } });
+  const exited = once(child, "exit");
+  child.stderr.pause();
+  try {
+    const outcome = await new Promise((done) => {
+      const guard = setTimeout(() => done("the read waited behind the warnings"), 30_000);
+      exited.then(([code]) => { clearTimeout(guard); done(`the child exited early with ${code}`); });
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        if (chunk.includes("read")) { clearTimeout(guard); done("read"); }
+      });
+    });
+    assert.equal(outcome, "read");
+  } finally {
+    child.kill();
+    await exited;
+  }
+});
+
+// Warnings that fall due together all reach a stderr that is being read, in
+// the order they fell due, however many operations warn at once (a cutover
+// runs one per project): one write at a time never costs a line.
+test("warnings due together all reach a working stderr in order", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink } = await import(${JSON.stringify(helper)});
+    for (let index = 0; index < 40; index += 1) warningSink.write("warning: " + index + "\\n");`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+  const [code] = await once(child, "close");
+  assert.equal(code, 0);
+  assert.equal(stderr, Array.from({ length: 40 }, (_, index) => `warning: ${index}\n`).join(""));
+});
+
+// A synchronous call that ends just past its warning time is still named once,
+// even when the watcher had not yet come up to say so itself.
+test("a blocking call that ends just past its warning time is still named once", () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warnWhileBlocking } = await import(${JSON.stringify(helper)});
+    const { spawnSync } = await import("node:child_process");
+    const blocked = warnWhileBlocking("fixture probe",
+      () => spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 300)"]), { after: 1 });
+    setTimeout(() => process.stdout.write("returned " + blocked.status), 500);`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source],
+    { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout, "returned 0");
+  const warnings = child.stderr.split(/\r?\n/u).filter(Boolean);
+  assert.equal(warnings.length, 1, child.stderr);
+  assert.match(warnings[0], /^warning: fixture probe is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=\d+$/u);
+});
+
+// A caller that ends its process right after a slow blocking call, as the
+// POSIX group helper does after its receipt, still leaves the one warning
+// when it flushes first: whether the watcher or the caller names the call,
+// the line is out before the end.
+test("a process that flushes before it ends right after a slow blocking call still names it once", () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warnWhileBlocking, warningSink } = await import(${JSON.stringify(helper)});
+    // Shorter than the watcher thread takes to start, so the caller names it.
+    warnWhileBlocking("fixture receipt", () => { const end = Date.now() + 5; while (Date.now() < end); }, { after: 1 });
+    await warningSink.flush();
+    process.exit(0);`;
+  for (let round = 0; round < 5; round += 1) {
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", source],
+      { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+    assert.equal(child.status, 0, child.stderr);
+    const warnings = child.stderr.split(/\r?\n/u).filter(Boolean);
+    assert.equal(warnings.length, 1, child.stderr);
+    assert.match(warnings[0], /^warning: fixture receipt is still running after 10 seconds;/u);
+  }
+});
+
+// A process about to end waits for its warnings only up to the flush bound:
+// with a stderr nobody reads, the flush still settles and the end goes on.
+test("a flush before the end settles at its bound when stderr does not drain", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink } = await import(${JSON.stringify(helper)});
+    warningSink.write("x".repeat(1 << 22));
+    await warningSink.flush(100);
+    process.stdout.write("ended");`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const exited = once(child, "exit");
+  child.stderr.pause();
+  try {
+    const outcome = await new Promise((done) => {
+      const guard = setTimeout(() => done("the end waited for stderr"), 30_000);
+      exited.then(([code]) => { clearTimeout(guard); done(`the child exited early with ${code}`); });
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        if (chunk.includes("ended")) { clearTimeout(guard); done("ended"); }
+      });
+    });
+    assert.equal(outcome, "ended");
+  } finally {
+    child.kill();
+    await exited;
+  }
+});
+
+// A line written from inside a synchronous loop, such as a save's rename
+// retries, never holds that loop: with a stderr nobody reads, the caller goes
+// on at once, and a flush before the end still settles at its bound.
+test("a line written from a synchronous loop never waits for a stderr that does not drain", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink } = await import(${JSON.stringify(helper)});
+    const { writeSync } = await import("node:fs");
+    warningSink.write("x".repeat(1 << 22));
+    writeSync(1, "went on;");
+    await warningSink.flush(100);
+    writeSync(1, "ended");`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const exited = once(child, "exit");
+  child.stderr.pause();
+  try {
+    let stdout = "";
+    const outcome = await new Promise((done) => {
+      const guard = setTimeout(() => done(`the caller waited for stderr: ${stdout}`), 30_000);
+      exited.then(([code]) => { clearTimeout(guard); done(`the child exited early with ${code}`); });
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        stdout += chunk;
+        if (stdout.includes("ended")) { clearTimeout(guard); done(stdout); }
+      });
+    });
+    assert.equal(outcome, "went on;ended");
+  } finally {
+    child.kill();
+    await exited;
+  }
+});
+
+// A line written from a synchronous loop reaches a working stderr whole, and
+// a flush before the end waits for it.
+test("a line written from a synchronous loop reaches a working stderr before the end", () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink } = await import(${JSON.stringify(helper)});
+    warningSink.write("warning: from a loop\\n");
+    const end = Date.now() + 50; while (Date.now() < end);
+    await warningSink.flush();
+    process.exit(0);`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source],
+    { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stderr, "warning: from a loop\n");
+});
+
+// An entry point whose work has ended is not held by warnings still waiting
+// behind a slow write: past the bound they are dropped, and the process ends
+// with its own exit code and output. What the system already took of the
+// write in flight is out; where stderr is a non-blocking pipe, the rest of
+// that line goes with the waiting ones. A first short line, which the pipe
+// takes at once, shows the writer is running before the bound passes.
+test("an ended entry point drops warnings still waiting past the bound", async () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warningSink, endWithinWarningBound } = await import(${JSON.stringify(helper)});
+    process.stdout.write("result");
+    warningSink.write("warning: first\\n");
+    await warningSink.flush(30_000);
+    warningSink.write("x".repeat(1 << 22));
+    for (let index = 0; index < 3; index += 1) warningSink.write("warning: waiting " + index + "\\n");
+    process.exitCode = 3;
+    endWithinWarningBound(100);`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "", stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+  // Paused before the listener, so stderr is not read until it is released.
+  child.stderr.setEncoding("utf8").pause();
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exited = once(child, "exit");
+  const stderrEnded = once(child.stderr, "end");
+  const stdoutEnded = once(child.stdout, "end");
+  // Where stderr is a non-blocking pipe, as it is outside Windows once a
+  // writer thread exists, the end waits for no reader at all: stderr is read
+  // only after the exit. A Windows pipe blocks, so the write in flight
+  // completes as the reader takes it, released well after the bound.
+  const release = process.platform === "win32" ? setTimeout(() => child.stderr.resume(), 1_000) : undefined;
+  // Only to end a child that never ends by itself, failing the test.
+  const guard = setTimeout(() => child.kill(), 60_000);
+  try {
+    const [code] = await exited;
+    child.stderr.resume();
+    await Promise.all([stderrEnded, stdoutEnded]);
+    assert.equal(code, 3);
+    assert.equal(stdout, "result");
+    const handedOver = `warning: first\n${"x".repeat(1 << 22)}`;
+    assert.ok(stderr.startsWith("warning: first\n"), stderr.slice(0, 80));
+    assert.ok(handedOver.startsWith(stderr), "stderr holds only what was handed over, in order");
+    assert.doesNotMatch(stderr, /warning: waiting/u);
+  } finally {
+    clearTimeout(release);
+    clearTimeout(guard);
+  }
+});
+
+// A synchronous call blocks the launcher's own timers, as an identity probe
+// does; its one warning still arrives while the call runs, not after it.
+test("a blocking call still running at its warning time is named once while it runs", () => {
+  const helper = new URL("../operation-warning.mjs", import.meta.url).href;
+  const source = `const { warnWhileBlocking } = await import(${JSON.stringify(helper)});
+    const { spawnSync } = await import("node:child_process");
+    const { writeSync } = await import("node:fs");
+    const blocked = warnWhileBlocking("fixture probe",
+      () => spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 10000)"]), { after: 200 });
+    writeSync(2, "returned " + blocked.status + String.fromCharCode(10));`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source],
+    { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+  assert.equal(child.status, 0, child.stderr);
+  const lines = child.stderr.split(/\r?\n/u).filter(Boolean);
+  assert.equal(lines.length, 2, child.stderr);
+  assert.match(lines[0], /^warning: fixture probe is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=\d+$/u);
+  assert.equal(lines[1], "returned 0");
 });
 
 test("registration validates exact replies, retries only ambiguous transport, and bounds stalled requests and bodies", async () => {

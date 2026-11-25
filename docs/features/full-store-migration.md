@@ -43,6 +43,12 @@ the current-build store opener, so it reads a store that this build would
 refuse to open. SQLite may still touch WAL coordination sidecars on a read-only
 open; export from a coherent copy when the store is in use.
 
+On a store in use, SQLite can refuse to begin that first read on its
+write-ahead log (`SQLITE_PROTOCOL`, after about ten seconds of failed
+attempts). Export then starts the read again, for up to one minute. If the read
+still cannot begin, export refuses before it creates any output file, and the
+same command can simply be run again.
+
 The file is JSON Lines:
 
 ```text

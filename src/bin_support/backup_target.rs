@@ -212,6 +212,27 @@ impl From<AdapterArg> for AdapterKind {
     }
 }
 
+/// A deadline the operator gave in seconds. 0 still starts nothing; any other
+/// value lasts at least the shared minute, so a deadline never cuts an
+/// operation shorter than that.
+fn operator_deadline(seconds: u64) -> Duration {
+    if seconds == 0 {
+        Duration::ZERO
+    } else {
+        Duration::from_secs(seconds).max(engram::operation_time::MINIMUM)
+    }
+}
+
+/// How a word that reads the target runs: the operator's deadline for all
+/// its requests together, and at least the shared minute for each request
+/// once it starts, so none is cut short of a minute.
+fn read_settings(seconds: u64) -> ReadSettings {
+    ReadSettings {
+        request_floor: engram::operation_time::MINIMUM,
+        ..ReadSettings::new(operator_deadline(seconds))
+    }
+}
+
 /// Runs a backup word. Returns whether it succeeded; a push that failed has
 /// already printed its report.
 pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) -> Result<bool> {
@@ -223,12 +244,16 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             check_target,
             check_deadline_secs,
         } => {
+            // One warning for the whole status word, its receipt included;
+            // the target check and the status read name their own.
+            let _warning = engram::operation_time::Warning::start("backup status command");
             // The check goes first, so the status shows what it recorded.
             let checks = check_target.then(|| {
+                let _warning = engram::operation_time::Warning::start("backup target check");
                 check_targets(
                     home,
                     project,
-                    &CheckSettings::new(Duration::from_secs(check_deadline_secs)),
+                    &CheckSettings::new(operator_deadline(check_deadline_secs)),
                     Utc::now(),
                 )
             });
@@ -238,6 +263,7 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             if checks.is_some_and(|run| run.abandoned.is_some()) {
                 // A check passed its deadline inside the operating system;
                 // ending the process is what stops it. It recorded nothing.
+                engram::operation_time::flush();
                 std::process::exit(0);
             }
             return Ok(true);
@@ -248,13 +274,19 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             capture_deadline_secs,
             transport_deadline_secs,
         } => {
-            let settings = PushSettings::new(
-                Duration::from_secs(capture_deadline_secs),
-                Duration::from_secs(transport_deadline_secs),
-            );
+            // Each request to the target, once started, has at least a minute.
+            let settings = PushSettings {
+                request_floor: engram::operation_time::MINIMUM,
+                ..PushSettings::new(
+                    operator_deadline(capture_deadline_secs),
+                    operator_deadline(transport_deadline_secs),
+                )
+            };
             let kinds = kind.map_or_else(|| CopyKind::ALL.to_vec(), |kind| vec![kind.into()]);
             let mut reports = Vec::new();
             let mut abandoned = None;
+            // One warning names the whole word, however many kinds it pushes.
+            let _warning = engram::operation_time::Warning::start("backup push");
             for kind in kinds {
                 let run = push(home, project, kind, &settings);
                 reports.push(run.report);
@@ -273,6 +305,7 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                 // running. Ending the process is what stops it, and the push
                 // lock is held until then.
                 let _held = abandoned;
+                engram::operation_time::flush();
                 std::process::exit(i32::from(!succeeded));
             }
             return Ok(succeeded);
@@ -282,12 +315,8 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             json,
             deadline_secs,
         } => {
-            let run = list(
-                home,
-                project,
-                kind.into(),
-                &ReadSettings::new(Duration::from_secs(deadline_secs)),
-            );
+            let _warning = engram::operation_time::Warning::start("backup list");
+            let run = list(home, project, kind.into(), &read_settings(deadline_secs));
             let listing = finish(run.outcome, run.abandoned.is_some(), json)?;
             print_listing(kind.into(), &listing, json)?;
             return Ok(true);
@@ -299,13 +328,14 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             json,
             deadline_secs,
         } => {
+            let _warning = engram::operation_time::Warning::start("backup fetch");
             let run = fetch(
                 home,
                 project,
                 kind.into(),
                 &copy,
                 &out,
-                &ReadSettings::new(Duration::from_secs(deadline_secs)),
+                &read_settings(deadline_secs),
             );
             let fetched = finish(run.outcome, run.abandoned.is_some(), json)?;
             if json {
@@ -325,6 +355,8 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             json,
             ..
         } => {
+            // Its staging cleanup can wait out a held file, as a restore can.
+            let _warning = engram::operation_time::Warning::start("backup restore abandon");
             let outcome = abandon_pending(
                 home,
                 project,
@@ -351,13 +383,14 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             deadline_secs,
             ..
         } => {
+            let _warning = engram::operation_time::Warning::start("backup restore");
             let run = restore(
                 home,
                 project,
                 database,
                 &copy,
                 origin_retired_by.as_deref(),
-                &RestoreSettings::new(ReadSettings::new(Duration::from_secs(deadline_secs))),
+                &RestoreSettings::new(read_settings(deadline_secs)),
             );
             let restored = finish(run.outcome, run.abandoned.is_some(), json)?;
             print_restored(&restored, json)?;
@@ -383,12 +416,16 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                 window_hours,
                 keep,
             };
+            // Writing and syncing the target records can pass ten seconds;
+            // one warning covers them and the receipt.
+            let _warning = engram::operation_time::Warning::start("backup target set");
             let view =
                 set_target(home, project, &request, Utc::now()).map_err(|error| refusal(&error))?;
             println!("backup target set");
             print_view(&view);
         }
         TargetCommand::Show { json } => {
+            let _warning = engram::operation_time::Warning::start("backup target show");
             let views = show_targets(home, project).map_err(|error| refusal(&error))?;
             if json {
                 let targets = views
@@ -418,7 +455,9 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
         }
         TargetCommand::Clear { kind } => {
             let kind = CopyKind::from(kind);
-            if clear_target(home, project, kind).map_err(|error| refusal(&error))? {
+            let _warning = engram::operation_time::Warning::start("backup target clear");
+            let cleared = clear_target(home, project, kind).map_err(|error| refusal(&error))?;
+            if cleared {
                 println!("backup target cleared: {}", kind.as_str());
             } else {
                 println!("No {} backup target was configured.", kind.as_str());
@@ -589,6 +628,7 @@ fn finish<T>(
             }
             if abandoned {
                 eprintln!("error: {}: {}", failure.code, failure.message);
+                engram::operation_time::flush();
                 std::process::exit(1);
             }
             Err(anyhow!("{}: {}", failure.code, failure.message))
@@ -746,4 +786,19 @@ fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {
 
 fn refusal(error: &TargetError) -> anyhow::Error {
     anyhow!("{}: {error}", error.code())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_operator_deadline_starts_nothing_at_zero_and_otherwise_lasts_a_minute_or_more() {
+        let minute = engram::operation_time::MINIMUM;
+        assert_eq!(operator_deadline(0), Duration::ZERO);
+        assert_eq!(operator_deadline(1), minute);
+        assert_eq!(operator_deadline(minute.as_secs() - 1), minute);
+        assert_eq!(operator_deadline(3600), Duration::from_secs(3600));
+        assert_eq!(operator_deadline(u64::MAX), Duration::from_secs(u64::MAX));
+    }
 }

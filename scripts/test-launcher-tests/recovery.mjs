@@ -6,7 +6,8 @@ import { once } from "node:events";
 import { dirname, join } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath } from "node:url";
-import { completionMetadata, createRun, executeRun, notifyRun, processHost, processIdentity, recoverRun, renameWithRetry, requiredStages, sameCreation, startDetached, summarize, systemProbes, wellFormedCreated, wmiFileTime } from "../test-launcher.mjs";
+import { completionMetadata, createRun, executeRun, heartbeatStaleAfterMs, notifyRun, processHost, processIdentity, recoverRun, renameWithRetry, requiredStages, sameCreation, save, startDetached, summarize, systemProbes, wellFormedCreated, wmiFileTime } from "../test-launcher.mjs";
+import { warningSink } from "../operation-warning.mjs";
 
 export function registerRecoveryLiveness(support) {
   const { env, entryUrl, launcher, launcherSupportFiles, launcherFixtureFiles, stage, json, git, repository, directoryBytes, parkingBroker } = support;
@@ -33,14 +34,18 @@ test("liveness comes from the heartbeat, never from a process at the recorded pi
     const created = json(path);
     assert.equal(created.heartbeat.everyMs, 1000);
     const at = Date.parse(created.heartbeat.at);
-    assert.match(await summarize(runDir, { now: at + 3000 }), /^RUNNING /u);
-    assert.match(await summarize(runDir, { now: at + 3001 }), /^INTERRUPTED /u);
+    const stale = heartbeatStaleAfterMs(1000);
+    // Independently of that helper: a one-second heartbeat held up for a
+    // whole minute, as a save or stop-lock wait may, still reads as running.
+    assert.match(await summarize(runDir, { now: at + 60_000 }), /^RUNNING /u);
+    assert.match(await summarize(runDir, { now: at + stale }), /^RUNNING /u);
+    assert.match(await summarize(runDir, { now: at + stale + 1 }), /^INTERRUPTED /u);
     // A live process now holding the recorded pid does not revive the run.
     writeFileSync(path, JSON.stringify({ ...created, pid: process.pid }));
-    assert.match(await summarize(runDir, { now: at + 3001 }), /^INTERRUPTED /u);
+    assert.match(await summarize(runDir, { now: at + stale + 1 }), /^INTERRUPTED /u);
     const { heartbeat: _, ...older } = created;
     writeFileSync(path, JSON.stringify(older));
-    assert.match(await summarize(runDir, { now: at + 3001 }), /^UNKNOWN /u);
+    assert.match(await summarize(runDir, { now: at + stale + 1 }), /^UNKNOWN /u);
   });
 });
 
@@ -57,7 +62,7 @@ test("a recorded cadence outside the setting's bounds falls back to the worker's
   });
 });
 
-test("a transient rename refusal is retried as I/O, and a persistent or other one still fails", () => {
+test("a transient rename refusal is retried as I/O, and a persistent or other one still fails", (t) => {
   const refusing = (code, successAt = Infinity) => {
     let calls = 0;
     const rename = () => {
@@ -69,12 +74,99 @@ test("a transient rename refusal is retried as I/O, and a persistent or other on
   const transient = refusing("EPERM", 3);
   renameWithRetry("from", "to", { rename: transient.rename, delayMs: 1 });
   assert.equal(transient.calls(), 3);
+  // A refusal that lasts the whole minute fails, with one warning at ten
+  // seconds; the clock is the test's, so the minute passes at the fourth try.
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
   const persistent = refusing("EBUSY");
-  assert.throws(() => renameWithRetry("from", "to", { rename: persistent.rename, attempts: 4, delayMs: 1 }), /EBUSY on attempt 4/u);
+  let clock = 0;
+  assert.throws(() => renameWithRetry("from", "to", { rename: persistent.rename, delayMs: 1,
+    now: () => { const at = clock; clock += 16_000; return at; } }), /EBUSY on attempt 4/u);
   assert.equal(persistent.calls(), 4);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^warning: saving to is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=16000\n$/u);
+  // A save that ends past ten seconds is named once however it ends: by a
+  // success after a shorter refusal, by a refusal first seen past the minute,
+  // or by a permanent refusal after a transient one.
+  const turnsPermanent = () => {
+    let calls = 0;
+    return () => {
+      calls += 1;
+      const code = calls === 1 ? "EPERM" : "ENOENT";
+      throw Object.assign(new Error(`${code} on attempt ${calls}`), { code });
+    };
+  };
+  for (const [rename, times, outcome] of [
+    [refusing("EPERM", 2).rename, [0, 5_000, 10_500], "saved"],
+    [refusing("EBUSY").rename, [0, 70_000], "refused"],
+    [turnsPermanent(), [0, 5_000, 11_000], "refused"],
+    // A first rename that itself takes eleven seconds, however it ends.
+    [refusing("EPERM", 1).rename, [0, 11_000], "saved"],
+    [refusing("ENOENT").rename, [0, 11_000], "refused"],
+  ]) {
+    warnings.length = 0;
+    const clock = times.values();
+    let result = "saved";
+    try { renameWithRetry("from", "to", { rename, delayMs: 1, now: () => clock.next().value }); }
+    catch { result = "refused"; }
+    assert.equal(result, outcome);
+    assert.equal(warnings.length, 1, `${outcome}: ${warnings.join("")}`);
+    assert.match(warnings[0], new RegExp(`elapsed_ms=${times.at(-1)}\n$`, "u"));
+  }
   const missing = refusing("ENOENT");
   assert.throws(() => renameWithRetry("from", "to", { rename: missing.rename, delayMs: 1 }), /ENOENT on attempt 1/u);
   assert.equal(missing.calls(), 1);
+});
+
+// A save is one operation for its warning: a slow temporary write, a write and
+// rename that only together pass ten seconds, or a write that fails late are
+// each named once, and the rename's own retry window is not shortened.
+test("a whole save past ten seconds is named once, whichever of its steps took the time", (t) => {
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
+  for (const [writeTakes, renameTakes, writeFails, outcome] of [
+    [11_000, 0, false, "saved"],
+    [6_000, 5_000, false, "saved"],
+    [11_000, 0, true, "refused"],
+  ]) {
+    warnings.length = 0;
+    let clock = 0, renamed = false;
+    let ended = "saved";
+    try {
+      save("results.json", { state: "fixture" }, { now: () => clock,
+        write() { clock += writeTakes; if (writeFails) throw Object.assign(new Error("disk"), { code: "EIO" }); },
+        rename() { clock += renameTakes; renamed = true; },
+        remove() {} });
+    } catch { ended = "refused"; }
+    assert.equal(ended, outcome);
+    assert.equal(renamed, !writeFails);
+    assert.equal(warnings.length, 1, `${writeTakes}/${renameTakes}/${writeFails}: ${warnings.join("")}`);
+    assert.match(warnings[0], /^warning: saving results\.json is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=11000\n$/u);
+  }
+  // A slow write is named before the rename starts.
+  warnings.length = 0;
+  let clock = 0, seenAtRename = -1;
+  save("results.json", { state: "fixture" }, { now: () => clock, write() { clock += 11_000; },
+    rename() { seenAtRename = warnings.length; }, remove() {} });
+  assert.equal(seenAtRename, 1);
+  assert.equal(warnings.length, 1);
+  // A cleanup that crosses ten seconds and then fails still names the save
+  // once, and its error is the one the caller sees.
+  for (const writeTakes of [0, 6_000]) {
+    warnings.length = 0;
+    clock = 0;
+    assert.throws(() => save("results.json", { state: "fixture" }, { now: () => clock,
+      write() { clock += writeTakes; }, rename() {},
+      remove() { clock += 11_000 - writeTakes; throw Object.assign(new Error("cleanup refused"), { code: "EPERM" }); } }),
+    { code: "EPERM" });
+    assert.equal(warnings.length, 1, `${writeTakes}: ${warnings.join("")}`);
+    assert.match(warnings[0], /elapsed_ms=11000\n$/u);
+  }
+  // A quick save writes nothing.
+  warnings.length = 0;
+  clock = 0;
+  save("results.json", { state: "fixture" }, { now: () => clock, write() { clock += 10; }, rename() {}, remove() {} });
+  assert.equal(warnings.length, 0);
 });
 
 test("a killed launcher's run reads as interrupted once its heartbeat stops", { timeout: 180_000 }, async (t) => {
@@ -132,14 +224,18 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
       assert.equal(killed.stages[0].state, "running");
       assert.equal(killed.heartbeat.everyMs, everyMs);
       const at = Date.parse(killed.heartbeat.at);
-      assert.match(await summarize(runDir, { now: at + 3 * everyMs }), /^RUNNING /u);
-      assert.match(await summarize(runDir, { now: at + 3 * everyMs + 1 }), /^INTERRUPTED .* exit=unknown$/mu);
-      // With the default clock, once the heartbeat has had time to go stale.
+      const window = heartbeatStaleAfterMs(everyMs);
+      assert.match(await summarize(runDir, { now: at + window }), /^RUNNING /u);
+      assert.match(await summarize(runDir, { now: at + window + 1 }), /^INTERRUPTED .* exit=unknown$/mu);
       await new Promise((done) => { setTimeout(done, 4 * everyMs); });
-      assert.match(await summarize(runDir), /^INTERRUPTED /u);
       assert.equal(json(join(runDir, "results.json")).heartbeat.at, killed.heartbeat.at, "nothing beats after the kill");
+      // With the default clock, a heartbeat older than the window reads as
+      // interrupted; the record is aged rather than waiting the minute out.
+      const aged = { ...killed, heartbeat: { ...killed.heartbeat, at: new Date(Date.now() - window - everyMs).toISOString() } };
+      writeFileSync(join(runDir, "results.json"), JSON.stringify(aged));
+      assert.match(await summarize(runDir), /^INTERRUPTED /u);
       // The recorded pid now naming a live, unrelated process changes nothing.
-      writeFileSync(join(runDir, "results.json"), JSON.stringify({ ...killed, pid: process.pid }));
+      writeFileSync(join(runDir, "results.json"), JSON.stringify({ ...aged, pid: process.pid }));
       assert.match(await summarize(runDir), /^INTERRUPTED /u);
     } finally {
       if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -199,14 +295,15 @@ test("stale-heartbeat sign-off names the running stage and distinguishes inferre
     const runDir = await createRun({ root, stages: [stage("active")], nextTransition: { owner: "fixture-next", action: "Recover the result." } }, env);
     const result = json(join(runDir, "results.json"));
     const at = Date.parse(result.heartbeat.at);
+    const stale = at + heartbeatStaleAfterMs(result.heartbeat.everyMs) + 1;
     result.stages[0].state = "running";
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
-    const summary = await summarize(runDir, { now: at + 40_000 });
+    const summary = await summarize(runDir, { now: stale });
     assert.match(summary, /^INTERRUPTED .*exit=unknown/u);
     assert.match(summary, /^reason: heartbeat-stale$/mu);
     assert.match(summary, /^BLOCKER \{"reason":"interrupted","stage":"active"\}$/mu);
     assert.equal(completionMetadata(json(join(runDir, "completion.request.json")), { ...result,
-      state: "failed", exitCode: 1, ended: new Date(at + 40_000).toISOString(), interrupted: true }).reason, "interrupted");
+      state: "failed", exitCode: 1, ended: new Date(stale).toISOString(), interrupted: true }).reason, "interrupted");
   });
 });
 

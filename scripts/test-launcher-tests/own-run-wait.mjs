@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import test from "node:test";
 import { createRun, executeRun, startDetached, summarize } from "../test-launcher.mjs";
-import { registerOwnRunWait, ownRunWaitLine } from "../test-run-registration.mjs";
+import { hostTransport, registerOwnRunWait, ownRunWaitLine } from "../test-run-registration.mjs";
 
 export function registerOwnRunWaitTests({ env, repository, stage, json, copyLauncher }) {
   const response = (body, status = 201) => new Response(JSON.stringify(body), { status });
@@ -126,7 +126,7 @@ export function registerOwnRunWaitTests({ env, repository, stage, json, copyLaun
   test("own-run worker confirmation and wait failures run no stage and never announce readiness", async (t) => {
     await repository(async (root) => {
       let transport;
-      t.mock.method(globalThis, "fetch", (...args) => transport(...args));
+      t.mock.method(hostTransport, "send", (...args) => transport(...args));
       for (const failure of ["initial", "confirmation", "refused", "acknowledgement"]) {
         let request, directory, gets = 0, waits = 0;
         transport = async (url, options) => {

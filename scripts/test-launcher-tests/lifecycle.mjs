@@ -580,8 +580,8 @@ test("detached worker exception saves diagnostics before startup rejection witho
 test("worker diagnostic write refusal reports missing artifact without masking duplicate admission", async () => {
   await repository(async (root) => {
     const local = copyLauncher(root, (source) => {
-      const changed = source.replace('writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 });',
-        'throw Object.assign(new Error("fixture private diagnostic write refusal"), { code: "ENOSPC" });');
+      const changed = source.replace('writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 })',
+        '(() => { throw Object.assign(new Error("fixture private diagnostic write refusal"), { code: "ENOSPC" }); })()');
       assert.notEqual(changed, source, "the copied launcher must refuse the diagnostic write");
       return changed;
     });

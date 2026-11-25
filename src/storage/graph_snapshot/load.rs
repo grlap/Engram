@@ -374,6 +374,9 @@ impl SqliteStore {
         loaded_at: DateTime<Utc>,
         redactor: &R,
     ) -> Result<WorkGraphSnapshotLoadResult, StoreError> {
+        // Parsing, validating and recreating a large snapshot can pass ten
+        // seconds, a dry run included.
+        let _warning = crate::operation_time::Warning::start("graph snapshot load");
         #[cfg(test)]
         let preparation_timer = LoadStageTimer::start(LoadStage::PrepareValidation);
         crate::storage::admit_live_actor_session(actor)?;

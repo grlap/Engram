@@ -10,7 +10,7 @@ use serde::Serialize;
 use super::schema::require_work_schema_version;
 use crate::storage::{SqliteStore, StoreError};
 
-const NOTE_ADMISSION_WINDOW: Duration = Duration::from_secs(10);
+const NOTE_ADMISSION_WINDOW: Duration = crate::operation_time::MINIMUM;
 
 /// Keeps imported-origin reads shared within this mutation's transaction.
 #[derive(Debug)]
@@ -20,6 +20,9 @@ pub(super) struct WorkMutation<'connection> {
     transaction: Transaction<'connection>,
     // Field order is significant: implicit rollback precedes observation.
     timing: crate::storage::transaction_timing::TransactionTiming<'connection>,
+    // Last, so the write is named through its body and settlement. A note's
+    // writes share their window's one warning instead, held by the window.
+    warning: Option<crate::operation_time::Warning>,
 }
 
 impl<'connection> Deref for WorkMutation<'connection> {
@@ -40,10 +43,12 @@ impl<'connection> WorkMutation<'connection> {
             origin_scope,
             transaction,
             mut timing,
+            warning,
         } = self;
         drop(origin_scope);
         let result = transaction.commit();
         timing.committed(result.is_ok());
+        drop(warning);
         result
     }
 
@@ -52,10 +57,12 @@ impl<'connection> WorkMutation<'connection> {
             origin_scope,
             transaction,
             mut timing,
+            warning,
         } = self;
         drop(origin_scope);
         let result = transaction.rollback();
         timing.rolled_back(result.is_ok());
+        drop(warning);
         result
     }
 }
@@ -97,6 +104,9 @@ impl std::fmt::Display for WorkWriterAdmissionReason {
 pub(crate) struct WriterAdmissionWindow {
     started: Arc<OnceLock<Instant>>,
     budget: Duration,
+    /// One ten-second warning for the whole window, which its admissions
+    /// share, started at its first admission and ended with its last clone.
+    warning: Arc<OnceLock<crate::operation_time::Warning>>,
 }
 
 impl WriterAdmissionWindow {
@@ -111,7 +121,13 @@ impl WriterAdmissionWindow {
         Self {
             started: Arc::new(OnceLock::new()),
             budget,
+            warning: Arc::new(OnceLock::new()),
         }
+    }
+
+    fn start_warning(&self) {
+        self.warning
+            .get_or_init(|| crate::operation_time::Warning::start("note write admission"));
     }
 
     fn remaining(&self) -> Duration {
@@ -178,6 +194,17 @@ impl SqliteStore {
     }
 
     pub(super) fn begin_work_mutation(&mut self) -> Result<WorkMutation<'_>, StoreError> {
+        // Acquiring the writer can wait out the whole busy timeout or window.
+        // A note's admissions share one window, and so its one warning.
+        let warning = match &self.writer_admission {
+            Some(window) => {
+                window.start_warning();
+                None
+            }
+            None => Some(crate::operation_time::Warning::start(
+                "store write admission",
+            )),
+        };
         #[cfg(test)]
         test_policy::before_acquisition();
         let started = Instant::now();
@@ -223,8 +250,25 @@ impl SqliteStore {
             origin_scope,
             transaction,
             timing,
+            warning,
         })
     }
+}
+
+/// Begins a write transaction outside the work-mutation path, with the
+/// warning that names the write once it has run ten seconds: the wait for the
+/// write lock, the body and the commit. Bind the warning first, as
+/// `let (_warning, transaction) = …`, so it is dropped after the transaction
+/// settles, an implicit rollback included.
+pub(crate) fn begin_immediate<'connection>(
+    connection: &'connection mut rusqlite::Connection,
+    operation: &'static str,
+) -> rusqlite::Result<(crate::operation_time::Warning, Transaction<'connection>)> {
+    let warning = crate::operation_time::Warning::start(operation);
+    #[cfg(test)]
+    test_policy::before_acquisition();
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    Ok((warning, transaction))
 }
 
 fn admission_error(

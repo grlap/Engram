@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { posixStopProtocol, requestStop, runPosixCommand, stopController, waitForPosixGroupExit } from "../launcher-stop.mjs";
 import { createRun, executeRun, notifyRun } from "../test-launcher.mjs";
+import { asOneOperation, warningSink } from "../operation-warning.mjs";
 
 export function registerPosixStopTests(support) {
   const { env, launcher, stage, json, logPath, repository, copyLauncher, directoryBytes, parkingBroker } = support;
@@ -25,6 +26,40 @@ test("POSIX absence observation requires ESRCH, including after Darwin EPERM", a
   await assert.rejects(waitForPosixGroupExit(123, { ...options,
     probe() { throw Object.assign(new Error("bad probe"), { code: "EACCES" }); },
   }), { code: "EACCES" });
+});
+
+test("POSIX group confirmation waits the shared minute and names itself once after ten seconds", async (t) => {
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
+  let clock = 0;
+  const options = { now: () => clock, sleep: async (ms) => { clock += ms; } };
+  // A group that clears at forty seconds is confirmed, with one warning.
+  await waitForPosixGroupExit(123, { ...options, probe() {
+    throw Object.assign(new Error("group probe"), { code: clock < 40_000 ? "EPERM" : "ESRCH" });
+  } });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^warning: process group cleanup confirmation is still running after 10 seconds; attempt=\d+\/\d+; elapsed_ms=10000\n$/u);
+  // One that never clears is unconfirmed only after the minute, still warned once.
+  clock = 0;
+  warnings.length = 0;
+  await assert.rejects(waitForPosixGroupExit(123, { ...options,
+    probe() { throw Object.assign(new Error("not absent"), { code: "EPERM" }); },
+  }), /disappearance is unconfirmed/u);
+  assert.ok(clock >= 60_000, `${clock}`);
+  assert.equal(warnings.length, 1);
+});
+
+test("POSIX group confirmation inside a named operation, such as a preflight, is named once, by that operation", async (t) => {
+  const warnings = [];
+  t.mock.method(warningSink, "write", (text) => { warnings.push(text); });
+  let clock = 0;
+  const now = () => clock;
+  await asOneOperation("fixture preflight", () => waitForPosixGroupExit(123, { now,
+    sleep: async (ms) => { clock += ms; },
+    probe() { throw Object.assign(new Error("group probe"), { code: clock < 40_000 ? "EPERM" : "ESRCH" }); },
+  }), { now });
+  assert.equal(warnings.length, 1, warnings.join(""));
+  assert.match(warnings[0], /^warning: fixture preflight is still running after 10 seconds;/u);
 });
 
 if (["darwin", "linux"].includes(process.platform)) for (const full of [false, true]) {

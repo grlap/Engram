@@ -55,6 +55,10 @@ pub(crate) struct PushSettings {
     pub capture_deadline: Duration,
     /// The time every request to the target may take together.
     pub transport_deadline: Duration,
+    /// The least time each request to the target is given once it starts,
+    /// even when less of the transport deadline is left. Zero gives each only
+    /// what is left.
+    pub request_floor: Duration,
     pub stage_free_space: FreeSpace,
     pub target_free_space: FreeSpace,
     /// Runs on the transport worker just before `put`, so a test can hold the
@@ -111,6 +115,7 @@ impl PushSettings {
         Self {
             capture_deadline,
             transport_deadline,
+            request_floor: Duration::ZERO,
             stage_free_space: engram::backup::available_space,
             target_free_space: engram::backup::available_space,
             #[cfg(test)]
@@ -264,26 +269,54 @@ impl From<TargetError> for Failure {
 pub(super) struct Transport {
     pub(super) budget: Duration,
     pub(super) used: Duration,
+    /// The least time a request that starts is given, even when less of the
+    /// budget is left. Zero gives each request only what is left.
+    pub(super) floor: Duration,
 }
 
 impl Transport {
-    /// Runs `work` on a worker, giving it the time left. Returns its answer,
-    /// or, when the time ran out first, the unjoined worker; with no time
-    /// left at all, the request is not started.
+    /// Runs `work` on a worker, giving it the time left, and at least the
+    /// transport's floor. Returns its answer, or, when the time ran out first,
+    /// the unjoined worker; with no time left at all, the request is not
+    /// started.
     pub(super) fn run<T: Send + 'static>(
         &mut self,
         work: impl FnOnce(Duration) -> T + Send + 'static,
     ) -> Result<T, Option<JoinHandle<()>>> {
-        let left = self.budget.saturating_sub(self.used);
-        if left.is_zero() {
+        self.run_at_least(self.floor, work)
+    }
+
+    /// Runs `work` as [`Self::run`] does with `floor`: a request that starts
+    /// while some of the budget is left is given at least `floor`, so none is
+    /// cut short of it. With no time left at all, none starts.
+    pub(super) fn run_at_least<T: Send + 'static>(
+        &mut self,
+        floor: Duration,
+        work: impl FnOnce(Duration) -> T + Send + 'static,
+    ) -> Result<T, Option<JoinHandle<()>>> {
+        self.run_with_grace(floor, Duration::ZERO, work)
+    }
+
+    /// Runs `work` as [`Self::run_at_least`] does, but waits `grace` longer
+    /// for its answer than the time it gives the work, for cleanup the work
+    /// may still be doing once that time is spent.
+    pub(super) fn run_with_grace<T: Send + 'static>(
+        &mut self,
+        floor: Duration,
+        grace: Duration,
+        work: impl FnOnce(Duration) -> T + Send + 'static,
+    ) -> Result<T, Option<JoinHandle<()>>> {
+        let remaining = self.budget.saturating_sub(self.used);
+        if remaining.is_zero() {
             return Err(None);
         }
+        let left = remaining.max(floor);
         let started = Instant::now();
         let (answer, receive) = mpsc::channel();
         let worker = thread::spawn(move || {
             let _ = answer.send(work(left));
         });
-        match receive.recv_timeout(left) {
+        match receive.recv_timeout(left.saturating_add(grace)) {
             Ok(value) => {
                 self.used += started.elapsed();
                 let _ = worker.join();
@@ -401,6 +434,7 @@ fn push_kind(home: &Path, project: &ProjectId, kind: CopyKind, settings: &PushSe
         transport: Transport {
             budget: settings.transport_deadline,
             used: Duration::ZERO,
+            floor: settings.request_floor,
         },
         started_at: Utc::now(),
         report: KindReport::new(kind, Outcome::Failed),

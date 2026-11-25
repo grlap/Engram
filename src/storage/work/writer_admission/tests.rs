@@ -4,6 +4,11 @@ mod contention;
 mod lane_workload;
 mod transaction_diagnostics;
 
+/// An ordinary store's busy timeout in milliseconds, as an opened store has it.
+fn ordinary_ms() -> u32 {
+    u32::try_from(crate::operation_time::MINIMUM.as_millis()).unwrap()
+}
+
 fn timeout(store: &SqliteStore) -> u32 {
     store
         .connection
@@ -37,7 +42,7 @@ fn writer_admission_nested_transaction_is_untouched() {
             .unwrap(),
         1
     );
-    assert_eq!(timeout(&scoped), 5000);
+    assert_eq!(timeout(&scoped), ordinary_ms());
     scoped.connection.execute_batch("ROLLBACK").unwrap();
 }
 
@@ -49,7 +54,7 @@ fn writer_admission_restores_timeout_and_scope_on_schema_failure_and_unwind() {
         let mut scoped = store.note_writer_admission_with_budget(Duration::from_millis(20));
         assert!(scoped.begin_work_mutation().is_err());
         assert!(scoped.connection.is_autocommit());
-        assert_eq!(timeout(&scoped), 5000);
+        assert_eq!(timeout(&scoped), ordinary_ms());
     }
     assert!(store.writer_admission.is_none());
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -145,6 +150,63 @@ fn writer_admission_preserves_custom_timeout_and_reports_ordinary_allowance() {
     }
 }
 
+// A writer still waiting at ten seconds says so once on stderr and goes on:
+// the warning neither ends the wait nor changes its outcome.
+#[test]
+fn a_write_admission_still_waiting_after_ten_seconds_warns_once_and_still_commits() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let mut store = SqliteStore::open(directory.path().join("admission.db")).unwrap();
+    let clock = std::rc::Rc::new(crate::operation_time::test_clock::Probe::install());
+    let waiting = std::rc::Rc::clone(&clock);
+    test_policy::with_writer_admission_test_policy(
+        None,
+        move || waiting.advance(crate::operation_time::WARN_AFTER + Duration::from_secs(1)),
+        || store.begin_work_mutation().unwrap().commit().unwrap(),
+    );
+    let warned: Vec<_> = clock
+        .events()
+        .into_iter()
+        .map(|(operation, _, elapsed)| (operation, elapsed))
+        .collect();
+    assert_eq!(
+        warned,
+        [("store write admission", crate::operation_time::WARN_AFTER)]
+    );
+}
+
+// A note's admissions share one window, so they share its one warning: two
+// waits that together pass ten seconds warn once, and two that each pass it
+// still warn only once, for the window rather than for each wait.
+#[test]
+fn a_note_window_warns_once_across_its_admissions() {
+    for wait in [Duration::from_secs(6), Duration::from_secs(11)] {
+        let directory = crate::test_support::temp_home().unwrap();
+        let mut store = SqliteStore::open(directory.path().join("admission.db")).unwrap();
+        let clock = std::rc::Rc::new(crate::operation_time::test_clock::Probe::install());
+        let waiting = std::rc::Rc::clone(&clock);
+        test_policy::with_writer_admission_test_policy(
+            None,
+            move || waiting.advance(wait),
+            || {
+                let mut scoped = store.note_writer_admission_with_budget(Duration::from_hours(1));
+                for _ in 0..2 {
+                    scoped.begin_work_mutation().unwrap().commit().unwrap();
+                }
+            },
+        );
+        let warned: Vec<_> = clock
+            .events()
+            .into_iter()
+            .map(|(operation, _, elapsed)| (operation, elapsed))
+            .collect();
+        assert_eq!(
+            warned,
+            [("note write admission", crate::operation_time::WARN_AFTER)],
+            "{wait:?}"
+        );
+    }
+}
+
 // Production's own clock, with no contention: a second acquisition's allowance
 // is what the shared window has left, at least the sleep below the first. A
 // fresh window per acquisition would show the same allowance twice, breaking
@@ -206,13 +268,13 @@ fn writer_admission_two_acquisitions_share_the_short_window() {
             };
             assert_eq!(first_budget, 30);
             assert_eq!(second_budget, 20);
-            assert_eq!(timeout(&scoped), 5000);
+            assert_eq!(timeout(&scoped), ordinary_ms());
             contender.execute_batch("COMMIT").unwrap();
             // An exhausted contention allowance still permits an immediate
             // acquisition.
             test_policy::advance_writer_admission_window(Duration::from_millis(20));
             scoped.begin_work_mutation().unwrap().commit().unwrap();
-            assert_eq!(timeout(&scoped), 5000);
+            assert_eq!(timeout(&scoped), ordinary_ms());
         },
     );
     assert!(store.writer_admission.is_none());

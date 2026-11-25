@@ -13,7 +13,7 @@ const fn ns(nanos: u64) -> Duration {
 }
 
 #[test]
-fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
+fn a_copy_wait_ends_at_the_deadline_or_one_lock_wait_after_it_began() {
     let start = Instant::now();
     let cases = [
         // A remainder under a millisecond still waits for it.
@@ -26,11 +26,15 @@ fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
         (ms(1500), Some(ms(1500)), Decision::Refuse),
         (ms(1712), Some(ms(1500)), Decision::Refuse),
         (ms(0), Some(ms(0)), Decision::Refuse),
-        // Without a deadline, or with a later one, a wait lasts five seconds.
-        (ms(4999), None, Decision::Wait(ms(1))),
+        // Without a deadline, or with a later one, a wait lasts one lock wait.
+        (LOCK_WAIT.saturating_sub(ms(1)), None, Decision::Wait(ms(1))),
         (LOCK_WAIT, None, Decision::Refuse),
-        (LOCK_WAIT, Some(ms(6000)), Decision::Refuse),
-        (ms(4000), Some(ms(6000)), Decision::Wait(POLL)),
+        (LOCK_WAIT, Some(LOCK_WAIT + ms(1000)), Decision::Refuse),
+        (
+            LOCK_WAIT.saturating_sub(ms(1000)),
+            Some(LOCK_WAIT + ms(1000)),
+            Decision::Wait(POLL),
+        ),
     ];
     for (elapsed, deadline, expected) in cases {
         assert_eq!(
@@ -46,10 +50,10 @@ fn a_copy_wait_ends_at_the_deadline_or_five_seconds_after_it_began() {
 }
 
 #[test]
-fn a_new_lock_wait_restarts_its_five_seconds_but_never_the_deadline() {
+fn a_new_lock_wait_restarts_its_own_wait_but_never_the_deadline() {
     let start = Instant::now();
     let deadline = Some(at(start, Duration::from_secs(8)));
-    // A second wait that begins six seconds in has its own five seconds...
+    // A second wait that begins six seconds in has its own lock wait...
     let second = at(start, Duration::from_secs(6));
     assert_eq!(
         decide(at(second, Duration::from_secs(1)), second, deadline),
@@ -90,15 +94,15 @@ fn the_busy_handler_waits_inside_a_scope_until_the_deadline() {
 fn the_first_call_for_a_lock_starts_a_new_wait() {
     let _scope = CopyWaitScope::enter(None);
     let long_ago = Instant::now()
-        .checked_sub(Duration::from_secs(10))
-        .expect("an instant ten seconds ago");
+        .checked_sub(LOCK_WAIT + Duration::from_secs(1))
+        .expect("an instant past one lock wait ago");
     replace(Some(CopyWait {
         deadline: None,
         episode_start: long_ago,
     }));
     assert!(
         !copy_busy(3),
-        "a wait that began ten seconds ago has run out"
+        "a wait that began more than one lock wait ago has run out"
     );
     assert!(copy_busy(0), "a new lock starts a new wait");
     let wait = current().expect("the scope");
@@ -176,7 +180,7 @@ fn a_retry_outside_the_busy_handler_keeps_to_the_same_limit() {
         assert_eq!(
             copy.retry_limit(start),
             Some(at(start, LOCK_WAIT)),
-            "without a deadline a copy retries for five seconds"
+            "without a deadline a copy retries for one lock wait"
         );
     }
 }

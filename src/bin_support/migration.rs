@@ -36,6 +36,9 @@ pub(crate) enum MigrationCommand {
 pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
     match command {
         MigrationCommand::Export { database, out } => {
+            // It can wait a minute for a writer, then read a whole store; one
+            // warning covers that and the receipt.
+            let _warning = engram::operation_time::Warning::start("migration export");
             eprintln!(
                 "WARNING: the export holds private scratch, restricted bodies and host authority records. Protect it like the store itself."
             );
@@ -49,6 +52,9 @@ pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         MigrationCommand::Import { file, out } => {
+            // It reads a whole export and writes a whole store before
+            // publishing it; one warning covers that and the receipt.
+            let _warning = engram::operation_time::Warning::start("migration import");
             eprintln!(
                 "WARNING: the imported store holds the same private data and authority records as its source. Do not run it alongside the source or on another host."
             );

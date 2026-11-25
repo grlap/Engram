@@ -227,6 +227,9 @@ impl ServerHandler for McpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        // One warning per tool call, its reads and response included; its
+        // write transactions and store opens name their own waits.
+        let _warning = crate::operation_time::Warning::start(tool_operation(&request.name));
         if let Some(observer) = &self.diagnostics {
             let ticket = observer.started(&context, &request.name);
             let transaction_context = observer
@@ -266,5 +269,29 @@ impl McpServer {
             crate::phase_trace::scoped(self.call_tool_untraced(request, context)).await;
         trace.handler_settled(ticket, &tool, started.elapsed(), &phases);
         result
+    }
+}
+
+/// The fixed name a tool call's slow-operation warning carries. Warnings name
+/// operations by fixed text, never by caller-supplied text.
+fn tool_operation(name: &str) -> &'static str {
+    match name {
+        "next" => "MCP next",
+        "ls" => "MCP ls",
+        "show" => "MCP show",
+        "add" => "MCP add",
+        "claim" => "MCP claim",
+        "update" => "MCP update",
+        "gate" => "MCP gate",
+        "evaluate" => "MCP evaluate",
+        "note" => "MCP note",
+        "done" => "MCP done",
+        "handoff" => "MCP handoff",
+        "remember" => "MCP remember",
+        "memories" => "MCP memories",
+        "forget" => "MCP forget",
+        "search" => "MCP search",
+        "task_sync_settings" => "MCP task_sync_settings",
+        _ => "MCP tool call",
     }
 }

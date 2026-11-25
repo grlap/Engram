@@ -1,7 +1,7 @@
 //! A store open that meets SQLite's locking-protocol refusal rolls back its
-//! attempt and starts again from the top once, or returns the refusal at once
-//! where its opener has a deadline of its own; the refusal names its phase
-//! and is classified as a busy store.
+//! attempt and starts again from the top until its own lock wait ends; only
+//! then is the refusal returned. It names its phase and is classified as a
+//! busy store.
 
 use rusqlite::Connection;
 
@@ -18,15 +18,15 @@ fn count(connection: &Connection, sql: &str) -> i64 {
 }
 
 /// Asserts that `refusal` is the locking-protocol refusal for `phase`, after
-/// one retry whose first attempt ended in `first`, or after none, and is
-/// classified as a busy store.
+/// starting again from a first attempt that ended in `first`, or after none,
+/// and is classified as a busy store.
 fn assert_refusal(refusal: &StoreError, phase: OpenPhase, first: Option<OpenPhase>) {
     let text = refusal.to_string();
     assert!(
         text.contains(&format!("(phase: {}", phase.label())),
         "{text}"
     );
-    assert_eq!(text.contains("after one retry"), first.is_some(), "{text}");
+    assert_eq!(text.contains("starting again"), first.is_some(), "{text}");
     if let Some(first) = first {
         assert!(
             text.contains(&format!("first attempt in {})", first.label())),
@@ -83,24 +83,48 @@ fn a_refusal_met_once_while_an_initialized_store_opens_is_recovered() {
     assert_eq!(injected.remaining(), 0);
 }
 
-/// Met again in the attempt that started again, the refusal ends the open:
-/// one retry, never a third attempt. The refusal names where it ended both
-/// attempts. The rolled-back attempts leave no part of a new store, and a
-/// later open initializes it whole.
+/// Met again and again while its lock wait lasts, the refusal does not end the
+/// open: it starts again each time, here three times, and then initializes
+/// the store whole.
 #[test]
-fn a_second_refusal_ends_the_open_after_one_retry() {
+fn a_refusal_met_again_and_again_within_the_wait_is_recovered() {
     let directory = crate::test_support::temp_home().expect("temp home");
     let database = directory.path().join("work.sqlite3");
     let injected = inject_locking_protocol(OpenPhase::ColdInitialization, 3);
-    let refusal = SqliteStore::open(&database)
-        .map(drop)
-        .expect_err("refused after one retry");
-    assert_eq!(injected.remaining(), 1, "two attempts, no third");
+    drop(SqliteStore::open(&database).expect("opened after starting again three times"));
+    assert_eq!(injected.remaining(), 0, "all three refusals were met");
+    drop(injected);
+    let raw = Connection::open(&database).expect("inspect store");
+    assert_eq!(
+        count(&raw, "SELECT COUNT(*) FROM control_policy_versions"),
+        1
+    );
+    assert_eq!(count(&raw, "SELECT COUNT(*) FROM work_schema_metadata"), 1);
+}
+
+/// A refusal that keeps coming ends the open only once its lock wait has
+/// ended, never before; how many attempts fit in the wait depends on the
+/// host. The refusal names the step it ended, and the first attempt's too when
+/// the open started again. The rolled-back attempts leave no part of a new
+/// store, and a later open initializes it whole.
+#[test]
+fn a_refusal_that_keeps_coming_ends_the_open_only_once_its_wait_has_ended() {
+    let directory = crate::test_support::temp_home().expect("temp home");
+    let database = directory.path().join("work.sqlite3");
+    let wait = std::time::Duration::from_millis(200);
+    let injected = inject_locking_protocol(OpenPhase::ColdInitialization, usize::MAX);
+    let started = std::time::Instant::now();
+    let refusal = super::super::lock_wait::with_store_lock_wait(wait, || {
+        SqliteStore::open(&database).map(drop)
+    })
+    .expect_err("refused once the wait has ended");
+    assert!(started.elapsed() >= wait, "refused before its wait ended");
+    let started_again = injected.remaining() < usize::MAX - 1;
     drop(injected);
     assert_refusal(
         &refusal,
         OpenPhase::ColdInitialization,
-        Some(OpenPhase::ColdInitialization),
+        started_again.then_some(OpenPhase::ColdInitialization),
     );
     let raw = Connection::open(&database).expect("inspect rolled-back store");
     for table in ["objects", "control_policy_versions", "work_schema_metadata"] {
@@ -113,43 +137,38 @@ fn a_second_refusal_ends_the_open_after_one_retry() {
     drop(SqliteStore::open(&database).expect("a later open"));
 }
 
-/// A control host's open is bounded by its host's deadline, so it returns the
-/// refusal at once instead of starting again.
+/// A control host's open, inside its call's allowance, starts again after the
+/// refusal while that allowance lasts, rather than ending the call at SQLite's
+/// first ten seconds.
 #[test]
-fn a_control_host_open_returns_the_refusal_without_a_retry() {
+fn a_control_host_open_starts_again_while_its_time_lasts() {
     let directory = crate::test_support::temp_home().expect("temp home");
     let database = directory.path().join("work.sqlite3");
+    let _call = crate::storage::ControlRequestScope::frame();
     let injected = inject_locking_protocol(OpenPhase::JournalSwitch, 2);
-    let refusal =
-        SqliteStore::open_for_control_host(&database, Some(HostPathPolicy::host_default()))
-            .map(drop)
-            .expect_err("refused at once");
-    assert_eq!(injected.remaining(), 1, "one attempt only");
-    drop(injected);
-    assert_refusal(&refusal, OpenPhase::JournalSwitch, None);
     drop(
         SqliteStore::open_for_control_host(&database, Some(HostPathPolicy::host_default()))
-            .expect("a later open"),
+            .expect("opened after starting again"),
     );
+    assert_eq!(injected.remaining(), 0, "both refusals were met");
 }
 
-/// A store copy runs under its own deadline, so its open of the source
-/// returns the refusal at once too.
+/// A store copy's open of the source starts again too, within the copy's own
+/// deadline.
 #[test]
-fn a_store_copy_returns_the_refusal_without_a_retry() {
+fn a_store_copy_starts_again_while_its_deadline_lasts() {
     let directory = crate::test_support::temp_home().expect("temp home");
     let database = directory.path().join("work.sqlite3");
     drop(SqliteStore::open(&database).expect("initialize"));
     let target = directory.path().join("copy.sqlite3");
     let injected = inject_locking_protocol(OpenPhase::ProbeSnapshot, 2);
-    let refusal = SqliteStore::copy_existing_read_only(
+    SqliteStore::copy_existing_read_only(
         &database,
         &target,
         &CopyInterrupt::after(std::time::Duration::from_secs(60)),
     )
-    .expect_err("refused at once");
-    assert_eq!(injected.remaining(), 1, "one attempt only");
-    assert_refusal(&refusal, OpenPhase::ProbeSnapshot, None);
+    .expect("copied after starting again");
+    assert_eq!(injected.remaining(), 0, "both refusals were met");
 }
 
 #[test]

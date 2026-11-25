@@ -7,7 +7,11 @@ use crate::diagnostics::{
 
 #[test]
 fn transaction_budget_reports_the_installed_native_cap_and_restores_configuration() {
-    for (configured, effective) in [(250_u64, 250_u64), (20000, 15000)] {
+    let allowance = u64::try_from(
+        crate::storage::control_runtime::request_budget::CONTROL_REQUEST_ALLOWANCE.as_millis(),
+    )
+    .unwrap();
+    for (configured, effective) in [(250_u64, 250_u64), (allowance + 5000, allowance)] {
         let home = crate::test_support::temp_home().unwrap();
         let mut connection = Connection::open_in_memory().unwrap();
         connection

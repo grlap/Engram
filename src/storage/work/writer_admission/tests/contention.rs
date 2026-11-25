@@ -158,6 +158,13 @@ impl Drop for OwnedChild {
     }
 }
 
+/// The note window this test waits out, shorter than the product's minute.
+const NOTE_WINDOW: Duration = Duration::from_secs(2);
+
+fn window_ms() -> u64 {
+    u64::try_from(NOTE_WINDOW.as_millis()).unwrap()
+}
+
 #[test]
 fn known_holder_is_identified_without_changing_the_note_budget() {
     if let Some(home) = std::env::var_os(CHILD_HOME) {
@@ -198,10 +205,16 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         child.ready();
         let diagnostic = capture.then(|| scoped(&root, "note"));
         let started = Instant::now();
-        let error = {
-            let mut note = store.note_writer_admission();
-            note.begin_work_mutation().unwrap_err()
-        };
+        // The note window is the test's own, so a pass waits it out without
+        // waiting the product's full minute; the holder outlasts it.
+        let error = test_policy::with_writer_admission_test_policy(
+            Some(NOTE_WINDOW),
+            || {},
+            || {
+                let mut note = store.note_writer_admission();
+                note.begin_work_mutation().unwrap_err()
+            },
+        );
         let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap();
         let StoreError::WorkWriterAdmissionRefused {
             reason: WorkWriterAdmissionReason::BusyBudgetExhausted,
@@ -211,10 +224,10 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         else {
             panic!("expected native admission refusal: {error:?}");
         };
-        // Retained limit: each pass really waits out the product's 10 s note
-        // window, and the window's start must leave it some budget.
-        assert!(budget_ms > 0 && budget_ms <= 10000);
-        assert_eq!(timeout(&store), 5000);
+        // Each pass really waits out its note window, and the window's start
+        // must leave it some budget.
+        assert!(budget_ms > 0 && budget_ms <= window_ms());
+        assert_eq!(timeout(&store), ordinary_ms());
         assert!(store.connection.is_autocommit());
         // Evidence protocol only: drain the waiter while the child's writer
         // is idle at the release barrier. Production ring writes remain
@@ -279,7 +292,7 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
             assert!(refused["event"]["store_transaction"]["acquired_interval_ms"].is_null());
             assert_eq!(
                 refused["event"]["store_transaction"]["budget"]["shared_window_ms"],
-                10000
+                window_ms()
             );
             assert!(
                 settled["event"]["store_transaction"]["acquired_interval_ms"]
@@ -294,7 +307,7 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         }
         measurements.push(serde_json::json!({
             "capture": if capture { "full" } else { "no_observer" },
-            "configured_note_window_ms": 10000, "effective_allowance_ms": budget_ms,
+            "configured_note_window_ms": window_ms(), "effective_allowance_ms": budget_ms,
             "waiter_elapsed_ms": elapsed_ms, "holder_observed_interval_ms": held_ms,
             "retained_transaction_records": transactions.len(), "holder_pid": holder["pid"],
             "diagnostic_holder": transactions.iter()

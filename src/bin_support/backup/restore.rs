@@ -40,8 +40,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     directory::{
-        SHARING_PAUSE, SHARING_RETRIES, is_sharing_violation, move_without_replacing,
-        remove_with_retry,
+        SHARING_PAUSE, SharingWait, is_sharing_violation, move_without_replacing, remove_with_retry,
     },
     fetch::{ReadFailure, ReadSettings, fetch},
 };
@@ -852,13 +851,12 @@ impl OwnedStaging {
         let remove = || std::fs::remove_file(self.full_directory.join(&self.name));
         #[cfg(not(windows))]
         let remove = || self.directory.remove_file(&self.name);
-        let mut attempt = 0;
+        let held = SharingWait::new();
         loop {
             match remove() {
                 Ok(()) => break,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => break,
-                Err(error) if is_sharing_violation(&error) && attempt < SHARING_RETRIES => {
-                    attempt += 1;
+                Err(error) if is_sharing_violation(&error) && held.again() => {
                     std::thread::sleep(SHARING_PAUSE);
                 }
                 Err(error) => return Err(error),

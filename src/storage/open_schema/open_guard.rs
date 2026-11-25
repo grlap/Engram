@@ -4,8 +4,8 @@
 //! Several first openers of a new store each switch it to write-ahead
 //! logging and initialize it. When they do that at once, SQLite on Windows
 //! can refuse every one of them with its locking-protocol error, after about
-//! ten seconds and again on the open's one retry. So a writable open takes
-//! an exclusive lock on a sidecar file before it opens the store, which
+//! ten seconds and again on each attempt the open starts again. So a writable
+//! open takes an exclusive lock on a sidecar file before it opens the store, which
 //! holds across threads and processes, and gives it up as soon as the store
 //! is known to be in write-ahead-log mode with its schema. It does not hold
 //! it through the rest of the open's setup, which waits on SQLite's own
@@ -245,13 +245,13 @@ fn open_lock_busy() -> StoreError {
 }
 
 /// Runs a first open's `attempt`, again only on the refusal that says to: on a
-/// loaded host, initializing a new store can outlast the documented five-second
+/// loaded host, initializing a new store can outlast the documented one-minute
 /// wait for the open lock (sqlite-store.md), which is correct and safe to retry.
 /// Each refusal must have waited that whole wait, so a shorter wait fails even on
 /// an idle host, and load cannot fail it. Any other error returns at once, and so
 /// does this one past the hang guard, so a lock never released still fails.
 /// Retained limit: once the lock is released, the rest of an open waits on
-/// SQLite's own five-second busy timeout.
+/// SQLite's own busy timeout of the same length.
 #[cfg(test)]
 pub(crate) fn again_while_another_opens<T, E: std::fmt::Display>(
     mut attempt: impl FnMut() -> Result<T, E>,
@@ -263,10 +263,10 @@ pub(crate) fn again_while_another_opens<T, E: std::fmt::Display>(
             Err(error) if error.to_string().contains(OPEN_LOCK_BUSY_REFUSAL) => {
                 let waited = began.elapsed();
                 assert!(
-                    waited >= super::lock_wait::LOCK_WAIT,
+                    waited >= super::lock_wait::store_lock_wait(),
                     "refused after waiting only {waited:?}: {error}"
                 );
-                if waiting.elapsed() >= std::time::Duration::from_secs(60) {
+                if waiting.elapsed() >= super::lock_wait::store_lock_wait() * 3 {
                     return Err(error);
                 }
             }

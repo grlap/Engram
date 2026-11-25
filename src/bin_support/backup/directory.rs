@@ -34,9 +34,33 @@ const MANIFEST_LIMIT: u64 = 1 << 20;
 /// Bytes read or written per chunk; the deadline is checked between chunks.
 const CHUNK: usize = 1 << 16;
 
-/// How often a removal or rename that another program holds open is retried.
-pub(super) const SHARING_RETRIES: u32 = 20;
+/// A removal or rename that another program, such as a scanner or a sync
+/// client, holds open is retried every pause for up to the shared minute.
 pub(super) const SHARING_PAUSE: Duration = Duration::from_millis(100);
+
+/// A removal or move of a file another program may hold open: when its first
+/// try began, and the warning that names it once it has lasted ten seconds,
+/// so a single slow call is named as well as a long wait.
+pub(super) struct SharingWait {
+    started: Instant,
+    /// Held, never read: dropping it settles the warning.
+    _warning: engram::operation_time::Warning,
+}
+
+impl SharingWait {
+    /// Starts the clock and the warning before the first try.
+    pub(super) fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            _warning: engram::operation_time::Warning::start("backup file removal or move"),
+        }
+    }
+
+    /// Whether another try is still within the minute from the first.
+    pub(super) fn again(&self) -> bool {
+        self.started.elapsed() < engram::operation_time::MINIMUM
+    }
+}
 
 /// The directory adapter for one configured target.
 pub(crate) struct DirectoryAdapter<'a> {
@@ -1083,7 +1107,8 @@ fn persist_without_replacing(
     // temporary path, an early return would delete it.
     let destination = verbatim(to)?;
     let mut pending = tempfile::TempPath::try_from_path(verbatim(from)?)?;
-    for attempt in 0..=SHARING_RETRIES {
+    let held = SharingWait::new();
+    loop {
         match pending.persist_noclobber(&destination) {
             Ok(()) => {
                 after(from, &destination);
@@ -1091,7 +1116,7 @@ fn persist_without_replacing(
                     leftover: remaining(from),
                 });
             }
-            Err(error) if is_sharing_violation(&error.error) && attempt < SHARING_RETRIES => {
+            Err(error) if is_sharing_violation(&error.error) && held.again() => {
                 pending = error.path;
                 std::thread::sleep(SHARING_PAUSE);
             }
@@ -1102,7 +1127,6 @@ fn persist_without_replacing(
             }
         }
     }
-    unreachable!("the last attempt returns")
 }
 
 /// A move that succeeded, and the source it left behind, if any.
@@ -1203,13 +1227,12 @@ pub(super) fn with_cleanup(error: AdapterError, path: &Path) -> AdapterError {
 /// Removes `path`, waiting out another program that holds it open, such as
 /// a sync client or a scanner. A missing file is fine.
 pub(super) fn remove_with_retry(path: &Path) -> io::Result<()> {
-    let mut attempt = 0;
+    let held = SharingWait::new();
     loop {
         match fs::remove_file(path) {
             Ok(()) => return Ok(()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) if is_sharing_violation(&error) && attempt < SHARING_RETRIES => {
-                attempt += 1;
+            Err(error) if is_sharing_violation(&error) && held.again() => {
                 std::thread::sleep(SHARING_PAUSE);
             }
             Err(error) => return Err(error),

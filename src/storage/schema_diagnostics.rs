@@ -111,8 +111,9 @@ pub fn running_schema_reference() -> Result<ObjectId, StoreError> {
 /// # Errors
 /// Returns an error when the existing file or schema cannot be read.
 pub fn store_schema_reference(path: &Path) -> Result<ObjectId, StoreError> {
+    let _warning = crate::operation_time::Warning::start("store schema read");
     let connection = super::open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    connection.busy_timeout(super::Duration::from_secs(5))?;
+    connection.busy_timeout(crate::operation_time::MINIMUM)?;
     Ok(
         CanonicalObject::freeze(&stored_schema_definitions(&connection)?)?
             .key()

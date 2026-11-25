@@ -40,9 +40,10 @@ impl crate::storage::SqliteStore {
             return Ok(id);
         }
         let measured = measure_binding_destination(&self.connection, &request.binding)?;
-        let mut transaction = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (_warning, mut transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "imported evidence write admission",
+        )?;
         if let Some(id) = replay_on(&transaction, project, session, actor, request)? {
             return Ok(id);
         }

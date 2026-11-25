@@ -34,7 +34,7 @@ impl Default for Limits {
             records: 100_000,
             bytes: 384 * 1024 * 1024,
             unit_bytes: 1024 * 1024,
-            elapsed: Duration::from_secs(10),
+            elapsed: crate::operation_time::MINIMUM,
         }
     }
 }
@@ -353,6 +353,7 @@ pub(crate) fn run<T>(
         state.check()?;
         return result;
     }
+    let _warning = crate::operation_time::Warning::start("catalog search");
     let request = REQUEST
         .with_borrow(Clone::clone)
         .unwrap_or_else(|| Request::new(CancellationToken::new()));

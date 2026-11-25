@@ -8,7 +8,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     thread::JoinHandle,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use engram::{
@@ -30,14 +30,24 @@ use super::{
 /// deadline is given.
 pub(crate) const DEFAULT_READ_DEADLINE: Duration = Duration::from_mins(30);
 
-/// How much earlier than the whole fetch the decode's own deadline falls, so
-/// a decode that runs out of time removes its partial file itself before the
-/// process gives up on the worker.
+/// How much earlier than the copy's read request the decode's own deadline
+/// falls, so a decode that runs out of time removes its partial file itself
+/// before the process gives up on the worker.
 const DECODE_MARGIN: Duration = Duration::from_secs(2);
+
+/// Under a request floor, the removal that margin covers may wait the shared
+/// minute for a file another program holds open: the worker is waited for
+/// that much longer, so the decode keeps its own time and the removal its
+/// minute.
+const HELD_FILE_GRACE: Duration = engram::operation_time::MINIMUM;
 
 /// How a list or fetch runs.
 pub(crate) struct ReadSettings {
     pub deadline: Duration,
+    /// The least time each request to the target is given once it starts,
+    /// even when less of the deadline is left: the listing, and the copy's
+    /// read with its decode. Zero gives each only what is left.
+    pub request_floor: Duration,
     pub local_free_space: FreeSpace,
     /// Makes the fetch's move leave its staging file behind, as the
     /// hard-link fallback does when its unlink fails.
@@ -49,6 +59,7 @@ impl ReadSettings {
     pub(crate) fn new(deadline: Duration) -> Self {
         Self {
             deadline,
+            request_floor: Duration::ZERO,
             local_free_space: engram::backup::available_space,
             #[cfg(test)]
             leave_staging: false,
@@ -106,7 +117,7 @@ pub(crate) fn list(
         Ok(target) => target,
         Err(failure) => return failed(failure),
     };
-    run(settings.deadline, move |left| {
+    run(settings, move |left| {
         list_all(&target.adapter(left), &target.project).map_err(ReadFailure::from)
     })
 }
@@ -160,16 +171,37 @@ pub(crate) fn fetch(
     let left_behind = staging.clone();
     #[cfg(test)]
     let leave_staging = settings.leave_staging;
-    let mut fetched = run(settings.deadline, move |left| {
-        let started = Instant::now();
-        let listing = list_all(&target.adapter(left), &target.project)?;
-        let manifest = named(listing, &copy, &target.project)?;
-        let decode_left = left
-            .saturating_sub(started.elapsed())
-            .saturating_sub(DECODE_MARGIN);
-        target
-            .adapter(decode_left)
-            .get(&target.project, &manifest, &staging)?;
+    let mut transport = Transport {
+        budget: settings.deadline,
+        used: Duration::ZERO,
+        floor: settings.request_floor,
+    };
+    // The listing and the copy's read are separate requests, each given at
+    // least the floor; the read's floor adds the margin its decode keeps, and
+    // the read is waited for a grace longer, for removing a held partial file.
+    let listed = {
+        let target = target.clone();
+        transport.run(move |left| {
+            let listing = list_all(&target.adapter(left), &target.project)?;
+            named(listing, &copy, &target.project)
+        })
+    };
+    let manifest = match listed {
+        Ok(Ok(manifest)) => manifest,
+        Ok(Err(failure)) => return failed(failure),
+        Err(abandoned) => return passed_deadline(settings.deadline, abandoned),
+    };
+    let (read_floor, grace) = if settings.request_floor.is_zero() {
+        (Duration::ZERO, Duration::ZERO)
+    } else {
+        (settings.request_floor + DECODE_MARGIN, HELD_FILE_GRACE)
+    };
+    let read = transport.run_with_grace(read_floor, grace, move |left| {
+        target.adapter(left.saturating_sub(DECODE_MARGIN)).get(
+            &target.project,
+            &manifest,
+            &staging,
+        )?;
         // The move never replaces a file that appeared at `out` meanwhile.
         #[cfg(test)]
         let moved = if leave_staging {
@@ -195,6 +227,13 @@ pub(crate) fn fetch(
             }
         }
     });
+    let mut fetched = match read {
+        Ok(outcome) => ReadRun {
+            outcome,
+            abandoned: None,
+        },
+        Err(abandoned) => passed_deadline(settings.deadline, abandoned),
+    };
     if fetched.abandoned.is_some()
         && let Err(failure) = &mut fetched.outcome
     {
@@ -325,25 +364,30 @@ pub(super) fn list_all(
 }
 
 fn run<T: Send + 'static>(
-    deadline: Duration,
+    settings: &ReadSettings,
     work: impl FnOnce(Duration) -> Result<T, ReadFailure> + Send + 'static,
 ) -> ReadRun<T> {
     let mut transport = Transport {
-        budget: deadline,
+        budget: settings.deadline,
         used: Duration::ZERO,
+        floor: settings.request_floor,
     };
     match transport.run(work) {
         Ok(outcome) => ReadRun {
             outcome,
             abandoned: None,
         },
-        Err(abandoned) => ReadRun {
-            outcome: Err(ReadFailure::new(
-                "backup_transport_deadline",
-                format!("the requests to the target passed their deadline of {deadline:?}"),
-            )),
-            abandoned,
-        },
+        Err(abandoned) => passed_deadline(settings.deadline, abandoned),
+    }
+}
+
+fn passed_deadline<T>(deadline: Duration, abandoned: Option<JoinHandle<()>>) -> ReadRun<T> {
+    ReadRun {
+        outcome: Err(ReadFailure::new(
+            "backup_transport_deadline",
+            format!("the requests to the target passed their deadline of {deadline:?}"),
+        )),
+        abandoned,
     }
 }
 

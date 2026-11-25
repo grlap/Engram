@@ -54,6 +54,8 @@ impl SqliteStore {
         exported_at: DateTime<Utc>,
         redactor: &R,
     ) -> Result<WorkGraphSnapshotExport, StoreError> {
+        // Building, checking and auditing a large snapshot can pass ten seconds.
+        let _warning = crate::operation_time::Warning::start("graph snapshot save");
         crate::storage::admit_live_actor_session(actor)?;
         let widening_reason = validate_widening_reason(widening_reason)?;
         validate_snapshot_audit_actor_shape(actor).map_err(StoreError::InvalidWork)?;

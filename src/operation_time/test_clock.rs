@@ -58,6 +58,12 @@ impl Probe {
         self.state.events.borrow_mut().extend(events);
     }
 
+    /// Moves the clock without the monitor's scan, as when an operation ends
+    /// between its warning time and the monitor's next wake.
+    pub(crate) fn pass_unscanned(&self, elapsed: Duration) {
+        self.state.elapsed.set(self.state.elapsed.get() + elapsed);
+    }
+
     pub(crate) fn elapsed(&self) -> Duration {
         self.state.elapsed.get()
     }
@@ -96,10 +102,22 @@ pub(super) fn register(pending: &Arc<Pending>) -> bool {
         let Some(clock) = clock.as_ref() else {
             return false;
         };
-        clock.queue.borrow_mut().0.push(Arc::downgrade(pending));
+        clock
+            .queue
+            .borrow_mut()
+            .pending
+            .push(Arc::downgrade(pending));
         clock.registered.borrow_mut().push(Arc::downgrade(pending));
         true
     })
+}
+
+pub(super) fn report_late(event: Event) {
+    CLOCK.with(|clock| {
+        if let Some(clock) = clock.borrow().as_ref() {
+            clock.events.borrow_mut().push(event);
+        }
+    });
 }
 
 pub(super) fn owns(pending: &Arc<Pending>) -> bool {

@@ -604,6 +604,31 @@ fn unhex(hex: &str) -> Result<Vec<u8>, MigrationError> {
         .collect()
 }
 
+/// Begins the export's one read transaction and takes its snapshot. SQLite's
+/// locking-protocol refusal, which it returns after about ten seconds of
+/// failing to begin a read on a write-ahead log, does not end the export: the
+/// read starts again until the export's minute has passed. Once the snapshot
+/// is taken, the export's later reads in it cannot meet that refusal.
+fn begin_export_snapshot(connection: &rusqlite::Connection) -> Result<(), MigrationError> {
+    let started = std::time::Instant::now();
+    loop {
+        connection.execute_batch("BEGIN;")?;
+        match connection.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
+            row.get::<_, i64>(0)
+        }) {
+            Ok(_) => return Ok(()),
+            Err(error)
+                if error.sqlite_error_code()
+                    == Some(rusqlite::ErrorCode::FileLockingProtocolFailed)
+                    && started.elapsed() < crate::operation_time::MINIMUM =>
+            {
+                connection.execute_batch("ROLLBACK;")?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
 /// Writes every row of `database` to a new JSON Lines file at `out`.
 ///
 /// The source is opened read-only and read inside one transaction, so the file
@@ -617,8 +642,9 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
         return Err(refused("export destination already exists"));
     }
     let connection = super::open_sqlite_file(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    connection.busy_timeout(std::time::Duration::from_secs(5))?;
-    connection.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF; BEGIN;")?;
+    connection.busy_timeout(crate::operation_time::MINIMUM)?;
+    connection.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;")?;
+    begin_export_snapshot(&connection)?;
     let (tables, rebuilt) = source_tables(&connection)?;
     if tables.is_empty() {
         return Err(refused("the source has no tables; it is not a store"));
@@ -780,6 +806,8 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     let staged = Staged::reserve(staged_path)?;
     drop(SqliteStore::open_private_unresolved(&staged.path)?);
     let mut connection = super::open_sqlite_file(&staged.path, rusqlite::OpenFlags::default())?;
+    // Its write and checkpoint wait a minute for a lock, as every store wait does.
+    connection.busy_timeout(crate::operation_time::MINIMUM)?;
     connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")?;
     let transaction = connection.transaction()?;
     // Rows arrive table by table; references are checked once, at commit.
@@ -959,6 +987,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     let report = SqliteStore::repair_rebuildable_projections(&staged.path)?;
     let pending = admit_pending_deliveries(&staged.path)?;
     let checkpoint = super::open_sqlite_file(&staged.path, rusqlite::OpenFlags::default())?;
+    checkpoint.busy_timeout(crate::operation_time::MINIMUM)?;
     checkpoint.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
     checkpoint.close().map_err(|(_, error)| error)?;
 

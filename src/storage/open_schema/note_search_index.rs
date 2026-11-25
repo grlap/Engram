@@ -1,7 +1,7 @@
 //! Explicit one-time note-index cutover; ordinary open never builds projections.
 
 use super::{
-    Connection, Duration, Path, SchemaDurability, SchemaOwner, SqliteStore, StoreError,
+    Connection, Path, SchemaDurability, SchemaOwner, SqliteStore, StoreError,
     current_schema_definition_issue, different_build_store_error, open_sqlite_file, work,
 };
 
@@ -17,7 +17,7 @@ impl SqliteStore {
             )));
         }
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(super::lock_wait::store_lock_wait())?;
         connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;")?;
         if missing_note_index {
             work::note_index::require_missing_on(&connection)?;
@@ -50,6 +50,8 @@ impl SqliteStore {
     /// Refuses existing or damaged target objects, other schema/policy issues,
     /// canonical note findings and SQLite errors. Every refusal rolls back.
     pub fn build_note_search_index(path: &Path) -> Result<usize, StoreError> {
+        // Covers the open, the writer wait and the build alike.
+        let _warning = crate::operation_time::Warning::start("note search index build");
         let connection = Self::open_projection_maintenance(path, true)?;
         // Acquire the writer before checking/creating the target. The immediate
         // transaction prevents another builder from passing the absence check.

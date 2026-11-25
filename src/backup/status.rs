@@ -200,6 +200,8 @@ impl RunningBuild {
 /// looks as if it lay in the future.
 #[must_use]
 pub fn backup_status(home: &Path, project: &ProjectId, database: &Path) -> BackupStatus {
+    // One warning for the whole collection, whichever word reads it.
+    let _warning = crate::operation_time::Warning::start("backup status");
     let collected = collect(home, project, database);
     let restore = RestoreStatus::of(read_restore_record(home, project));
     let running = RunningBuild::current();

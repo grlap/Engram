@@ -106,9 +106,10 @@ impl SqliteStore {
         crate::storage::admit_live_actor_session(actor)?;
         crate::storage::work::planning::assert_actor_session(actor, session)?;
         crate::storage::work::feeds::inspect_work_request(redactor, request, actor)?;
-        let mut tx = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (_warning, mut tx) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "native evidence write admission",
+        )?;
         if let Some(old) = load(&tx, &request.capture)? {
             if old.project != *project || old.request != *request || old.actor != *actor {
                 return Err(invalid("native evidence capture retry intent differs"));

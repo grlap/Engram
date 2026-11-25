@@ -35,6 +35,29 @@ fn human_warning_is_explicit_and_text_is_not_an_output_flag() {
     );
 }
 
+fn invocation_policy(args: &[&str]) -> (bool, Option<bool>) {
+    let (invocation, warning) =
+        parse_invocation(args.iter().map(std::ffi::OsString::from).collect()).unwrap();
+    (matches!(invocation, Invocation::Version), warning)
+}
+
+#[test]
+fn printing_the_version_warns_only_when_asked() {
+    assert_eq!(
+        invocation_policy(&["engram", "--version"]),
+        (true, Some(false))
+    );
+    assert_eq!(invocation_policy(&["engram", "-V"]), (true, Some(false)));
+    assert_eq!(
+        invocation_policy(&["engram", "--warn-slow", "--version"]),
+        (true, Some(true))
+    );
+    assert_eq!(
+        invocation_policy(&["engram", "task-sync", "status"]),
+        (false, Some(false))
+    );
+}
+
 #[test]
 fn long_lived_transports_keep_their_warning_policy() {
     assert_eq!(

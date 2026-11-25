@@ -310,8 +310,8 @@ fn a_contending_writer_raises_begin_immediate_at_startup() {
     let startup = terminal(&lines, 0);
     // Release follows the observed BEGIN, so schema startup cannot consume
     // the interval that must be measured as connection-resume contention.
-    // Retained limit: the releaser must commit inside the product's 5 s busy
-    // timeout, about 4.7 s after its hold, or startup is refused.
+    // Retained limit: the releaser must commit inside the product's one-minute
+    // busy timeout, or startup is refused.
     assert!(
         startup["begin_immediate"]["max_ms"].as_f64() >= Some(250.0),
         "{startup}"

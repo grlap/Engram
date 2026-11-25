@@ -1,7 +1,7 @@
 //! Native, explicitly selected use of already qualified retained proof.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::Connection;
 
 use super::verification::applicability::{
     MeasuredDestination, binding_destination_on, measure_binding_destination,
@@ -94,9 +94,10 @@ impl SqliteStore {
         if request.consumption.as_str().len() != 32 {
             return Err(invalid("consumption requires a prepared record identity"));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "imported evidence write admission",
+        )?;
         if let Some(receipt) =
             replay_on(&transaction, project, session, actor, request, verification)?
         {

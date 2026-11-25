@@ -94,9 +94,14 @@ impl<T: Transport<RoleServer>> Transport<RoleServer> for DiagnosticTransport<T> 
             },
             dispatch: Instant::now(),
         };
+        // Writing a message to the client is its own operation, after the
+        // tool call that produced it has ended: a client slow to read its
+        // output is named once after ten seconds, never interrupted.
+        let warning = crate::operation_time::Warning::start("MCP message send");
         let future = self.inner.send(message);
         async move {
             let result = future.await;
+            drop(warning);
             let fallback = sending.fallback.take();
             if let Some(item) = sending.item.take() {
                 sending

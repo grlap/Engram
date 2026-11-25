@@ -3,7 +3,7 @@
 use super::state::{project_memory_key_changes_on, project_memory_state_on};
 use super::{
     MAX_PROJECT_MEMORY_ADVERTISEMENTS_PER_PROJECT, OptionalExtension, ProjectMemoryAdvertisement,
-    ProjectMemoryListingCut, SessionId, SqliteStore, StoreError, TransactionBehavior, params,
+    ProjectMemoryListingCut, SessionId, SqliteStore, StoreError, params,
     validate_context_generation,
 };
 
@@ -176,9 +176,10 @@ impl SqliteStore {
         memory_position: i64,
         context_generation_digest: Option<String>,
     ) -> Result<(), StoreError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_warning, transaction) = crate::storage::begin_immediate(
+            &mut self.connection,
+            "project memory write admission",
+        )?;
         let context_generation_digest = context_generation_digest.or(transaction
             .query_row(
                 "SELECT context_generation_digest FROM project_memory_advertisements

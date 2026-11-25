@@ -86,6 +86,35 @@ fn cli_warning_output(matches: &ArgMatches, warn_slow: bool) -> Option<bool> {
     Some(warn_slow && !json_output(matches))
 }
 
+enum Invocation {
+    Run(Box<Cli>),
+    Version,
+}
+
+/// Parses the command line together with the stderr warning policy for it.
+/// Printing the version is a CLI command like any other: it warns only when
+/// `--warn-slow` asks for it.
+fn parse_invocation(
+    args: Vec<std::ffi::OsString>,
+) -> Result<(Invocation, Option<bool>), clap::Error> {
+    let warn_slow = args
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--")
+        .any(|arg| arg == "--warn-slow");
+    match Cli::command().try_get_matches_from(args) {
+        Ok(matches) => {
+            let cli = Cli::from_arg_matches(&matches)?;
+            let warning_output = cli_warning_output(&matches, cli.warn_slow);
+            Ok((Invocation::Run(Box::new(cli)), warning_output))
+        }
+        Err(error) if error.kind() == clap::error::ErrorKind::DisplayVersion => {
+            Ok((Invocation::Version, Some(warn_slow)))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum HostPathPolicyArg {
     #[value(name = "case_fold")]
@@ -1013,7 +1042,7 @@ fn main() -> ExitCode {
     // help/parser diagnostics call `error.exit()` before this. `--version` is
     // a custom DisplayVersion branch that prints build identity. A panic still
     // unwinds.
-    match std::thread::Builder::new()
+    let code = match std::thread::Builder::new()
         .name("engram-cli".into())
         .stack_size(CLI_STACK_BYTES)
         .spawn(run_cli)
@@ -1030,7 +1059,11 @@ fn main() -> ExitCode {
             emit_anyhow_error(&anyhow::Error::from(error));
             ExitCode::FAILURE
         }
-    }
+    };
+    // A late slow-operation warning the monitor thread has not written yet
+    // is written before the process ends.
+    engram::operation_time::flush();
+    code
 }
 
 fn command_resolves_host_path_identity(command: &Command) -> bool {
@@ -1059,21 +1092,18 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
     reason = "top-level CLI dispatch keeps every operator and agent surface exhaustive in one match"
 )]
 async fn run_cli() -> Result<ExitCode> {
-    let (cli, warning_output) = match Cli::command().try_get_matches().and_then(|matches| {
-        let cli = Cli::from_arg_matches(&matches)?;
-        let warning_output = cli_warning_output(&matches, cli.warn_slow);
-        Ok((cli, warning_output))
-    }) {
-        Ok(parsed) => parsed,
-        Err(error) if error.kind() == clap::error::ErrorKind::DisplayVersion => {
-            println!("engram {}", engram::build_identity::version());
-            return Ok(ExitCode::SUCCESS);
-        }
-        Err(error) => error.exit(),
-    };
+    let (invocation, warning_output) =
+        parse_invocation(std::env::args_os().collect()).unwrap_or_else(|error| error.exit());
     if let Some(enabled) = warning_output {
         engram::operation_time::set_stderr_warnings(enabled);
     }
+    let cli = match invocation {
+        Invocation::Run(cli) => *cli,
+        Invocation::Version => {
+            println!("engram {}", engram::build_identity::version());
+            return Ok(ExitCode::SUCCESS);
+        }
+    };
     if let Command::Source {
         root,
         timeout_ms,
@@ -1113,6 +1143,9 @@ async fn run_cli() -> Result<ExitCode> {
             trace.install();
             bin_support::control::ControlStartup(trace)
         });
+    // Every word resolves its project, and some probe the root, before their
+    // own guards begin; that setup can pass ten seconds on a slow worktree.
+    let project_setup = engram::operation_time::Warning::start("project setup");
     if let Some(startup) = &control_trace {
         startup
             .0
@@ -1160,6 +1193,7 @@ async fn run_cli() -> Result<ExitCode> {
     } else {
         None
     };
+    drop(project_setup);
     match cli.command {
         Command::Source { .. } => unreachable!("source dispatched before project resolution"),
         Command::Migration { operation } => return bin_support::migration::run(&operation),
@@ -1169,6 +1203,8 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             operation,
         } => {
+            // One warning for the whole import word, its snapshot read included.
+            let _warning = engram::operation_time::Warning::start("import command");
             return bin_support::import::run(
                 database,
                 project_id,
@@ -1178,8 +1214,14 @@ async fn run_cli() -> Result<ExitCode> {
                 operation,
             );
         }
-        Command::Init {} => initialize(&database, identity)?,
+        Command::Init {} => {
+            // Creating the store directory on a slow volume can pass ten seconds.
+            let _warning = engram::operation_time::Warning::start("store initialization");
+            initialize(&database, identity)?;
+        }
         Command::Readiness { json } => {
+            // Path lookups and receipt assembly around its guarded open and check.
+            let _warning = engram::operation_time::Warning::start("readiness command");
             bin_support::readiness::run(&database, identity, &project_id, json)?;
         }
         Command::Doctor {
@@ -1201,6 +1243,9 @@ async fn run_cli() -> Result<ExitCode> {
                         .map_or_else(PathBuf::new, Path::to_path_buf),
                 ),
             };
+            // One warning for the whole doctor word, its lookups and report
+            // assembly included; its store, check and audit steps name their own.
+            let _warning = engram::operation_time::Warning::start("doctor command");
             doctor(
                 &database,
                 identity,
@@ -1223,6 +1268,7 @@ async fn run_cli() -> Result<ExitCode> {
             operation: Some(operation),
             ..
         } => {
+            // Each backup word names itself, its receipt included.
             if !bin_support::backup_target::run(&database, &project_id, operation)? {
                 return Ok(ExitCode::FAILURE);
             }
@@ -1249,15 +1295,20 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             source_skill,
             operation,
-        } => run_graph_from_cli(
-            database,
-            project_id,
-            actor_id,
-            session_id,
-            actor_context,
-            source_skill,
-            operation,
-        )?,
+        } => {
+            // One warning for the whole graph word, its receipt included; its
+            // file read, store load, save and publication name their own.
+            let _warning = engram::operation_time::Warning::start("graph command");
+            run_graph_from_cli(
+                database,
+                project_id,
+                actor_id,
+                session_id,
+                actor_context,
+                source_skill,
+                operation,
+            )?;
+        }
         Command::TaskSync(args) => {
             return Box::pin(bin_support::task_sync::run(
                 database,
@@ -1330,15 +1381,21 @@ async fn run_cli() -> Result<ExitCode> {
                 attribution_defaults: attribution.defaults,
                 source_skill,
             };
+            // One warning for the whole work word, reads and receipts included;
+            // its write transactions name their own waits.
+            let _warning = engram::operation_time::Warning::start("work command");
             return match *operation {
                 WorkCommand::Core { operation } => run_core_work(context, *operation),
                 operation => run_work(context, json, operation),
             };
         }
         Command::Authority { operation } => {
+            let _warning = engram::operation_time::Warning::start("authority command");
             run_authority(&database, identity, operation)?;
         }
         Command::ControlPolicy { operation } => {
+            // Its input file read and receipt, around the guarded policy write.
+            let _warning = engram::operation_time::Warning::start("control policy command");
             run_control_policy(&database, identity, project_id, operation)?;
         }
     }

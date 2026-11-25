@@ -49,6 +49,9 @@ impl SqliteStore {
     /// # Errors
     /// Conflicting schemas and incompatible verification bodies roll back the step.
     pub fn build_verification_applicability_index(path: &Path) -> Result<usize, StoreError> {
+        // Covers the open, the writer wait and the build alike.
+        let _warning =
+            crate::operation_time::Warning::start("verification applicability index build");
         let connection = Self::open_projection_maintenance(path, false)?;
         let transaction = rusqlite::Transaction::new_unchecked(
             &connection,

@@ -3,6 +3,8 @@
 mod acceptance_binding_read;
 mod acceptance_verification_read;
 mod control_runtime;
+#[cfg(test)]
+pub(crate) use control_runtime::request_budget::CONTROL_REQUEST_ALLOWANCE;
 pub(crate) use control_runtime::request_budget::ControlRequestScope;
 pub(crate) use transaction_timing::control::now as control_diagnostic_now;
 #[cfg(test)]
@@ -47,6 +49,8 @@ pub(crate) use open_schema::CopyProbePoint;
 pub(crate) use open_schema::again_while_another_opens;
 #[cfg(test)]
 pub(crate) use open_schema::open_lock_overlap;
+#[cfg(test)]
+pub(crate) use open_schema::with_store_lock_wait;
 pub use open_schema::{
     CopyInterrupt, LiveAuthority, RestoreCopyReport, VerifiedStoreCopy, installed_sidecar_problem,
 };
@@ -71,6 +75,7 @@ pub(crate) use work::WriterAdmissionWindow;
 pub(crate) use work::advance_writer_admission_window;
 #[cfg(test)]
 pub(crate) use work::before_refused_retirement;
+pub(crate) use work::begin_immediate;
 #[cfg(test)]
 pub(crate) use work::last_writer_admission_allowance;
 pub(crate) use work::search_budget;

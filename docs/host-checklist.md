@@ -657,9 +657,11 @@ for the fields named here.
    pending. Act on the exit code, not on which of these codes came back. A
    retention removal past the deadline is only a warning, with exit 0. A
    push started meanwhile reports `busy`. Terminate a push still running
-   after 2760 seconds with the
-   default deadlines (900 + 1800 + 60 for the steps no deadline bounds), or
-   their sum plus 60 with others, and cancel one at any time the same way:
+   after 2820 seconds with the
+   default deadlines (900 + 1800, plus 60 for a last request to the target,
+   which once started has at least a minute, plus 60 for the steps no
+   deadline bounds), or with others their sum as they take effect (1 to 59
+   seconds counting as 60) plus 120, and cancel one at any time the same way:
    end its process (`taskkill /F`, `SIGTERM` or `SIGKILL`). Push starts no
    child process and installs no signal handler. A terminated push prints no
    report and records nothing more, so record the termination on the host's

@@ -44,9 +44,8 @@ impl SqliteStore {
         pack: &EvidencePack,
         admission: &ObjectId,
     ) -> Result<super::Retention> {
-        let mut transaction = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (_warning, mut transaction) =
+            crate::storage::begin_immediate(&mut self.connection, "evidence pack write admission")?;
         let result = super::retain_pack_on(&mut transaction, project, pack, admission)?;
         transaction.commit()?;
         Ok(result)
@@ -64,9 +63,8 @@ impl SqliteStore {
         project: &ProjectId,
         selected: &[(&EvidencePack, &ObjectId)],
     ) -> Result<Vec<Retention>> {
-        let mut transaction = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (_warning, mut transaction) =
+            crate::storage::begin_immediate(&mut self.connection, "evidence pack write admission")?;
         let result = super::retain_batch_on(&mut transaction, project, selected)?;
         transaction.commit()?;
         Ok(result)

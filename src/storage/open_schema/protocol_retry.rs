@@ -5,12 +5,13 @@
 //! running, waiting a little longer each time, about ten seconds in all.
 //! Concurrent first opens of a new store have met it on a loaded machine. An
 //! open that meets it rolls back the transaction its attempt had open and
-//! starts again from its first probe, at most once, so every admission check
-//! runs again on what the store holds then, including anything an earlier
-//! step of the attempt committed. An opener bound by a deadline of its own
-//! does not start again, since another ten seconds of SQLite's waiting would
-//! pass it; it returns the refusal at once. Either way the refusal names the
-//! steps it ended, because the error alone cannot tell them apart.
+//! starts again from its first probe, so every admission check runs again on
+//! what the store holds then, including anything an earlier step of the
+//! attempt committed. It starts again for as long as the open's own lock wait
+//! lasts: a minute for an ordinary open, the allowance of a control host's
+//! call, a copy's deadline. Only then is the refusal returned, so SQLite's ten
+//! seconds never end an open early. The refusal names the steps it ended,
+//! because the error alone cannot tell them apart.
 
 use super::{Connection, StoreError};
 
@@ -20,14 +21,13 @@ use super::building_schema_reference;
 #[cfg(test)]
 mod tests;
 
-/// Whether a store open starts again once after SQLite's locking-protocol
-/// refusal.
+/// Whether a store open starts again after SQLite's locking-protocol refusal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ProtocolRetry {
-    /// Ordinary opens: one more attempt, from the first probe.
-    Once,
-    /// Opens bound by a deadline of their own, such as a control host's call
-    /// or a store copy: the refusal is returned at once.
+    /// Starts again, from the first probe, until the open's lock wait ends.
+    UntilWaitEnds,
+    /// An open that cannot meet the refusal, such as an immutable read, or
+    /// one that must not start again: the refusal is returned at once.
     Never,
 }
 
@@ -133,7 +133,7 @@ pub(super) fn rollback_refusal(phase: OpenPhase, rollback: &rusqlite::Error) -> 
 pub(super) fn locking_protocol_refusal(phase: OpenPhase, first: Option<OpenPhase>) -> StoreError {
     let message = match first {
         Some(first) => format!(
-            "SQLite locking protocol failed while opening the store after one retry (phase: {}, first attempt in {}); open the store again",
+            "SQLite locking protocol failed while opening the store, starting again until its wait ended (phase: {}, first attempt in {}); open the store again",
             phase.label(),
             first.label()
         ),

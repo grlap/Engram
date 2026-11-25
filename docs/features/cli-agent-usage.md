@@ -747,7 +747,7 @@ Rules that matter:
   argument no `memories` form records anything. The record shows that a
   listing was delivered, not that notes were read or applied. Writing it is
   best-effort: when the store cannot be written, or a writer stays busy for
-  the store's ordinary five-second wait, the listing is still delivered
+  the store's ordinary one-minute wait, the listing is still delivered
   after that wait and the direction stays. An ordinary `next` that is given
   a context generation keeps reporting `changed` until a listing carries it.
   A context generation is a plain token, 1 to 256 ASCII letters, digits, dots, underscores or dashes, not starting with a dash;
@@ -1156,7 +1156,7 @@ Rules that matter:
   shares a finite allowance for that scan: 10 million SQL progress steps
   (one-step callbacks, with clock polling every 1,024 steps), 100,000 visited
   index/result records, 384 MiB of cumulative charged work bytes, and a
-  ten-second cooperative deadline. Record visits count selected catalog and
+  one-minute cooperative deadline. Record visits count selected catalog and
   note-index entries, retained matches, relation and ancestor rows, handoff
   projections/events, evidence-binding projections, root headers/members and
   waiver entries. Repeated visits consume the same cumulative allowance,
@@ -1205,7 +1205,7 @@ Rules that matter:
   owner. A failed worker reports `search_worker_failed` without partial data.
   Native/filesystem stalls and
   the existing SQLite busy wait must return before a cooperative check can
-  run, so ten seconds is not a hard response-time guarantee. The synchronous
+  run, so one minute is not a hard response-time guarantee. The synchronous
   query stops before returning a refusal. Non-search reads retain their
   existing limits, and existing stored oversized notes are not rewritten.
   Core `next` with search remains stateful: a refusal does not undo session

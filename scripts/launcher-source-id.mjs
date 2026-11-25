@@ -2,10 +2,14 @@ import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { devNull, homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
+import { namedIfSlow, operationMinimumMs, warnWhileBlocking } from "./operation-warning.mjs";
 
 // Independent hang guard for the child process. The owner alone chooses and
 // enforces its source-read budget.
-const ownerProcessHangGuardMs = 60_000;
+// The owner keeps its own one-minute source budget, which starts only once it
+// runs; this watchdog for a hung child allows its start-up and the settling
+// of its answer on top, so it never cuts that budget short.
+const ownerProcessHangGuardMs = operationMinimumMs + 15_000;
 
 // Launcher Git probes use the same pinned settings as source observation.
 export function isolatedGitEnvironment(source = process.env) {
@@ -190,11 +194,13 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
   const unavailable = (message, refusal) => Object.assign(new Error(
     `committed input unavailable (${binary}; set ENGRAM_SOURCE_BINARY to select an owner): ${message.slice(0, 4096)}`),
   { code: "ENGRAM_SOURCE_UNAVAILABLE", ...(refusal ? { refusal } : {}) });
-  const result = run(binary, ["source", "--root", root, "--json"], {
+  // The owner prints JSON and keeps its own warnings off; the launcher names a
+  // slow observation itself, while the child still runs.
+  const result = warnWhileBlocking("source observation", () => run(binary, ["source", "--root", root, "--json"], {
     cwd: root, env: sourceEnv, encoding: null, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     // Stop a hung child without supplying or extending the owner's source budget.
     timeout: ownerProcessHangGuardMs, maxBuffer: SOURCE_JSON_BYTES + 1,
-  });
+  }));
   if (result.error || result.signal || ![0, 1].includes(result.status)) {
     throw unavailable(result.error?.message ?? `owner exited ${result.status ?? "without a status"}${result.signal ? ` (${result.signal})` : ""}`);
   }
@@ -248,7 +254,10 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
     }
   }
   try {
-    if (realpathSync.native(observation.root) !== realpathSync.native(root)) throw new Error("root mismatch");
+    // Canonicalizing both roots can block after the observation has ended.
+    namedIfSlow("source root check", () => {
+      if (realpathSync.native(observation.root) !== realpathSync.native(root)) throw new Error("root mismatch");
+    });
   } catch { throw unavailable("owner canonical root differs from the requested root or cannot be resolved"); }
   return { root: observation.root, commit: observation.source.slice("git-commit:".length), tree: observation.tree,
     status: observation.status, entries: observation.entries, sourceId };

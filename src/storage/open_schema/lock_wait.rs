@@ -10,9 +10,38 @@
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
-/// The longest one lock wait lasts on a copy's connection, as long as an
-/// ordinary open waits.
-pub(super) const LOCK_WAIT: Duration = Duration::from_secs(5);
+/// The longest one lock wait lasts, for an ordinary open's busy timeout and
+/// on a copy's connection: the shared minimum operation timeout.
+pub(super) const LOCK_WAIT: Duration = crate::operation_time::MINIMUM;
+
+#[cfg(test)]
+thread_local! {
+    static STORE_LOCK_WAIT: Cell<Option<Duration>> = const { Cell::new(None) };
+}
+
+/// How long an ordinary open's connection waits for a lock: [`LOCK_WAIT`].
+pub(super) fn store_lock_wait() -> Duration {
+    #[cfg(test)]
+    if let Some(wait) = STORE_LOCK_WAIT.with(Cell::get) {
+        return wait;
+    }
+    LOCK_WAIT
+}
+
+/// Runs `act` with the stores opened on this thread waiting `wait` for a
+/// lock, for a test that waits a store's whole busy timeout out on the real
+/// clock without waiting a minute.
+#[cfg(test)]
+pub(crate) fn with_store_lock_wait<T>(wait: Duration, act: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Duration>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            STORE_LOCK_WAIT.with(|slot| slot.set(self.0));
+        }
+    }
+    let _restore = Restore(STORE_LOCK_WAIT.with(|slot| slot.replace(Some(wait))));
+    act()
+}
 
 /// The longest a copy's connection sleeps between two tries for a lock.
 const POLL: Duration = Duration::from_millis(2);
@@ -25,8 +54,9 @@ const JOURNAL_RETRY_PAUSE: Duration = Duration::from_millis(5);
 pub(super) enum LockWait {
     /// SQLite's own busy timeout, for ordinary opens.
     Timeout(Duration),
-    /// The clock-read busy handler of a copy, bounded by the deadline of the
-    /// [`CopyWaitScope`] the connection is used in.
+    /// The clock-read busy handler of a copy, or of an open inside a control
+    /// allowance, bounded by the deadline of the [`CopyWaitScope`] the
+    /// connection is used in.
     CopyDeadline,
 }
 
