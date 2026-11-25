@@ -1,0 +1,27 @@
+{
+  "id": "01a213fe-178a-73c1-a29f-21765a5e6aeb",
+  "external_ref": null,
+  "title": "Cover exact restart observations for unbound Git-witnessed acceptance evaluations",
+  "outcome": "Specify and exercise the interaction between the narrow assumed-missing-baseline exception and the feed-based Git-input barrier for a pass on unbound criteria.",
+  "acceptance": [
+    "A behavioral test and the acceptance contract explain what an exact restart report does to a feed-based Git-witnessed evaluation with no bound pass. Keep the existing live registered-input and bound-check rules."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

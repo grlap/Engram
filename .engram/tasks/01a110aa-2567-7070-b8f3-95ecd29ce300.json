@@ -2,10 +2,10 @@
   "id": "01a110aa-2567-7070-b8f3-95ecd29ce300",
   "external_ref": null,
   "title": "Design: whether an accounted unadmitted change at the declared revision should keep an acceptance evaluation fresh instead of voiding it",
-  "outcome": "Both coordinators (Engram and TermAl) have decided whether the unadmitted barrier (\"an unadmitted change is a barrier, not a pin\", commit 02ce59f, docs/features/acceptance-evaluation.md:604-615) admits a narrow relief for an accounted unadmitted change on the correct named root and generation at the explicitly declared revision, and if so the docs and the pinned tests are changed before any code",
+  "outcome": "Keep the original acceptance evaluation fresh when the first accounted unadmitted source observation after restart repeats the complete comparable SourceId that the evaluation declared on its named workspace root and generation. Preserve the barriers for actual changes and for bound checks, and preserve reroll evidence rules.",
   "acceptance": [
-    "A recorded decision by both coordinators on the narrow relief, with the contract owners named, either rejecting it or adopting the design: an accounted unadmitted observation on the correct named root and generation at the explicitly declared revision is not a basis move, its triggered obligation is exempt as the admitted branch's is, missing or unknown revisions and the wrong root or generation stay fail-closed, the bound-check unadmitted barrier and the reroll new-evidence rule are unchanged",
-    "If adopted: docs/features/acceptance-evaluation.md's unadmitted-barrier paragraph and the pinned tests (citation_sources.rs around the post-cut unadmitted change, reroll.rs around the accounted unadmitted change as new evidence) are revised first, then the code in basis_moved_after's change arm, with the test sequence Architect1 specified (a real accounted unadmitted content_comparison, the R0 to R1 sequence completing on the original evaluation id, the R2, revisionless and wrong-root variants, later-check cases, a bound-check case still blocking)"
+    "Record the Engram and TermAl coordinators’ decision adopting option B and name the Engram acceptance evaluator as the contract owner. A post-cut accounted, unadmitted assumed_missing_baseline report on the evaluation’s named workspace root and generation can preserve freshness only when its complete comparable SourceId equals the evaluation’s explicit declaration. Its own triggered obligation is seen for freshness without waiving it.",
+    "Revise the acceptance contract and pinned tests before changing basis_moved_after. Cover the w-5896 position-257 sequence completing with the original evaluation ID, and verify that content_comparison, real source movement, missing or incomparable identity, wrong named workspace or generation, and a bound check still block where applicable. Preserve the reroll new-evidence rule."
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,
@@ -15,7 +15,8 @@
     "acceptance-evaluation",
     "area-host-integration",
     "deferred",
-    "design"
+    "design",
+    "ready-to-land"
   ],
   "assigned_to": null,
   "deferred_until": null,

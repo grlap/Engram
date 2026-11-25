@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-merger-role-2",
+    "revision_id": "541fd1621415430d8751e48e34b28533",
+    "previous": null,
+    "body_sha256": "3f1f55abc62102b2bfe257b2a0a1ba9e112725b80b94c190815d8d147d6d1176",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-25T21:14:38.998038200Z"
+    }
+  },
+  "body": "CONTINUATION of rules-merger-role, which is at its size limit; read both. Editor: Engram::Fable.\n\nONLY THE LAUNCHER CREDITS (2026-11-25 21:15Z, after W8's closing check ran as a bare foreground `cargo test` at about 19:30Z and Fix8 then waited 1 h 40 min for a record that could never come).\n- A check meant to earn credit runs ONLY as `node scripts/test-launcher.mjs focused --input commit -- <command>` (or `full`).\n- A bare cargo or node command never registers and never yields a host record or refusal.\n- A dependency on a host record exists only when the launcher printed a run id. Never hold other landing work waiting on a record without one.\n- A named recovery owner needs a waker: at the BY time, send that owner a mail. A note alone wakes nobody."
+}

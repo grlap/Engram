@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-merger-role-2",
+  "head": {
+    "state": "active",
+    "chain": [
+      "541fd1621415430d8751e48e34b28533",
+      "bb3d680f746d4882bf8a34463d798621",
+      "7807cab4dc4b4274a52ac73ff84257a2"
+    ]
+  }
+}

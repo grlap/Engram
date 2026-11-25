@@ -1,0 +1,27 @@
+{
+  "id": "01a213fe-1760-7882-8a00-e64df800baf0",
+  "external_ref": null,
+  "title": "Describe the deciding unadmitted source report in stale acceptance guidance",
+  "outcome": "Keep acceptance status, admission and completion guidance accurate when an exact restart exception is available.",
+  "acceptance": [
+    "Status and refusal text describe the deciding unadmitted source report and fresh evaluation remedy without claiming that every report is a barrier regardless of source. The rendered guidance stays consistent across admission, status and done."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

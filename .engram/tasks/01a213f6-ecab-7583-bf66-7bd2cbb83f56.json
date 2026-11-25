@@ -1,0 +1,27 @@
+{
+  "id": "01a213f6-ecab-7583-bf66-7bd2cbb83f56",
+  "external_ref": null,
+  "title": "Exercise acceptance completion after resolving an unchanged restart observation’s test obligation",
+  "outcome": "Cover the full completion sequence with normal obligation rules active: after an exact same-source restart report, a current passing test satisfies the new obligation and completion uses the original unbound evaluation.",
+  "acceptance": [
+    "With the stock rule set active, a named-root exact assumed_missing_baseline report opens a test obligation after a passing evaluation. A subsequent passing host check on the declared SourceId satisfies the obligation. Completion seals the original evaluation ID."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
