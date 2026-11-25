@@ -1,0 +1,28 @@
+{
+  "id": "01a211a3-f8e5-7950-b518-89863a22c578",
+  "external_ref": null,
+  "title": "Cover OriginContextDiffers and EvaluationBasisMoved on retained evidence packs with behaviour tests",
+  "outcome": "Cover OriginContextDiffers and EvaluationBasisMoved on retained evidence packs with behaviour tests",
+  "acceptance": [
+    "A behaviour test imports a retained pack whose judged and accepted snapshots do not match and observes OriginContextDiffers",
+    "A behaviour test reverts an acceptance contract within the cut and observes EvaluationBasisMoved (src/work_service/evaluate/evaluation.rs:297), while the exact seal contract is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

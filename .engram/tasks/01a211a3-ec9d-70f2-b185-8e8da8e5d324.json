@@ -1,0 +1,28 @@
+{
+  "id": "01a211a3-ec9d-70f2-b185-8e8da8e5d324",
+  "external_ref": null,
+  "title": "Decide and document the destination metadata rule for standalone imported acceptance and already-consumed imported proof",
+  "outcome": "Decide and document the destination metadata rule for standalone imported acceptance and already-consumed imported proof",
+  "acceptance": [
+    "One rule states which destination metadata must match when an imported acceptance is used standalone and when an already-consumed imported proof is reused (src/work_service/evaluate/evaluation.rs:33 and completion/imported.rs:257 today apply different strictness), and the code applies that one rule in both places",
+    "A behaviour test through the public words shows both paths accept and refuse the same metadata cases"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
