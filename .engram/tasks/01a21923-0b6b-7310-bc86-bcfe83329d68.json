@@ -1,0 +1,29 @@
+{
+  "id": "01a21923-0b6b-7310-bc86-bcfe83329d68",
+  "external_ref": null,
+  "title": "Let an operator read a store's active obligation rule set and apply the same set on another host's store",
+  "outcome": "Let an operator read a store's active obligation rule set and apply the same set on another host's store",
+  "acceptance": [
+    "`engram control-policy show` (or a sibling read) can print the active obligation rule set's full typed content, not only its record id, in a form `control-policy set-obligation-rule-set --input @file` accepts unchanged",
+    "A behaviour test exports the rule set from one store, applies it to a fresh store, and both stores then report the same rule-set CONTENT (record ids differ by design)",
+    "docs/features/cli-host-and-operator.md documents comparing and aligning a second host's store (e.g. Windows B) with the home store's acceptance and obligation policy, and says plainly that `obligation_rules` is a record id"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

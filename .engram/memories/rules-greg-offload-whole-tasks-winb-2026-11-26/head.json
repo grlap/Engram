@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-offload-whole-tasks-winb-2026-11-26",
+  "head": {
+    "state": "active",
+    "chain": [
+      "f90da1a2fd7a4e7e9f244f32be6f1d25"
+    ]
+  }
+}

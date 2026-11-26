@@ -1,0 +1,29 @@
+{
+  "id": "01a21915-d1a5-7b31-afeb-8b8b95107bd8",
+  "external_ref": null,
+  "title": "Carry a second host's item evidence (work notes, gates, checkpoints) to the home store where acceptance evaluation and landing run",
+  "outcome": "Carry a second host's item evidence (work notes, gates, checkpoints) to the home store where acceptance evaluation and landing run",
+  "acceptance": [
+    "A coder on a second host (Windows B) working an item under a local claim can make that item's generic work notes and status checkpoints reach the home store (Central) through the engram-data exchange, with original ids and origin-machine provenance, while live claims, delivery state and private scratch still never transfer",
+    "The design states whether this is the existing notes profile (git-task-sync.md: opt-in generic and status note families, an explicit coordinated re-baseline per :1029-1030, the same profile on every exporting host) or the designed evidence packs (:1493, not yet shipped), names who runs the switch and in what order across Central, Windows B and DL560, and is reviewed before coding",
+    "Gate, host-verification and evaluation records keep their current rule: they are produced where the registered run or evaluation happens and are not note-export candidates; the doc says plainly which evidence a second host's work can and cannot contribute to a home-store evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

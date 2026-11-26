@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "task-sync-multihost-procedure",
+    "revision_id": "945fe035229e403c8c72f44b8bd9c715",
+    "previous": null,
+    "body_sha256": "bc7a1da8362a3fc678cc6bd76ac8888c68e3374a578fbba6f90f2dda2c07831a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T18:20:59.391173700Z"
+    }
+  },
+  "body": "MULTI-HOST engram-data PROCEDURE for memory-capable branches, with Central, Windows B and later DL560 exporting to the same branch. Source: Sol 11330's read-only assessment of bc0628b6 (11d80e0b #1373, 2026-11-26 18:20Z), citing src/task_sync/directory.rs:83-94, src/work_service/task_sync_folder_import.rs:144-155 and :389-397, src/storage/work/task_sync/folder_import.rs:340-348, src/work_service/task_sync_folder_export.rs:876-940, src/work_service/task_sync_sync.rs:351-363, and docs/features/task-planning-text.md:144.\n- SUPPORTED: enrolled stores may alternate exports when they share the project, the note selection and the memory profile. project.json's position, object_kind and object_id are the EXPORTER's local feed cut; a peer overwriting it doesn't break the recipient's incremental basis, which comes from its own recorded head and SQLite cut.\n- EACH LEG:\n  1. Require a clean committed data worktree, fetch, fast-forward if possible.\n  2. IMPORT the incoming tip: `engram task-sync import .engram-data/.engram --include-memories --json`. A held or refused task or a partial memory result stops before export.\n  3. Export with `--include-memories`, without --rebuild; --rebuild is only for recovery.\n  4. Review, commit, and confirm with an ordinary import while that export commit is HEAD.\n  5. Push fast-forward only.\n- DIVERGED: keep both parents. If ONLY project.json conflicts and both envelopes agree on project, notes and memory capability, keep the merging host's (--ours) envelope intact. Resolve task and memory conflicts explicitly, never through the envelope. Commit the merge and import it before pushing.\n- RECOVERY: use the recipient's OWN saved envelope with --rebuild --basis, never the peer's.\n- NOTES do not sync: every exporter is notes-disabled; see w-8b8b95107bd8. A Windows host needs `.engram/** text eol=lf` (bug w-b534c27ad852) or the export refuses after a fetch.\n- One-command `task-sync sync` refuses memory-capable branches until w-bd4bfba779a7 lands; use the explicit procedure meanwhile.\n- Central's routine changes accordingly: when origin engram-data has moved past Central's recorded basis, import it before exporting."
+}
