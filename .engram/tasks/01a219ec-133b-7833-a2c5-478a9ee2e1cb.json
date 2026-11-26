@@ -1,0 +1,27 @@
+{
+  "id": "01a219ec-133b-7833-a2c5-478a9ee2e1cb",
+  "external_ref": null,
+  "title": "Label Windows libtest passthrough thread requests accurately",
+  "outcome": "Label Windows libtest passthrough thread requests accurately",
+  "acceptance": [
+    "The Windows Rust wrapper distinguishes requested passthrough thread counts from the effective default, including help and list invocations that configure no test concurrency, and forwards every argument unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "tooling",
+    "windows"
+  ],
+  "assigned_to": "dev/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
