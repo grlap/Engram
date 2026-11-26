@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-windows-b-off-2026-11-14",
+    "revision_id": "aba0debb089d48059c1ae34411e88aac",
+    "previous": "e44439f6133d4e3c8f10e6571fb7aff0",
+    "body_sha256": "8fe658956b0cff199b40c1421f6fa4583f140e59ea618081001f19dbcb8eb1c4",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:53:19.295533700Z"
+    }
+  },
+  "body": "WINDOWS B — CURRENT STATE (rev 8, Engram::Fable, 2026-11-26 17:53Z). Older history: revision 6 and earlier.\n- Windows B (host 932a546b) is BACK and in use. Greg today, via Asistant 43498a6e: „windows B wrocil”, „Engram Runner na windows B powien juz chodzic”, and 16:48Z „Windows B ma poprawna godzine / zmienilem default models aby byly poprawne”.\n- ENGRAM IS INSTALLED THERE, under Greg's „Tak dla Engram na Window B.” (#2124; memory rules-greg-winb-engram-install-2026-11-26):\n  - C:\\Users\\Greg\\.cargo\\bin\\engram.exe: release build of bc0628b6, build fdaead5a916e, the same schema and rev as Central;\n  - its own store at C:\\Users\\Greg\\.engram, joined via engram-data;\n  - the TermAl Engram integration enabled for project-abb7c24e-54e3-4d96-9864-70cd31522fe9 (Engram-runner).\n  TermAl's session-5 enrolls TermAl's project the same way.\n- Engram sessions there, all in C:\\GitHub\\Personal\\Engram-runner:\n  - session-8 \"Engram Runner\" (Claude): runs, plus Engram MCP;\n  - session-12 \"Engram::Codex-WinB-Cleanup\" (memory winb-engram-cleanup-lane);\n  - session-13 \"Engram::Codex-WinB-Coder\" (Codex gpt-6.2-sol, effort high, verified from the host record; Engram MCP tools present).\n- Claims are LOCAL to WinB's store, so don't execute one item on two hosts.\n- cargo on WinB: Termal::Opus2 serializes ONE cargo job at a time, and coders mail START and END to Opus2.\n- Rust there is 1.100, so Engram strict clippy and FULLs stay on Central and DL560 until w-dc1ab61c1687 lands.\n- The runner clone's disabled push URL in #2049 was Asistant's suggestion, not Greg's (Asistant #2110); author-test pushes follow the ordinary rules.\n- Load is shared with TermAl; Opus2 schedules WinB for both projects."
+}

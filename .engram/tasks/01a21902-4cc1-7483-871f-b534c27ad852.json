@@ -1,0 +1,29 @@
+{
+  "id": "01a21902-4cc1-7483-871f-b534c27ad852",
+  "external_ref": null,
+  "title": "Install the `.engram/** text eol=lf` attribute on task-sync enablement so a Windows host with core.autocrlf can export after a fetch",
+  "outcome": "Install the `.engram/** text eol=lf` attribute on task-sync enablement so a Windows host with core.autocrlf can export after a fetch",
+  "acceptance": [
+    "After `task-sync enable` and `data-init` on a host whose Git has core.autocrlf=true, a fast-forward of the data worktree to another host's commit leaves `.engram/` files with LF, and the next `task-sync export --include-memories` succeeds instead of refusing with memory_export_component_changed",
+    "The LF policy is installed in a place Git applies to the data worktree's checkouts (the committed `.engram/.gitattributes` or the worktree's info/attributes, as docs/features/git-task-sync.md \"Enablement adds a path-scoped `.engram/** text eol=lf` Git attribute\" describes), with no change to the code checkout's attributes",
+    "A behaviour test on Windows sets core.autocrlf=true, enrolls a second store from a branch written by the first, fast-forwards, and exports successfully"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
