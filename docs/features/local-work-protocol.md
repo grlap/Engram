@@ -542,25 +542,21 @@ chronology, so carried timestamps never reorder rows. Its rows carry locators an
 the presence of `history.window` distinguishes them from compact change
 rows. Shortened inherited-note summaries retain the original `body_bytes`
 and expose `summary_truncated` with a complete-note `detail` command.
-The stateless cursor binds item,
-project, kind, member locator, order, the window's selected total and the
-observed time. The window's records are immutable and only appended, so a
-new record in it (which changes the total), a missing boundary or a reversed
-clock refuses with fresh navigation; a write elsewhere in the project and
-a time boundary, which change none of its records, do not. A continuation
-page's header (the item's focus facts, family totals and the reflected read
-cut) is read at that page's own time; only its rows continue the first
-page's selection.
+The stateless cursor binds the item, project, window kind, boundary member
+and order, count of older records, and observed time. Newer records count
+toward the current total and leave the continuation valid. A missing or
+moved boundary, scope mismatch, or reversed clock refuses with fresh
+navigation. A continuation reads its header and counts at the current cut
+and returns the older records from its boundary.
 The encoded context is readable, not confidential or authoritative.
 `show REF --evaluations [--after CURSOR]` is the same kind of window over the
 acceptance-evaluation records of the item's active run, or of its latest run
 once none is active. It uses the same selection, order, exact counts and read
-cut, with its own cursor also bound to the run, the run's feed head, the
-item's revision and the acceptance policy: each row's stale reason is judged
-from the run's records and the item's revision, so a new run, any new record
-on the run, a revision or a policy change invalidates it, while a write
-elsewhere in the project does not. Its rows carry each record's
-id, run position, mode, evaluator session label, attempt key, created time,
+cut. Its cursor also binds the run and acceptance policy, so a change to
+either requires a fresh window. Newer records leave the continuation valid.
+While the run is active, each page reassesses its rows using the run's
+records and the item's revision at the current read. The rows carry each
+record's id, run position, mode, evaluator session label, attempt key, created time,
 work revision and bounded verdict words. They also carry the record's own
 stale reason at the read, what it supersedes, and whether it is the newest.
 `show REF --evaluation RECORD_ID` reads one record complete. [Acceptance

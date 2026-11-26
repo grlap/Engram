@@ -30,7 +30,7 @@ struct RecordCursor {
     work: WorkId,
     kind: WorkRecordKind,
     cut: WorkCatalogReadCut,
-    total: usize,
+    older: usize,
     address: WorkRecordAddress,
     order: WorkRecordOrder,
 }
@@ -90,13 +90,13 @@ impl WorkRecordWindow {
         }
         let row = &self.rows[visible - 1];
         super::continuation::encode(
-            "s1-",
+            "s2-",
             &RecordCursor {
                 project: self.project.clone(),
                 work: self.work,
                 kind: self.kind,
                 cut: self.cut.clone(),
-                total: self.total,
+                older: self.total - self.newer - visible,
                 address: row.address.clone(),
                 order: row.order.clone(),
             },
@@ -116,7 +116,7 @@ impl LocalWorkService {
     ) -> Result<(WorkFocusView, WorkRecordWindow), StoreError> {
         let cursor = after
             .map(|token| {
-                super::continuation::decode::<RecordCursor>("s1-", token)
+                super::continuation::decode::<RecordCursor>("s2-", token)
                     .ok_or_else(|| invalid("invalid show cursor; start a fresh window"))
             })
             .transpose()?;
@@ -148,18 +148,10 @@ impl LocalWorkService {
             if kind == WorkRecordKind::Notes {
                 index.retain(|entry| entry.record_family != WorkRecordFamily::Gates);
             }
-            // The window's records are immutable and only ever appended, so
-            // the selected total and the boundary record decide whether the
-            // remaining rows are still the ones the first page announced; a
-            // write elsewhere in the project does not move them.
             let end = if let Some(cursor) = &cursor {
-                if now < cursor.cut.observed_at || cursor.total != index.len() {
-                    return Err(invalid("the window changed; start a fresh window"));
-                }
-                index
-                    .iter()
-                    .position(|row| row.address == cursor.address && row.order == cursor.order)
-                    .ok_or_else(|| invalid("continuation boundary no longer matches this window"))?
+                super::continuation::older_rows(&index, cursor.older, &cursor.cut, now, |row| {
+                    row.address == cursor.address && row.order == cursor.order
+                })?
             } else {
                 index.len()
             };

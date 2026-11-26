@@ -1207,7 +1207,10 @@ test("note and history windows continue through CLI and MCP with complete detail
     structuredError(await client.call("show", { work_ref, history: true, after: first.notes_window.after }), "work_show_cursor_invalid");
     const huge = `next:\n${"ü detail\n".repeat(2500)}END`;
     receipt(await client.call("note", { work_ref, text: huge }));
-    structuredError(await client.call("show", { work_ref, notes: true, after: first.notes_window.after }), "work_show_cursor_invalid");
+    const continued = receipt(await client.call("show", { work_ref, notes: true, after: first.notes_window.after }));
+    assert.equal(continued.notes_window.newer, first.notes.length + 1);
+    const end = bodies.length - first.notes.length;
+    assert.deepEqual(continued.notes.map(({ summary }) => summary), bodies.slice(end - continued.notes.length, end));
     const bounded = receipt(await client.call("show", { work_ref, notes: true }));
     const placeholder = bounded.notes.at(-1);
     assert.equal(placeholder.body_omitted, true);

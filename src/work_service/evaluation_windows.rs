@@ -4,8 +4,8 @@
 
 use super::focus::WorkAuthoredVerdict;
 use super::{
-    DateTime, Deserialize, FeedId, LocalWorkService, ObjectId, ProjectId, Serialize, StoreError,
-    Utc, WorkId, WorkRunId, compact_text,
+    DateTime, Deserialize, LocalWorkService, ObjectId, ProjectId, Serialize, StoreError, Utc,
+    WorkId, WorkRunId, compact_text,
 };
 use crate::domain::WorkCatalogReadCut;
 use crate::storage::AssessedAcceptanceEvaluation;
@@ -32,17 +32,12 @@ struct EvaluationCursor {
     work: WorkId,
     run: WorkRunId,
     cut: WorkCatalogReadCut,
-    total: usize,
+    older: usize,
     /// Stale reasons are judged under the policy, which a policy change moves
     /// without moving the project feed.
     policy: crate::domain::AcceptanceEvaluationPolicy,
     position: i64,
     evaluation: ObjectId,
-    /// The run's feed head and the item's revision when the page was read.
-    /// Each row's freshness is judged from the run's records and the item's
-    /// revision, so either moving refuses the cursor; a write elsewhere in
-    /// the project does not.
-    basis: (i64, i64),
 }
 
 /// Newest-first rows of one run's evaluation records. Total and newer count
@@ -64,7 +59,6 @@ pub(crate) struct WorkEvaluationWindow {
     run: Option<WorkRunId>,
     cut: WorkCatalogReadCut,
     policy: crate::domain::AcceptanceEvaluationPolicy,
-    basis: (i64, i64),
 }
 
 /// One evaluation record as the window lists it.
@@ -129,17 +123,16 @@ impl WorkEvaluationWindow {
         let evaluation = ObjectId::from_stored(row.evaluation.clone())
             .ok_or_else(|| invalid("show continuation names an invalid record"))?;
         super::continuation::encode(
-            "e1-",
+            "e2-",
             &EvaluationCursor {
                 project: self.project.clone(),
                 work: self.work,
                 run,
                 cut: self.cut.clone(),
-                total: self.total,
+                older: self.total - self.newer - visible,
                 policy: self.policy.clone(),
                 position: row.position,
                 evaluation,
-                basis: self.basis,
             },
         )
         .map(Some)
@@ -150,7 +143,8 @@ impl WorkEvaluationWindow {
 impl LocalWorkService {
     /// The evaluation records of the item's active run, or of its latest run
     /// when none is active, newest first from the cursor's boundary. One read
-    /// snapshot; a cursor from another cut, run or window is refused.
+    /// snapshot; the cursor must still match its boundary, run and policy.
+    /// Rows are assessed under that policy at the time of this read.
     pub(crate) fn work_evaluation_window(
         &self,
         work_ref: &str,
@@ -159,7 +153,7 @@ impl LocalWorkService {
     ) -> Result<WorkEvaluationWindow, StoreError> {
         let cursor = after
             .map(|token| {
-                super::continuation::decode::<EvaluationCursor>("e1-", token)
+                super::continuation::decode::<EvaluationCursor>("e2-", token)
                     .ok_or_else(|| invalid("invalid show cursor; start a fresh window"))
             })
             .transpose()?;
@@ -189,12 +183,6 @@ impl LocalWorkService {
                 Some(history) => (Some(history.run_id), history.active, history.entries),
                 None => (None, true, Vec::new()),
             };
-            let basis = (
-                run.map_or(Ok(0), |run| {
-                    store.work_feed_head(&FeedId::RunExecution(run))
-                })?,
-                item.revision,
-            );
             let end = if let Some(cursor) = &cursor {
                 if run != Some(cursor.run) {
                     return Err(invalid(
@@ -206,18 +194,15 @@ impl LocalWorkService {
                         "the acceptance policy changed; start a fresh evaluations window",
                     ));
                 }
-                if cursor.basis != basis
-                    || now < cursor.cut.observed_at
-                    || cursor.total != entries.len()
-                {
-                    return Err(invalid("the window changed; start a fresh window"));
-                }
-                entries
-                    .iter()
-                    .position(|entry| {
+                super::continuation::older_rows(
+                    &entries,
+                    cursor.older,
+                    &cursor.cut,
+                    now,
+                    |entry| {
                         entry.position == cursor.position && entry.evaluation == cursor.evaluation
-                    })
-                    .ok_or_else(|| invalid("continuation boundary no longer matches this window"))?
+                    },
+                )?
             } else {
                 entries.len()
             };
@@ -257,7 +242,6 @@ impl LocalWorkService {
                 run,
                 cut,
                 policy,
-                basis,
             })
         })
     }

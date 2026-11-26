@@ -1211,11 +1211,11 @@ staleness or sealing changes.
     supersedes when it names one, and whether it is the newest.
 
   The window gives exact total, shown, omitted, older and newer counts and a
-  continuation. The cursor is bound to the item, run, the run's feed head, the
-  item's revision and the acceptance policy; a cursor after any new record on
-  the run, a revision, another run, policy or window kind is refused, while a
-  write elsewhere in the project leaves it valid. The title is compacted as
-  `show` does, with its stored length and `--full` offered when it is longer.
+  continuation. A cursor binds the project, item, run, acceptance policy,
+  boundary record and count of older records. Newer records leave that
+  boundary valid. Each page assesses its records at the current read. The
+  title is compacted as `show` does, with its stored length and `--full`
+  offered when it is longer.
 
   While the run is the item's active run, a record's stale reason is judged as
   the newest record's is, under the current policy with the source
@@ -1259,10 +1259,10 @@ none.
   stored length when shortened, so any record fits; its observed time is the window's
   end, and a row that reports no source change carries no `source_changed`
   value. Rows are selected newest first and shown in run-feed order within the
-  12 KiB agent budget, with exact counts and a continuation bound to the item,
-  run, the window's total and boundary, which a new source record on the run
-  changes and a write elsewhere in the project does not. It is exclusive of
-  the other windows, and a read that records nothing.
+  12 KiB agent budget, with exact counts and a continuation bound to the
+  project, item, run, boundary record and count of older records. A newer
+  source record leaves the continuation valid. The observations window is
+  exclusive of the other windows, and reading it records nothing.
 
 The newest whole record still decides completion. `show` and `show --full`
 keep their newest-only reads.

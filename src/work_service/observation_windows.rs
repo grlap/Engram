@@ -19,7 +19,7 @@ struct ObservationCursor {
     work: WorkId,
     run: WorkRunId,
     cut: WorkCatalogReadCut,
-    total: usize,
+    older: usize,
     position: i64,
     observation: ObjectId,
 }
@@ -246,13 +246,13 @@ impl WorkObservationWindow {
         let observation = ObjectId::from_stored(row.observation.clone())
             .ok_or_else(|| invalid("show continuation names an invalid record"))?;
         super::continuation::encode(
-            "o1-",
+            "o2-",
             &ObservationCursor {
                 project: self.project.clone(),
                 work: self.work,
                 run,
                 cut: self.cut.clone(),
-                total: self.total,
+                older: self.total - self.newer - visible,
                 position: row.position,
                 observation,
             },
@@ -265,7 +265,7 @@ impl WorkObservationWindow {
 impl LocalWorkService {
     /// The source observations of the item's active run, or of its latest
     /// run when none is active, newest first from the cursor's boundary. One
-    /// read snapshot; a cursor from another cut, run or window is refused.
+    /// read snapshot; the cursor must still match its boundary and run.
     pub(crate) fn work_observation_window(
         &self,
         work_ref: &str,
@@ -277,7 +277,7 @@ impl LocalWorkService {
         }
         let cursor = after
             .map(|token| {
-                super::continuation::decode::<ObservationCursor>("o1-", token)
+                super::continuation::decode::<ObservationCursor>("o2-", token)
                     .ok_or_else(|| invalid("invalid show cursor; start a fresh window"))
             })
             .transpose()?;
@@ -312,18 +312,15 @@ impl LocalWorkService {
                         "the item's run changed; start a fresh observations window",
                     ));
                 }
-                // The run's source records are only ever appended: its
-                // total and the boundary record decide the remaining rows,
-                // whatever was written elsewhere in the project.
-                if now < cursor.cut.observed_at || cursor.total != entries.len() {
-                    return Err(invalid("the window changed; start a fresh window"));
-                }
-                entries
-                    .iter()
-                    .position(|(position, observation)| {
+                super::continuation::older_rows(
+                    &entries,
+                    cursor.older,
+                    &cursor.cut,
+                    now,
+                    |(position, observation)| {
                         *position == cursor.position && *observation == cursor.observation
-                    })
-                    .ok_or_else(|| invalid("continuation boundary no longer matches this window"))?
+                    },
+                )?
             } else {
                 entries.len()
             };

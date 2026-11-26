@@ -330,10 +330,9 @@ fn an_older_record_carries_its_own_stale_reason() {
 }
 
 /// More records than one page: exact counts, a continuation that reaches every
-/// record once in order, and a cursor refused once another record changes the
-/// window.
+/// original record once in order, even when the run gains newer records.
 #[test]
-fn the_window_pages_every_record_and_refuses_a_stale_cursor() {
+fn the_window_pages_every_record_and_keeps_its_boundary_after_appends() {
     let fixture = fixture("paging", 1);
     let records = (0..20)
         .map(|index| {
@@ -393,9 +392,8 @@ fn the_window_pages_every_record_and_refuses_a_stale_cursor() {
     fixture
         .window(Some(after.clone()), 36)
         .expect("an unrelated write keeps the window");
-    // A gate on the run is evidence the rows' freshness is judged from:
-    // the run's head moves and the cursor is refused, though no evaluation
-    // was added.
+    // New evidence can change the assessments read on the next page.
+    // It does not change which evaluations that page selects.
     fixture
         .verbs
         .gate(
@@ -408,18 +406,20 @@ fn the_window_pages_every_record_and_refuses_a_stale_cursor() {
             at(37),
         )
         .expect("a later gate");
-    assert!(matches!(
-        fixture.window(Some(after.clone()), 38).unwrap_err().error,
-        StoreError::WorkShowCursorInvalid { .. }
-    ));
+    let gate_page = fixture.window(Some(after.clone()), 38).expect("after gate");
+    assert_eq!(gate_page.value["evaluations_window"]["newer"], shown);
     fixture.evaluate(1, &["pass"], 40);
-    let refused = fixture
+    let continued = fixture
         .window(Some(after), 41)
-        .expect_err("a new record changes the window");
-    assert!(
-        matches!(refused.error, StoreError::WorkShowCursorInvalid { .. }),
-        "{refused:?}"
-    );
+        .expect("after a newer evaluation");
+    assert_eq!(continued.value["evaluations_window"]["total"], 21);
+    assert_eq!(continued.value["evaluations_window"]["newer"], shown + 1);
+    let ids = rows(&continued)
+        .into_iter()
+        .map(|row| row["evaluation"].as_str().expect("id").to_owned())
+        .collect::<Vec<_>>();
+    let end = records.len() - usize::try_from(shown).unwrap();
+    assert_eq!(ids, records[end - ids.len()..end]);
     // A cursor from another window kind is refused, not reinterpreted.
     let notes = fixture
         .verbs
@@ -427,7 +427,7 @@ fn the_window_pages_every_record_and_refuses_a_stale_cursor() {
             &fixture.work_ref,
             &ShowInput {
                 evaluations: true,
-                after: Some("s1-00".into()),
+                after: Some("s2-00".into()),
                 ..ShowInput::default()
             },
             at(42),
@@ -575,7 +575,7 @@ fn the_detail_refuses_another_items_record_and_the_modes_stay_exclusive() {
         },
         ShowInput {
             evaluation: Some(record.clone()),
-            after: Some("e1-00".into()),
+            after: Some("e2-00".into()),
             ..ShowInput::default()
         },
         ShowInput {

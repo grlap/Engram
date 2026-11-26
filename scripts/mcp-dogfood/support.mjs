@@ -146,7 +146,7 @@ function assertRecordParity(actual, expected) {
     assert.ok(Date.parse(actualWindow.read_cut.observed_at) >= Date.parse(expectedWindow.read_cut.observed_at));
     if (expectedWindow.after) {
       const decode = (token) => {
-        assert.match(token, /^s1-[0-9a-f]+$/u);
+        assert.match(token, /^s2-[0-9a-f]+$/u);
         return JSON.parse(Buffer.from(token.slice(3), "hex").toString("utf8"));
       };
       const actualCursor = decode(actualWindow.after);

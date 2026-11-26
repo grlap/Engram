@@ -921,7 +921,9 @@ Rules that matter:
   cursor and preserved in continuation and fresh-window guidance. Switching
   it requires starting a fresh window. Gate detail locators work in either mode.
   Follow the printed continuation command for older notes; it retains
-  `--gates` when that mode was requested.
+  `--gates` when that mode was requested. Records appended after the first
+  page count as newer, so the continuation still returns the remaining older
+  records.
   Every notes/history page reflects `byte_budget` and `read_cut`
   (`project_position`, `observed_at`, `valid_until_ms`) in its window metadata
   and prints the active byte ceiling and cut. These describe this read, not
@@ -963,11 +965,11 @@ Rules that matter:
   shortened. The detail read returns the complete note, not that summary.
   Ordinary show advertises this history reader. Notes and history are mutually
   exclusive; `after` requires one of them, and `gates` requires `notes`.
-  A cursor binds item, project, kind, immutable boundary/member, order, the
-  window's selected total and the observed time. A new record in the window,
-  a missing boundary, a mismatch or a reversed clock refuses with
-  `work_show_cursor_invalid` and a fresh same-kind command; a write elsewhere
-  in the project does not. The refusal states its reason once. Tokens encode
+  A cursor binds the item, project, window kind, boundary record and member
+  order, count of older records, and observed time. Records added after the
+  boundary count as newer. A missing or moved boundary, a scope mismatch,
+  or a reversed clock refuses with `work_show_cursor_invalid` and a fresh
+  same-kind command. The refusal states its reason once. Tokens encode
   readable context, are not confidential, and grant no authority.
 - Every full-note row prints a copyable `locator`. Native notes accept a unique
   prefix of the record's id, at least eight hex digits of an id of 32 or 64;

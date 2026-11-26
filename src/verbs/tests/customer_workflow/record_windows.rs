@@ -283,7 +283,7 @@ fn record_windows_oversized_body_has_a_complete_detail_and_does_not_hide_older_n
 }
 
 #[test]
-fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator() {
+fn record_windows_refuse_wrong_kind_item_boundary_and_note_locator() {
     let (_directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Cursor basis", None, false, 0);
     let other = add(&verbs, "Other item", None, false, 1);
@@ -303,7 +303,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
     for (target, history, cursor, time) in [
         (&other, false, token.clone(), 20),
         (&work, true, token.clone(), 20),
-        (&work, false, "s1-ff".into(), 20),
+        (&work, false, "s2-ff".into(), 20),
         (&work, false, token.clone(), 19),
     ] {
         let error = verbs
@@ -352,7 +352,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
     let mut cursor: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     cursor["address"]["hash"] = row["locator"].clone();
     cursor["order"]["position"] = json!(-1);
-    let mut forged = String::from("s1-");
+    let mut forged = token[..3].to_owned();
     for byte in serde_json::to_vec(&cursor).unwrap() {
         write!(forged, "{byte:02x}").unwrap();
     }
@@ -368,8 +368,9 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
         )
         .unwrap_err();
     assert!(
-        matches!(error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("boundary"))
+        matches!(&error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("boundary"))
     );
+    assert_eq!(error.guidance().reminders, [] as [String; 0]);
     // A write elsewhere in the project leaves this item's window as it was.
     note(&verbs, &other, "Unrelated write", 21);
     let continued = verbs
@@ -377,7 +378,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
             &work,
             &ShowInput {
                 notes: true,
-                after: Some(token.clone()),
+                after: Some(token),
                 ..ShowInput::default()
             },
             at(22),
@@ -388,30 +389,6 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
             .as_array()
             .is_some_and(|rows| !rows.is_empty())
     );
-    // A new note on this item changes the window's records.
-    note(&verbs, &work, "Changed window", 23);
-    let error = verbs
-        .show_records(
-            &work,
-            &ShowInput {
-                notes: true,
-                after: Some(token),
-                ..ShowInput::default()
-            },
-            at(24),
-        )
-        .unwrap_err();
-    assert!(
-        matches!(&error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("window changed")),
-        "{:?}",
-        error.error
-    );
-    // The reason is stated once: in the refusal, not again as a reminder.
-    assert!(
-        error.guidance().reminders.is_empty(),
-        "{:?}",
-        error.guidance()
-    );
     assert!(
         SqliteStore::open(path)
             .unwrap()
@@ -420,6 +397,44 @@ fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator(
             .is_healthy()
     );
     assert!(!project.0.is_empty(), "{:?}", project.0);
+}
+
+#[test]
+fn notes_window_continues_through_older_rows_after_a_new_note() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = add(&verbs, "Cursor across append", None, false, 0);
+    for index in 0..12 {
+        note(
+            &verbs,
+            &work,
+            &format!("{index} {}", "body ".repeat(500)),
+            index + 1,
+        );
+    }
+    let locators = |rows: &[serde_json::Value]| {
+        rows.iter()
+            .rev()
+            .map(|row| row["locator"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let expected = locators(&traverse(&verbs, &work, false, 20));
+    assert_eq!(expected.len(), 12);
+    let first = window(&verbs, &work, false, None, 20);
+    let (rows, meta) = parts(&first, false);
+    let mut seen = locators(rows);
+    let mut after = meta["after"].as_str().map(str::to_owned);
+    assert!(after.is_some());
+
+    note(&verbs, &work, "Note written between pages", 21);
+    while let Some(token) = after {
+        let continued = window(&verbs, &work, false, Some(token), 22);
+        let (rows, meta) = parts(&continued, false);
+        assert_eq!(meta["total"], 13);
+        assert_eq!(meta["newer"], seen.len() + 1);
+        seen.extend(locators(rows));
+        after = meta["after"].as_str().map(str::to_owned);
+    }
+    assert_eq!(seen, expected);
 }
 
 #[test]
