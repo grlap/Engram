@@ -1514,7 +1514,7 @@ fn combined_data_worktree(marker: &Path, checkout: &Path) -> DataWorktree {
     DataWorktree::observe(marker.parent().unwrap(), checkout, "engram-data").unwrap()
 }
 
-fn combined_export_journal(marker: &Path, checkout: &Path) -> std::path::PathBuf {
+pub(super) fn combined_export_journal(marker: &Path, checkout: &Path) -> std::path::PathBuf {
     let data = combined_data_worktree(marker, checkout);
     fs::read_dir(data.git_directory)
         .unwrap()

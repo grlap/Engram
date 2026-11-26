@@ -136,6 +136,22 @@ fn unseen_shared_revisions(
         .collect())
 }
 
+fn require_seen_shared_revisions(
+    project: &crate::ProjectId,
+    key: &str,
+    history: &[StoredProjectMemory],
+    selected: &KeyHistory,
+) -> Result<(), StoreError> {
+    let unseen = unseen_shared_revisions(project, key, history, selected)?;
+    if !unseen.is_empty() {
+        return Err(invalid(&format!(
+            "memory_retirement_import_required: selected shared suffix must be imported before tombstone export; unseen revisions {unseen:?}; {}",
+            memories::retirement_remedy(key),
+        )));
+    }
+    Ok(())
+}
+
 fn export_key_for_comparison(
     project: &crate::ProjectId,
     key: &str,
@@ -172,14 +188,10 @@ fn export_key_for_comparison(
             retirement_reference(source)?;
             return Ok(selected.clone());
         }
-        if let Some(selected) = selected {
-            let unseen = unseen_shared_revisions(project, key, history, selected)?;
-            if !retire_unseen && !unseen.is_empty() {
-                return Err(invalid(&format!(
-                    "memory_retirement_import_required: selected shared suffix must be imported before tombstone export; unseen revisions {unseen:?}; {}",
-                    memories::retirement_remedy(key),
-                )));
-            }
+        if let Some(selected) = selected
+            && !retire_unseen
+        {
+            require_seen_shared_revisions(project, key, history, selected)?;
         }
         let source = retirement_source(&head.assertion.actor)?.unwrap_or_else(|| {
             Source::from_actor(&head.assertion.actor, head.assertion.created_at)
@@ -428,6 +440,20 @@ fn apply_revision(
 }
 
 impl SqliteStore {
+    pub(crate) fn require_known_memory_retirements(
+        &self,
+        project: &crate::ProjectId,
+        selected: &BTreeMap<String, KeyHistory>,
+    ) -> Result<(), StoreError> {
+        self.work_read_snapshot(|store| {
+            for (key, shared) in selected {
+                let history = project_memory_history_on(&store.connection, project, key)?;
+                require_seen_shared_revisions(project, key, &history, shared)?;
+            }
+            Ok(())
+        })
+    }
+
     /// Reads the immutable local head used as the per-key import fence.
     ///
     /// # Errors

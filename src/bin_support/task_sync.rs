@@ -5,7 +5,9 @@ use anyhow::{Context, Result};
 use engram::{
     LocalWorkService, ProjectId, SessionId,
     storage::{TaskSyncImportResult, TaskSyncTaskStatus},
-    task_sync::{directory, setup},
+    task_sync::{directory, memories::ImportOutcome, setup},
+    terminal_error_line,
+    work_service::FolderSyncOptions,
 };
 use std::process::ExitCode;
 use std::{
@@ -47,6 +49,10 @@ enum TaskSyncCommand {
         /// Eligible machine activity can be shared under this alias even with notes off.
         #[arg(long)]
         origin_machine: Option<String>,
+        /// Opt an enrolled data branch into sharing project memories.
+        /// Sync includes memories automatically once the branch carries them.
+        #[arg(long)]
+        include_memories: bool,
         /// Prepare local commits for disclosure review without pushing.
         #[arg(long)]
         no_push: bool,
@@ -437,18 +443,26 @@ async fn run_observed(
             remote,
             branch,
             origin_machine,
+            include_memories,
             no_push,
             json,
         } => {
             eprintln!("{REDACTOR_NOTICE}");
             let receipt = Box::pin(service.sync_task_folder(
                 project_file,
-                &remote,
-                &branch,
-                origin_machine.as_deref(),
-                no_push,
+                &FolderSyncOptions {
+                    remote: &remote,
+                    branch: &branch,
+                    origin_machine: origin_machine.as_deref(),
+                    no_push,
+                    include_memories,
+                },
+                print_memory_retirement,
             ))
             .await?;
+            for withheld in &receipt.withheld_memories {
+                eprintln!("Memory key {} withheld: {}", withheld.key, withheld.reason);
+            }
             attribution.print_notices();
             if json {
                 println!("{}", serde_json::to_string_pretty(&receipt)?);
@@ -637,6 +651,21 @@ async fn run_observed(
     Ok(ExitCode::SUCCESS)
 }
 
+fn print_memory_retirement(outcome: &ImportOutcome) {
+    let key = terminal_error_line(&outcome.key);
+    if outcome.retired_local_revisions.is_empty() {
+        eprintln!("Retired project memory `{key}`");
+    } else {
+        let revisions = outcome
+            .retired_local_revisions
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("Retired project memory `{key}` with local revisions {revisions}");
+    }
+}
+
 fn run_folder_exchange(
     service: &LocalWorkService,
     project_file: &Path,
@@ -687,13 +716,6 @@ fn run_folder_exchange(
                 } else {
                     BTreeMap::default()
                 };
-                let recovery_basis_matches = memory_recovery_basis
-                    .as_deref()
-                    .map(|retained| {
-                        engram::task_sync::memories::directory::read_basis(retained)
-                            .map(|retained| retained == memory_basis)
-                    })
-                    .transpose()?;
                 let mut resolutions = match memory_resolution {
                     Some(path) => engram::task_sync::memories::directory::read_options(&path)?,
                     None => BTreeMap::default(),
@@ -709,72 +731,20 @@ fn run_folder_exchange(
                 // before any file is written; the task export then counts
                 // the component's bytes against the folder's size limit.
                 let mut admitted = None;
-                let memory_export = include_memories.then(|| {
-                    let data = &data;
-                    let basis = &memory_basis;
-                    let held = memory_lock.as_ref();
-                    let recovery = memory_recovery_basis.as_deref();
-                    let admitted = &mut admitted;
-                    engram::work_service::FolderMemoryExport {
-                        selected: basis,
-                        resolutions: &resolutions,
-                        recovery_basis_matches,
-                        admit: Box::new(
-                            move |captured: engram::task_sync::memories::ExportOutcome| {
-                                let mut complete = basis.clone();
-                                complete.extend(captured.keys.clone());
-                                let held = held.context("memory lock missing")?;
-                                let bytes =
-                                    engram::task_sync::memories::directory::preflight_component(
-                                        data,
-                                        basis,
-                                        &complete,
-                                        recovery.is_some(),
-                                        selected_project,
-                                        None,
-                                    )?;
-                                let files =
-                                    engram::task_sync::memories::directory::publication_changes(
-                                        data,
-                                        basis,
-                                        &complete,
-                                        recovery.is_some(),
-                                    )?;
-                                if let Some(retained) = recovery {
-                                    directory::validate_memory_profile_staging_locked(
-                                        data, retained, held,
-                                    )?;
-                                }
-                                Ok(engram::work_service::FolderMemoryAdmission {
-                                    bytes,
-                                    files,
-                                    clear_capability_staging: match recovery {
-                                        Some(retained) => Some(Box::new(move || {
-                                            directory::clear_memory_profile_staging_locked(
-                                                data, retained, held,
-                                            )?;
-                                            Ok(())
-                                        })),
-                                        None => None,
-                                    },
-                                    publish: Box::new(move |task_bytes| {
-                                        engram::task_sync::memories::directory::write_admitted(
-                                            data,
-                                            basis,
-                                            &complete,
-                                            recovery.is_some(),
-                                            held,
-                                            selected_project,
-                                            usize::try_from(task_bytes)?,
-                                        )?;
-                                        *admitted = Some(captured);
-                                        Ok(())
-                                    }),
-                                })
-                            },
-                        ),
-                    }
-                });
+                let memory_export = memory_lock
+                    .as_ref()
+                    .map(|held| {
+                        engram::work_service::FolderMemoryExport::publication(
+                            &data,
+                            selected_project,
+                            &memory_basis,
+                            held,
+                            &resolutions,
+                            memory_recovery_basis.as_deref(),
+                            &mut admitted,
+                        )
+                    })
+                    .transpose()?;
                 let receipt = service.export_task_sync_data_folder(
                     &data,
                     &profile,
@@ -868,6 +838,7 @@ fn run_folder_exchange(
                             selected: &memories,
                             options: &resolutions,
                             bytes: memory_bytes,
+                            on_retirement: None,
                         })
                         .as_ref(),
                     chrono::Utc::now(),

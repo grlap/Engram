@@ -13,9 +13,10 @@ use crate::{
     task_sync::{
         self, TaskDocument, TaskSyncRefusal,
         directory::{self, FolderBasis},
+        memories::{Head, KeyHistory, directory as memory_directory},
     },
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use sha2::Digest;
 
 mod verified;
@@ -29,6 +30,163 @@ pub(super) const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
 // produce: every task path on both sides, each record well under 512 bytes
 // with the longest object ids, plus the tree entries.
 use super::query::MAX_LISTING_BYTES;
+
+/// Reject an edited shared revision before a resolved commit is imported.
+pub(crate) fn require_immutable_memory_revisions(
+    repository: &Path,
+    project: &ProjectId,
+    fetched: &str,
+    local: &str,
+) -> Result<()> {
+    let reader = Reader::new(repository, project)?;
+    memory_publication_changes(&reader, fetched, local)?;
+    Ok(())
+}
+
+fn memory_publication_changes(
+    reader: &Reader<'_>,
+    fetched: &str,
+    outgoing: &str,
+) -> Result<Vec<Change>> {
+    task_sync::ledger::oid(fetched)?;
+    task_sync::ledger::oid(outgoing)?;
+    let raw = reader.listing(&[
+        "diff-tree",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-commit-id",
+        "--no-renames",
+        "--no-abbrev",
+        "--diff-filter=a",
+        fetched,
+        outgoing,
+        "--",
+        ".engram/memories",
+    ])?;
+    let changes = parse_changes(&raw)?;
+    for change in &changes {
+        if change.status == "M" && !change.path.ends_with("/head.json") {
+            bail!(
+                "the local data commit changes the immutable memory revision {} from {fetched}. Restore its committed bytes before syncing",
+                change.path
+            );
+        }
+    }
+    Ok(changes)
+}
+
+/// Check the exact fetched and outgoing commits before ordinary publication.
+/// Return the fetched active histories for keys the outgoing commit retires.
+pub(crate) fn memory_publication_retirements(
+    repository: &Path,
+    project: &ProjectId,
+    fetched: &str,
+    outgoing: &str,
+) -> Result<BTreeMap<String, KeyHistory>> {
+    let reader = Reader::new(repository, project)?;
+    let changes = memory_publication_changes(&reader, fetched, outgoing)?;
+    let mut heads = Vec::new();
+    let mut deleted = Vec::new();
+    let mut wanted = Vec::with_capacity(changes.len() * 2);
+    for change in &changes {
+        let (key, file) = change
+            .path
+            .strip_prefix(".engram/memories/")
+            .and_then(|path| path.split_once('/'))
+            .context("invalid memory file path in Git delta")?;
+        if file == "head.json" {
+            if change.status == "D" {
+                bail!(
+                    "the outgoing data commit drops memory keys from {fetched}, including {}. Restore the committed memory files before syncing. Use an explicit retirement to remove a shared memory",
+                    change.path
+                );
+            }
+            heads.push(key);
+            wanted.push((change.old_oid.as_str(), change.path.as_str()));
+            wanted.push((change.new_oid.as_str(), change.path.as_str()));
+        } else {
+            deleted.push((key, file, change));
+        }
+    }
+    wanted.extend(
+        deleted
+            .iter()
+            .map(|(_, _, change)| (change.old_oid.as_str(), change.path.as_str())),
+    );
+    if wanted.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    // Both sides have a 128 MiB memory component limit. Read changed heads
+    // and fetched revisions removed by the outgoing commit in bounded chunks.
+    let bodies = reader.batch(
+        &wanted,
+        directory::MAX_FILE_BYTES,
+        MAX_DELTA_BYTES * 2,
+        super::QueryStderrPolicy::RequireEmpty,
+        &|refusal| match refusal {
+            BatchRefusal::Output | BatchRefusal::Total => {
+                anyhow::anyhow!("changed memory files exceed the byte bound")
+            }
+            BatchRefusal::Missing(path) => {
+                anyhow::anyhow!("the Git object of memory file {path} is unavailable")
+            }
+            BatchRefusal::File(path) => {
+                anyhow::anyhow!("memory file {path} exceeds the per-file limit")
+            }
+        },
+    )?;
+    admit_memory_publication(project, fetched, &heads, &deleted, bodies)
+}
+
+fn admit_memory_publication(
+    project: &ProjectId,
+    fetched: &str,
+    heads: &[&str],
+    deleted: &[(&str, &str, &Change)],
+    mut bodies: Vec<Vec<u8>>,
+) -> Result<BTreeMap<String, KeyHistory>> {
+    let mut revisions: BTreeMap<_, BTreeMap<_, _>> = BTreeMap::new();
+    for ((key, file, _), bytes) in deleted.iter().zip(bodies.drain(heads.len() * 2..)) {
+        revisions
+            .entry(*key)
+            .or_default()
+            .insert((*file).to_owned(), bytes);
+    }
+    let mut retired = BTreeMap::new();
+    for (key, [prior_bytes, next_bytes]) in heads.iter().copied().zip(bodies.as_chunks::<2>().0) {
+        let (prior_project, prior) = memory_directory::decode_head(key, prior_bytes)?;
+        let (next_project, next) = memory_directory::decode_head(key, next_bytes)?;
+        ensure!(
+            &prior_project == project && &next_project == project,
+            "memory head belongs to another project"
+        );
+        match (&prior, &next) {
+            (Head::Tombstone { .. }, _) if prior != next => bail!(
+                "the outgoing data commit changes the permanent retirement of memory `{key}` from {fetched}. Restore its committed tombstone before syncing"
+            ),
+            (Head::Active { chain: prior }, Head::Active { chain: next })
+                if !next.starts_with(prior) =>
+            {
+                bail!(
+                    "the outgoing data commit does not preserve the fetched revision history of memory `{key}` from {fetched}. Restore the fetched history before syncing, or use the explicit memory merge workflow"
+                )
+            }
+            (Head::Active { .. }, Head::Tombstone { .. }) => {
+                let mut selected = revisions.remove(key).unwrap_or_default();
+                selected.insert("head.json".to_owned(), prior_bytes.clone());
+                retired.insert(key.to_owned(), memory_directory::decode_key(key, selected)?);
+            }
+            _ => {}
+        }
+    }
+    if let Some((key, _)) = revisions.first_key_value() {
+        bail!(
+            "the outgoing data commit removes immutable revisions of memory `{key}` from {fetched}. Restore its committed files before syncing"
+        );
+    }
+    Ok(retired)
+}
 
 /// Compare one commit with an export's exact paths and postimages. The raw
 /// delta supplies blob identities without opening any task document in Git.

@@ -1183,14 +1183,19 @@ pub(crate) fn require_task_only_head(
     let Some(head) = &data.head else {
         return Ok(());
     };
-    task_only_committed_basis(data, head, operation)?;
+    if committed_folder_basis(data, head)?.is_some_and(|basis| basis.memory_capable) {
+        return Err(TaskSyncRefusal::MemoryProfileRequiresOptIn
+            .invalid(format!(
+                "the committed data folder carries the memory component: {operation} with --include-memories"
+            ))
+            .into());
+    }
     Ok(())
 }
 
-pub(crate) fn task_only_committed_basis(
+pub(crate) fn committed_folder_basis(
     data: &super::data_worktree::DataWorktree,
     head: &str,
-    operation: &str,
 ) -> Result<Option<FolderBasis>> {
     let entries = super::git::query(
         &data.checkout,
@@ -1243,12 +1248,6 @@ pub(crate) fn task_only_committed_basis(
             head,
             "memories exist but memory_profile capability is absent or null"
         )
-    );
-    anyhow::ensure!(
-        !capable,
-        TaskSyncRefusal::MemoryProfileRequiresOptIn.invalid(format!(
-            "the committed data folder carries the memory component: {operation} with --include-memories"
-        ))
     );
     Ok(Some(basis))
 }

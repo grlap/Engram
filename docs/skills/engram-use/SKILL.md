@@ -182,6 +182,11 @@ Where they are silent, ask the operator, as above.
 - Follow every code push with a data sync, so that the shared task state
   matches the pushed code. The data sync is follow-through, not a gate on the
   code push.
+- Once this host has enrolled, use `engram task-sync sync --no-push --json`
+  to prepare the exchange of planning and any memories the branch carries.
+  Add `--include-memories` to enable the memory profile for its first
+  publication. Follow the [disclosure check](#disclosure-check) to publish
+  the reviewed commit.
 - When the export or any check in this procedure fails, or the merge cannot
   be reconciled, leave the data unpublished and report the cause, the owner
   and the remedy; never force or bypass the failure. When nothing changed,
@@ -202,16 +207,14 @@ Where they are silent, ask the operator, as above.
 - Not exchanged by this folder route: live claims, runs, sessions, grants,
   delivery state, evidence and verification records (gates, host checks,
   evaluations, observations) and private scratch.
-- Exchanged only when an export opts in with `--include-memories`: project
-  memories, each key with its revision history or its tombstone. Import
-  applies them with the same flag. Once the data branch holds memories, every
-  export and import for that project must pass `--include-memories`; without
-  it they refuse with `memory_profile_requires_opt_in`. A key whose history
-  is not wholly internal is withheld, with a reason. The data branch holds
-  memories when HEAD's `.engram/project.json` carries `memory_profile`, even
-  while `.engram/memories/` is empty. On a branch that does not yet hold
-  them, the first export with `--include-memories` is a deliberate opt-in,
-  like changing the note selection.
+- Exchanged once a publisher enables the profile with `--include-memories`: project
+  memories, each key with its revision history or its tombstone. Sync includes
+  them automatically once HEAD's `.engram/project.json` carries
+  `memory_profile`, even while `.engram/memories/` is empty. A host that
+  receives the enabling commit also exports its eligible project memories
+  in that run. Explicit
+  `export` and `import` still require the flag on a memory-capable branch.
+  A key whose history is not wholly internal is withheld, with a reason.
 - Not filtered for secrets: task text is exported as stored. Native notes
   pass only a path and locator filter, and notes imported from another host
   are exported as stored. No filter detects secrets. A key, password or
@@ -252,17 +255,40 @@ deliberate re-baselining, not a routine step.
 A data branch has its repository's visibility: in a public repository,
 everything pushed is public and stays in Git history. Look for email
 addresses, keys, tokens, passwords, connection strings, private host names,
-IP addresses and private personal data, at two points in every flow:
+IP addresses and private personal data. Review memory revisions as well as
+task text, including content a later commit removes.
+Every push, including one made by sync, requires this check first.
 
-- Before every commit in the data worktree: stage the folder with
-  `git -C .engram-data add .engram` and read
-  `git -C .engram-data diff --cached`, which shows new files and removed
-  lines.
-- Before every push: read every commit the remote does not have yet,
-  removed lines and merge commits included. Right after
-  `git -C .engram-data fetch origin engram-data`, read
-  `git -C .engram-data log -p -m FETCH_HEAD..HEAD`; when the remote has no
-  data branch yet, read `git -C .engram-data log -p HEAD`.
+For routine sync, prepare the local commits with
+`engram task-sync sync --no-push --json`, using the intended remote and branch.
+Use the successful receipt's exact commit IDs for `REMOTE_HEAD` and
+`LOCAL_HEAD` below.
+
+For a manual exchange, review the staged diff before committing with
+`git -C .engram-data add .engram` and
+`git -C .engram-data diff --cached --text --no-ext-diff --no-textconv`.
+Before pushing, use the committed tip for `LOCAL_HEAD` and fetch the
+destination's data branch for `REMOTE_HEAD`.
+
+Run these checks from the main checkout. Use the selected remote and branch
+in place of `origin` and `engram-data` when different.
+
+1. Compare `git remote get-url --all origin` with
+   `git remote get-url --push --all origin`. The reviewed-push procedure
+   requires one destination for both operations. If these return different
+   URLs or more than one URL, stop before pushing. The fetch tip cannot
+   establish what would be new at a separate push destination.
+2. Review every outgoing commit, including removed lines and merge parents.
+   Use `git -C .engram-data log --format=raw -p --diff-merges=separate --root --text --no-ext-diff --no-textconv REMOTE_HEAD..LOCAL_HEAD`.
+   When the destination has no data branch, including when sync returns a
+   null `remote_head`, use the same command with `LOCAL_HEAD` alone to
+   review all history. The raw format shows both author and committer
+   addresses. The text flags expose committed JSON even when Git attributes
+   would hide it as binary or transform it for display.
+3. Publish the exact reviewed commit by fast-forward with
+   `git push --no-follow-tags origin LOCAL_HEAD:refs/heads/engram-data`.
+   If Git rejects the push because the remote moved, prepare with
+   `--no-push` again and review the new outgoing history before pushing.
 
 Keep notes off unless the operator has had them reviewed for this
 destination. The export redactor filters nothing, and a completed item cannot
@@ -274,7 +300,7 @@ remove text from an export already pushed.
 
 ### Keep the exchange state
 
-Each host keeps two records privately, outside the data worktree, in a
+For manual procedures, keep two records privately outside the data worktree in a
 scratch location the project permits:
 
 - Its basis: a byte-for-byte copy of `.engram-data/.engram/project.json`,
@@ -282,13 +308,11 @@ scratch location the project permits:
   changed that file. Never take it from another host's export. Do not
   capture it through a shell redirect such as `git show ... > file`: Windows
   PowerShell 5.1 rewrites redirected output as UTF-16. The basis serves the
-  complete import route (`--basis`), which a store's first import of a
-  committed folder needs, including the first host's first import after it
-  only exported. Once this host has imported a committed folder, ordinary
+  complete import route (`--rebuild --basis`) for first-host enrollment
+  and recovery. Once this host has imported a committed folder, ordinary
   imports are incremental and take no basis.
 - Its imported commit: the data-branch commit this store is known to hold,
-  namely its own export commit or a commit whose import finished with exit
-  `0` on this host.
+  namely a commit whose import finished with exit `0` on this host.
 
 Before starting a refresh or an exchange, and before any push, check all
 three of these:
@@ -317,7 +341,7 @@ describes, without writing an export over the unimported commit. See
 
 ### Refresh the export
 
-Once this host has exported or imported, export updates the checked-out
+In a manual exchange, once this host has exported or imported, export updates the checked-out
 `.engram` folder in place: it rewrites only the task files that changed and
 leaves the other entries, such as evidence packs and the `.gitignore` and
 `.gitattributes` policy files. Never remove the folder before exporting. An
@@ -348,8 +372,10 @@ tree with `memory_export_component_changed`.
    `--include-memories`, files under `.engram/memories/`. Anything else means
    a step went wrong, so restore the folder as in step 2 and stop. If it
    lists nothing, the store has no change: skip the commit, and HEAD stays
-   the imported commit. Otherwise run the disclosure check, commit, and
-   record that commit as the imported commit.
+   the imported commit. Otherwise run the disclosure check and commit the
+   export. Run `engram task-sync import .engram-data/.engram --json` with
+   `--include-memories` when the branch carries memories. Record that commit
+   as imported only when the import exits successfully.
 
 ### Publish from the first host
 
@@ -370,9 +396,13 @@ tree with `memory_export_component_changed`.
 5. Export planning only: `engram task-sync export .engram-data/.engram --json`.
    Add `--include-memories` when the project exchanges memories.
 6. Copy the basis, as [kept above](#keep-the-exchange-state).
-7. Run the disclosure check before committing, commit only `.engram/` in the
-   data worktree, and record that commit as this host's imported commit.
-8. Run the disclosure check before pushing. Push only as the consuming
+7. Run the disclosure check before committing and commit only `.engram/` in
+   the data worktree.
+8. Enroll this host by importing the committed folder with its saved basis:
+   `engram task-sync import .engram-data/.engram --rebuild --basis <private>/basis.json --json`.
+   Add `--include-memories` when the branch carries memories. After exit
+   `0`, record the commit as imported. Stop and report an unsuccessful import.
+9. Run the disclosure check before pushing. Push only as the consuming
    project's rules allow: fast-forward, never a force-push, rebase or history
    rewrite.
 
@@ -402,6 +432,34 @@ own tasks for the project needs reconciliation, not `--empty-basis`. Later
 exports from this host keep the note selection of the folder it imported.
 
 ### Exchange in both directions
+
+On an enrolled host, run `engram task-sync sync --no-push --json` from the
+main checkout. It exchanges tasks and any memories the branch carries.
+Resolve any reported Git conflict or incomplete import and rerun the
+original command with its options. After a successful run, follow the
+[disclosure check](#disclosure-check) to push the reviewed commit.
+
+#### Manual recovery
+
+After resolving an incomplete import from sync, rerun the original sync
+command with the same options. On a memory-capable branch this retries
+with committed Git data. Use explicit memory import for a preview or a
+deliberate manual recovery. First check that the selected memory files
+match the intended committed contents. If recovery needs a complete
+rebuild, use this host's saved export envelope under
+[keep the exchange state](#keep-the-exchange-state). Keep any basis
+saved at enrollment for this purpose.
+
+When resolving a Git conflict, keep fetched revision files and tombstones
+intact. Use explicit retirement if the local store has unseen revisions.
+For competing active revisions that need a new authored
+result, use the [explicit memory merge procedure](../../features/git-task-sync.md#project-memory-text-exchange)
+and follow the [disclosure check](#disclosure-check) before pushing
+the resolved commit.
+
+For a manual exchange or preview, use the following steps with the private
+records described above. The `local_head` of your last successful sync
+receipt can supply the recorded imported commit.
 
 Another session on the same host that adds, edits or completes a task
 between this host's export and its import makes the import refuse as
@@ -433,19 +491,16 @@ changing this project's tasks.
    `engram task-sync import .engram-data/.engram --dry-run --json`, adding
    `--include-memories` when the branch holds memories. Once this host has
    imported a committed folder, this is the incremental route and reads only
-   what changed since its last import. A store's first import, including the
-   first host's after it only exported, is the complete route: add
-   `--basis <private>/basis.json`, as the refusal names. Never use another host's
-   `project.json` as the basis: the comparison is by content and cannot tell
-   hosts apart. Read the receipt. Continue only if
+   what changed since its last import. If recovery needs a complete read,
+   add `--rebuild --basis <private>/basis.json` with this host's saved envelope.
+   Read the receipt. Continue only if
    the dry run exits `0`; otherwise stop, keep the commit, and follow the
    guard in [keep the exchange state](#keep-the-exchange-state).
 6. Run the same import without `--dry-run`. On exit `0`, record HEAD as the
    imported commit. On any other result, follow the same guard.
-7. Run the disclosure check before pushing, then push the data branch
-   fast-forward only: `git -C .engram-data push origin engram-data`. If the
-   push is rejected because the other host pushed meanwhile, start again
-   from step 1. Never force.
+7. Follow the [disclosure check](#disclosure-check) to push the exact reviewed
+   commit by fast-forward. If the push is rejected because the other host
+   pushed meanwhile, start again from step 1. Never force.
 
 Exit codes of `import`:
 

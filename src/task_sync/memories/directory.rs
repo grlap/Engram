@@ -569,13 +569,10 @@ pub(in crate::task_sync) fn decode_key(
     key: &str,
     documents: BTreeMap<String, Vec<u8>>,
 ) -> Result<KeyHistory> {
-    validate_key(key)?;
-    let head: HeadDocument =
-        serde_json::from_slice(documents.get("head.json").context("memory head missing")?)?;
-    ensure!(
-        head.key == key && head.format == FORMAT,
-        "memory head format/key mismatch"
-    );
+    let (project_id, head) = decode_head(
+        key,
+        documents.get("head.json").context("memory head missing")?,
+    )?;
     let mut revisions = BTreeMap::new();
     for (name, bytes) in documents {
         if name == "head.json" {
@@ -594,14 +591,27 @@ pub(in crate::task_sync) fn decode_key(
         revisions.insert(id, revision);
     }
     let history = KeyHistory {
-        format: head.format,
-        project_id: head.project_id,
-        key: head.key,
-        head: head.head,
+        format: FORMAT.to_owned(),
+        project_id,
+        key: key.to_owned(),
+        head,
         revisions,
     };
     history.validate()?;
     Ok(history)
+}
+
+pub(in crate::task_sync) fn decode_head(
+    key: &str,
+    bytes: &[u8],
+) -> Result<(crate::ProjectId, Head)> {
+    validate_key(key)?;
+    let head: HeadDocument = serde_json::from_slice(bytes)?;
+    ensure!(
+        head.key == key && head.format == FORMAT,
+        "memory head format/key mismatch"
+    );
+    Ok((head.project_id, head.head))
 }
 
 /// Publishes deterministic revision bytes and updates heads last. Existing UUID

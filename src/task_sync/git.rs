@@ -13,7 +13,10 @@ pub use delta::{
     ChangedTask, CommitTaskDelta, VerifiedTaskDelta, read_rooted_task_diff, read_task_delta,
     read_tasks_at, read_verified_task_delta,
 };
-pub(crate) use delta::{ExportParentPaths, matches_export_commit};
+pub(crate) use delta::{
+    ExportParentPaths, matches_export_commit, memory_publication_retirements,
+    require_immutable_memory_revisions,
+};
 #[cfg(test)]
 pub(crate) use evidence::decode_selected_pack;
 pub(crate) use evidence::read_selected_evidence_remaining;
@@ -35,6 +38,7 @@ pub(crate) use query::wait_until_exit;
 pub(crate) use query::{MAX_LISTING_BYTES, ignored_paths, run_listing_observed as query_listing};
 pub(crate) use snapshot::observe_commit;
 pub use snapshot::read_memory_snapshot;
+pub(crate) use snapshot::read_memory_snapshot_with_bytes;
 pub(crate) use snapshot::read_task_snapshot_bounded;
 pub use snapshot::{CommitObject, CommitTaskSnapshot, read_task_snapshot};
 

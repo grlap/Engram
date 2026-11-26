@@ -30,7 +30,9 @@ use crate::{
         data_worktree::DataWorktree,
         directory::{self, DestinationBasis},
         inventory::InventoryRoot,
-        memories::{ImportOptions, KeyHistory, KeyImportResult, directory::PublicationLock},
+        memories::{
+            ImportOptions, ImportOutcome, KeyHistory, KeyImportResult, directory::PublicationLock,
+        },
         progress::ExportProfile,
     },
 };
@@ -74,9 +76,28 @@ pub struct MemoryImport<'a> {
     pub fence: &'a PublicationLock,
     pub selected: &'a BTreeMap<String, KeyHistory>,
     pub options: &'a BTreeMap<String, ImportOptions>,
-    /// The bytes the selected memory files hold on disk, as the fenced read
-    /// measured them, counted against the folder's size limit.
+    /// The encoded bytes of the selected memory files, counted against the
+    /// folder's size limit.
     pub bytes: u64,
+    /// Called for each new retirement after the database commits and before
+    /// the recovery journal is discarded.
+    pub on_retirement: Option<&'a dyn Fn(&ImportOutcome)>,
+}
+
+fn report_retirements(
+    memories: Option<&MemoryImport<'_>>,
+    results: &[KeyImportResult],
+    dry_run: bool,
+) {
+    if !dry_run && let Some(report) = memories.and_then(|memory| memory.on_retirement) {
+        for result in results {
+            if let KeyImportResult::Applied { outcome, .. } = result
+                && outcome.retired
+            {
+                report(outcome);
+            }
+        }
+    }
 }
 
 const GIT_DEADLINE: Duration = Duration::from_secs(60);
@@ -194,6 +215,7 @@ impl LocalWorkService {
                 confirmation,
                 now,
             )?;
+            report_retirements(memories, &receipt.memories, dry_run);
             recovery.finish(data)?;
             return Ok(receipt);
         }
@@ -308,6 +330,7 @@ impl LocalWorkService {
             // above is not listed again, and the tip is checked before applying.
             || data.check_head(),
         )?;
+        report_retirements(memories, &outcome.memories, dry_run);
         if !recovery.requires_committed_basis
             || head
                 .and_then(|head| head.import_basis())
@@ -415,7 +438,7 @@ impl LocalWorkService {
         // The folder the delta leads to stays within what the complete reader
         // would take, envelope, policy files and memory component included.
         let folder = data.checkout.join(".engram");
-        // The memory files count as the fenced read measured them on disk.
+        // Count the selected memory files using their encoded size.
         let mut other_bytes = memory_bytes;
         for name in ["project.json", ".gitignore", ".gitattributes"] {
             if let Ok(meta) = std::fs::symlink_metadata(folder.join(name)) {

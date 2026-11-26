@@ -48,19 +48,40 @@ remote.
 `engram task-sync sync` runs a full two-way exchange, the task-data equivalent of `git pull` plus `git push`.
 
 After initializing the dedicated data worktree and importing its committed
-task folder once to enroll this host, run `engram task-sync sync`.
+task folder once to enroll this host, run `engram task-sync sync --no-push --json`
+and follow the [disclosure check](../skills/engram-use/SKILL.md#disclosure-check)
+to publish the reviewed commit.
 It incrementally exports and commits local planning, fetches the configured
 data branch and imports the incoming changes. It fast-forwards when it can.
+On a branch with a memory profile, sync also exchanges project memories.
+To publish memories for the first time on an enrolled task-only branch, run
+`engram task-sync sync --no-push --json --include-memories` and review the
+prepared commits before publishing. Subsequent syncs include memories
+automatically. A host that fetches the commit enabling memories also exports
+its eligible project memories in that run. Use `--no-push` to review those
+outgoing commits before publishing.
 When the tips diverge, it keeps both parents in a Git merge commit, imports
 the resulting committed task files, and exports any remaining local changes.
 Git can combine edits to separate parts of the same task file. Sync stops
-before publication on a Git conflict or held or refused import.
+before publication on a Git conflict, a held or refused task, or an incomplete
+memory import.
+When resolving a Git conflict, preserve each fetched memory's revision history
+and keep its tombstone if it was retired. Sync accepts new revisions that
+extend the fetched history and retirements of active histories the local store
+has seen. Keep each existing revision file's bytes intact. To retire unseen
+revisions, use the explicit memory retirement procedure below. Use the
+[manual exchange](../skills/engram-use/SKILL.md#manual-recovery) for an explicit
+compared-input memory merge, then review and push the resolved commit there.
 Set aside ignored local files in the data folder before merging divergent tips.
-For an incomplete import, sync lists each affected task and its reason.
+For an incomplete import, sync lists the affected tasks or memory keys and
+their reasons.
+Sync prints each applied memory retirement and its affected local revision
+IDs to standard error as the import commits, even if sync later stops.
 After resolving the issues, repeat your original sync command with all its
-options, including any `--no-push` and `--remote`. To retry the import
-separately, use `engram task-sync import` with the data folder and branch
-selected for sync.
+options, including any `--no-push` and `--remote`. On a memory-capable
+branch the retry reads committed memory files. For a task-only branch, you
+can also retry the import separately with `engram task-sync import` on the
+same data folder and branch.
 A rejected fast-forward push triggers one re-fetch and reconciliation before
 a second refusal stops the command. Local commits remain available for recovery.
 
@@ -73,17 +94,16 @@ command. Git calls made by the command have a 60-second limit each.
 
 Sync pushes to the configured remote by default. That remote may be public.
 Use `--no-push` to prepare local commits for review and check the outgoing
-history for secrets, credentials and private data before publishing. Committed
-task-file deletions that reconcile without conflict are applied by the folder
-import and permanently retire the task IDs. Use the explicit folder import
-preview when you need to inspect incoming removals before applying them.
+history for secrets, credentials and private data. Follow the
+[disclosure check](../skills/engram-use/SKILL.md#disclosure-check) to push the
+exact reviewed commit. The folder import applies committed task-file deletions
+that reconcile without conflict and permanently retires the task IDs. Use the
+explicit folder import preview to inspect incoming removals before applying them.
 A fetched commit must match the enrolled project and notes profile before
 sync merges it. If this host has only imported a notes-enabled folder, supply
 its own alias with `--origin-machine` until it has recorded its first export.
 Subsequent syncs reuse that alias. When an alias is set, eligible machine
-activity can be shared under it even with notes disabled. For a branch that
-includes project memories, use the explicit folder export and import commands
-with `--include-memories`.
+activity can be shared under it even with notes disabled.
 
 ## Reconciliation storage foundation
 
@@ -1082,29 +1102,34 @@ duplicate or mismatched ids and unresolved conflict markers are refused.
 
 ## Project memory text exchange
 
-`task-sync export MAIN/.engram-data/.engram --include-memories` selects the
-`engram-project-memories-v1` capability independently of `--include-notes`.
+After enrolling the host, use [the ordinary sync command](#run-the-ordinary-sync-command)
+to exchange tasks and memories together. Explicit export and import are
+available for enrolment, preview and recovery.
+
+For the first publication from an unenrolled store, use
+`task-sync export MAIN/.engram-data/.engram --include-memories`.
+That selects the `engram-project-memories-v1` capability independently
+of `--include-notes`.
 The folder project's `memory_profile` field advertises it; older readers refuse
 the unknown field, and current task-only imports require explicit memory opt-in.
-Keep this host's exported task `project.json` as its pre-merge basis as usual;
-it serves the complete import route.
+Save this host's exported `project.json` before merging. After committing
+the seed, enroll the first publisher with
+`engram task-sync import MAIN/.engram-data/.engram --rebuild --basis BASIS/project.json --include-memories`.
+An empty receiving store enrolls by importing the published commit with
+`--empty-basis --include-memories`.
 Export captures task and memory text from the same SQLite snapshot and withholds
 a whole key when one of its historical task targets is outside the selected task
-profile. After the ordinary fetch and agent merge of the data branch, use
-`task-sync import MAIN/.engram-data/.engram --include-memories`, the
-incremental route once this host has imported a committed folder or confirmed
-its own exact export commit. The first publisher can commit the exact
-task and memory output of its retained export and run ordinary import to
-confirm that commit. If the commit also carries evidence packs, import it
-through the ordinary comparison route when a basis exists. A store without
-a committed comparison basis or an exact export commit uses the complete
-route and adds `--basis BASIS/project.json`. Tasks apply before
-their dependent memories. This route
-does not fetch, merge, commit or push. Git authority remains separate.
+profile. Retry ordinary sync with the original sync command. To preview an
+incoming commit or perform a deliberate manual recovery, first verify that
+the selected memory files match the intended committed contents. Use explicit
+`task-sync import MAIN/.engram-data/.engram --include-memories` with
+`--dry-run` for a preview, or `--rebuild --basis BASIS/project.json` when
+recovery requires the saved basis. This command applies tasks before their
+dependent memories and leaves Git fetch, merge, commit and push to the caller.
 Once the committed data HEAD advertises this capability, task-only export
 also refuses with `memory_profile_requires_opt_in`, even if the working
 `.engram` directory was removed or the committed memory component is empty.
-Use `--include-memories` so an ordinary task export cannot strip the keys.
+Pass `--include-memories` on explicit export or import of that folder.
 
 Each key has `.engram/memories/KEY/head.json` and immutable `ID.json` revision
 files. The head selects one ordered predecessor chain, or an attributed

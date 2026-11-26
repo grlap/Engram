@@ -34,6 +34,10 @@ use crate::{
         file_lock::HeldLock,
         git::ExportParentPaths,
         inventory::InventoryRoot,
+        memories::{
+            ExportOutcome, ImportOptions, KeyHistory,
+            directory::{self as memory_directory, PublicationLock},
+        },
         notes::NoteOmissions,
         progress::ExportProfile,
     },
@@ -113,6 +117,69 @@ pub struct FolderMemoryExport<'a> {
     pub admit: Box<
         dyn FnOnce(task_sync::memories::ExportOutcome) -> Result<FolderMemoryAdmission<'a>> + 'a,
     >,
+}
+
+impl<'a> FolderMemoryExport<'a> {
+    /// Prepare the on-disk memory publication for a combined folder export.
+    ///
+    /// # Errors
+    /// Refuses an unreadable retained recovery basis. The admission callback
+    /// also refuses invalid or unsafe memory component changes.
+    pub fn publication(
+        data: &'a DataWorktree,
+        project: &'a ProjectId,
+        basis: &'a BTreeMap<String, KeyHistory>,
+        held: &'a PublicationLock,
+        resolutions: &'a BTreeMap<String, ImportOptions>,
+        recovery: Option<&'a Path>,
+        admitted: &'a mut Option<ExportOutcome>,
+    ) -> Result<Self> {
+        let recovery_basis_matches = recovery
+            .map(|retained| memory_directory::read_basis(retained).map(|keys| keys == *basis))
+            .transpose()?;
+        Ok(Self {
+            selected: basis,
+            resolutions,
+            recovery_basis_matches,
+            admit: Box::new(move |captured| {
+                let mut complete = basis.clone();
+                complete.extend(captured.keys.clone());
+                let recovering = recovery.is_some();
+                let bytes = memory_directory::preflight_component(
+                    data, basis, &complete, recovering, project, None,
+                )?;
+                let files =
+                    memory_directory::publication_changes(data, basis, &complete, recovering)?;
+                if let Some(retained) = recovery {
+                    directory::validate_memory_profile_staging_locked(data, retained, held)?;
+                }
+                Ok(FolderMemoryAdmission {
+                    bytes,
+                    files,
+                    clear_capability_staging: match recovery {
+                        Some(retained) => Some(Box::new(move || {
+                            directory::clear_memory_profile_staging_locked(data, retained, held)?;
+                            Ok(())
+                        })),
+                        None => None,
+                    },
+                    publish: Box::new(move |task_bytes| {
+                        memory_directory::write_admitted(
+                            data,
+                            basis,
+                            &complete,
+                            recovering,
+                            held,
+                            project,
+                            usize::try_from(task_bytes)?,
+                        )?;
+                        *admitted = Some(captured);
+                        Ok(())
+                    }),
+                })
+            }),
+        })
+    }
 }
 
 /// The size and exact memory postimages admitted for combined export.

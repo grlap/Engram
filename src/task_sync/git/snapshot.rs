@@ -91,18 +91,29 @@ pub fn read_memory_snapshot(
     project: &ProjectId,
     commit: &str,
 ) -> Result<std::collections::BTreeMap<String, crate::task_sync::memories::KeyHistory>> {
+    Ok(read_memory_snapshot_with_bytes(repository, project, commit)?.0)
+}
+
+pub(crate) fn read_memory_snapshot_with_bytes(
+    repository: &Path,
+    project: &ProjectId,
+    commit: &str,
+) -> Result<(
+    BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+    usize,
+)> {
     let reader = Reader::new(repository, project)?;
     let commit = reader.commit_object(commit, "memory export basis")?;
     let roots = reader.entries(&commit.tree, &[".engram"])?;
     let Some(root) = roots.first() else {
-        return Ok(BTreeMap::default());
+        return Ok((BTreeMap::default(), 0));
     };
     if root.kind != "tree" || root.mode != "040000" {
-        return Ok(BTreeMap::default());
+        return Ok((BTreeMap::default(), 0));
     }
     let children = reader.entries(&root.oid, &[])?;
     if !children.iter().any(|entry| entry.name == "memories") {
-        return Ok(BTreeMap::default());
+        return Ok((BTreeMap::default(), 0));
     }
     let project_file = children
         .iter()
@@ -148,10 +159,10 @@ pub fn read_memory_snapshot(
                     "memories exist but memory_profile capability is absent or null"
                 )
             );
-            return Ok(memories::read(&reader, &entry, project)?.0);
+            return memories::read(&reader, &entry, project);
         }
     }
-    Ok(BTreeMap::default())
+    Ok((BTreeMap::default(), 0))
 }
 
 pub(super) fn read_with_limit(
