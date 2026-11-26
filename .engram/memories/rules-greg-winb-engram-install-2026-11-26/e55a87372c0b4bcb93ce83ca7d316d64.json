@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-winb-engram-install-2026-11-26",
+    "revision_id": "e55a87372c0b4bcb93ce83ca7d316d64",
+    "previous": "bd0cd58ad6ee43658a7b8abdc2c9221e",
+    "body_sha256": "e6bd8ad39019eaab91c9d211eaebc09a7c76bde4b15c8b37a60c988b693c56cf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:34:01.807101100Z"
+    }
+  },
+  "body": "GREG, 2026-11-26 about 17:32Z, relayed by Engram::Asistant (mailbox 43498a6e #2112), verbatim: „Chwila!! Powien byc engram”. Then #2114, verbatim: „Po to mamy sync engram. + Kimi. Dlatego robimy te toole.” This was on the Windows B coding plan.\nAsistant's reading: Engram must be available and used in the coding sessions on Windows B: local Engram with its MCP tools, plus task sync. A plan without Engram, or one where only Central records notes, is not acceptable. Kimi helps the teams check it.\nSCOPE, corrected by Asistant #2116: this authorizes the Engram NEEDED ON WINDOWS B FOR THE CURRENT CODING AND SYNC SET-UP. It is NOT a standing consent for every future install there. That covers:\n- installing the Engram binary on Windows B (932a546b) as a release build of the exact landed master (bc0628b6, build 15555cb5a1e5), backing up any existing binary first;\n- creating the local store there (ENGRAM_HOME=%USERPROFILE%\\.engram, as on Central);\n- joining the Engram project, and TermAl's when TermAl asks, through their engram-data branches (data-init, fetch, import --empty-basis --include-memories);\n- wiring the Windows B coding sessions to it.\nClaims are LOCAL to each host's store and never transfer; synced task text and memories do. Assign work so that one item is not executed on two hosts. A later Windows B install outside this set-up goes back to Greg."
+}

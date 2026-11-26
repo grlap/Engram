@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "winb-engram-cleanup-lane",
+    "revision_id": "bfc5b79291a14cb4a350880c4e00da28",
+    "previous": null,
+    "body_sha256": "042399e7a014ba60de6cc64181085f533605ffa8e2e47d0898c613984099596f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T16:54:25.598659900Z"
+    }
+  },
+  "body": "WINDOWS B ENGRAM CLEANUP LANE, the counterpart of dl560-engram-cleanup-lane.\n- Created 2026-11-26 16:53:29Z by WinB session-8 \"Engram Runner\" (Claude) through WinB's host API (POST /api/sessions), under Termal::Fable2's one-time exception ebe242f7 #8888, of the same kind as DL560's #285. TermAl tracks the route as w-05ec02c3d04f.\n- Session: WinB native session-12 \"Engram::Codex-WinB-Cleanup\"; address host:932a546b-4ab2-49a7-a5cb-499cbfac2eab::session-12. Codex gpt-6.2-sol, workdir C:\\GitHub\\Personal\\Engram-runner. Host defaults: approval never, sandbox danger-full-access.\n- Role: removes ONLY Engram-runner paths that Engram::Fable names exactly, under AGENTS.md \"Cleanup deletions\" (non-forced first; every refusal stops that target and is reported verbatim). Left idle between tasks and never deleted.\n- Why it exists: WinB's old \"Engram Runner (Codex)\" session-9 no longer exists (Central's directory held a stale entry, hence the 404), and a Codex delegation child of session-8 cannot write the clone's .git, because a worker's write boundary is its own worktree. Session-8 is Claude and removes nothing."
+}

@@ -18,12 +18,19 @@
   ],
   "assigned_to": "Engram::Coder-MacosFixSol (12325)",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed: the mimalloc 0.1.48 v3 allocator change is present in landed master commit 6b48088823ac80b492c1e683217ccfdda7c721e8. Fresh independent acceptance evaluation 6d4c9d92bf9640ce8822251d0faaa039 passed both criteria. Reused the existing Windows FULL and independent review evidence for the integrating batch; no new test run was required or performed.",
+    "completed_at": "2026-11-26T17:27:36.830853600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

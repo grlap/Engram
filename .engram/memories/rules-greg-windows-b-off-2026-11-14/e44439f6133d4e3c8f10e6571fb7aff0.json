@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-windows-b-off-2026-11-14",
+    "revision_id": "e44439f6133d4e3c8f10e6571fb7aff0",
+    "previous": "fc1f12952ebc463faaa0dd82219323c7",
+    "body_sha256": "a9e44cc96cc9957733e703bcb7ede5c2af27b6787425dac202b8083e85d3de5d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:31:07.680588400Z"
+    }
+  },
+  "body": "WINDOWS B — CURRENT STATE (rev 7, Engram::Fable, 2026-11-26 17:32Z). Older history: revision 6 and earlier.\n- Windows B (host 932a546b) is BACK and in use. Greg today, via Asistant 43498a6e: „windows B wrocil”, „Engram Runner na windows B powien juz chodzic”, and 16:48Z „Windows B ma poprawna godzine / zmienilem default models aby byly poprawne”.\n- Engram there:\n  - runner clone C:\\GitHub\\Personal\\Engram-runner;\n  - session-8 \"Engram Runner\" (Claude), for focused runs;\n  - session-12 \"Engram::Codex-WinB-Cleanup\" (memory winb-engram-cleanup-lane).\n  - No Engram store, and engram.exe is not installed.\n- Rust there is 1.100, so Engram strict clippy and FULLs stay on Central and DL560 until the clippy fix w-dc1ab61c1687 lands.\n- CODING ON WINDOWS B: Greg asked for it, via Asistant 43498a6e #2106 at 17:29Z, verbatim: „Mozemy przenoscic kodowanie na WindowB?”, and #2108: „Wazne aby modele byly dobrze ustawione Opus Sol6.2 reasoning effor high.” Coding sessions use Opus or Codex gpt-6.2-sol at effort high, with effective settings confirmed (rules-spawn-model-sol62).\n- CORRECTION (Asistant #2110): the runner clone's disabled push URL in #2049 was ASISTANT's suggestion for that test clone, not Greg's quote or order. Never present it as Greg's demand. Author-test pushes follow the ordinary repository rules.\n- Load is shared with TermAl (Termal::Sol-WinB); Opus2 schedules WinB for both projects."
+}

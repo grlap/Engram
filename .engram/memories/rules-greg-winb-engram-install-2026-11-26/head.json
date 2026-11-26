@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-winb-engram-install-2026-11-26",
+  "head": {
+    "state": "active",
+    "chain": [
+      "bd0cd58ad6ee43658a7b8abdc2c9221e",
+      "e55a87372c0b4bcb93ce83ca7d316d64"
+    ]
+  }
+}

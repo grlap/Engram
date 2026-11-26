@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-spawn-model-sol62",
+    "revision_id": "063d7e162625447ebbc480a1a4f5b666",
+    "previous": "c5052a02fe7540248d4cdba7cc569915",
+    "body_sha256": "87a124b591f99166ee01ed25e74a56510f324ac3f701b5ad9ce09efefc2698e8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:30:14.571234200Z"
+    }
+  },
+  "body": "ENGRAM SPAWN PRACTICE from 2026-11-17 22:05Z (Greg via Asistant #1515: switch Sol 6.1 to Sol 6.2 now, with no restart). Every new Engram Codex spawn (reviewers, explorers, coders, workers) passes model \"gpt-6.2-sol\" in termal_spawn_session's `model` field. Existing root sessions can't be switched through agent tools; switch them through TermAl's own setting or a fresh session. Source: rules-greg-codex-sol62-switch-2026-11-17.\nGREG 2026-11-26 about 17:30Z, via Asistant 43498a6e #2108, on coding sessions (including Windows B), verbatim: „Wazne aby modele byly dobrze ustawione Opus Sol6.2 reasoning effor high.” Coding sessions use Claude Opus or Codex gpt-6.2-sol, reasoning effort high. Before assigning work to a new session, confirm its EFFECTIVE settings (agent, model, reasoning effort) from the host's session record; don't rely on the request alone. Never change global or default configuration to get there; Greg owns that (he fixed TermAl's default models on 2026-11-26).\nRevise this entry if the id or TermAl's default changes."
+}

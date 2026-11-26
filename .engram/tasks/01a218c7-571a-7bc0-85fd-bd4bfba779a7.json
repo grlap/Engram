@@ -1,0 +1,29 @@
+{
+  "id": "01a218c7-571a-7bc0-85fd-bd4bfba779a7",
+  "external_ref": null,
+  "title": "Let `engram task-sync sync` exchange project memories on a branch that holds them",
+  "outcome": "Let `engram task-sync sync` exchange project memories on a branch that holds them",
+  "acceptance": [
+    "`engram task-sync sync` on a data branch that holds project memories exports, merges, imports and publishes the memories together with the tasks, with the same fast-forward, divergent-merge, stop and retry behaviour it has for tasks",
+    "Behaviour tests run sync between two stores on a memory-carrying branch and observe a memory added or revised on each side arriving on the other, plus a conflicting memory edit stopping before publication",
+    "The docs and the engram-use skill no longer send memory-carrying branches to the explicit export and import commands"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

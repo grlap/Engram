@@ -1,0 +1,34 @@
+{
+  "id": "01a218cd-8e14-7662-aaf1-697ab67d1a1d",
+  "external_ref": null,
+  "title": "Extend one-command task sync to memory-enabled data branches",
+  "outcome": "Extend one-command task sync to memory-enabled data branches",
+  "acceptance": [
+    "On an enrolled host whose committed data branch already carries project memories, `engram task-sync sync` performs the full two-way task and memory exchange without the operator issuing separate export or import commands; task-only branch behavior stays unchanged",
+    "The one-command route preserves keyed memory revision history, attribution and forget tombstones, reports withheld or partially refused memory outcomes with their remedies, and keeps the existing task conflict/held/refused-import and exact-retry behavior without transferring live claims, delivery state or private scratch",
+    "Behavior tests drive the CLI on two enrolled hosts with task and memory changes in both directions, including a forget propagated from one host to the other and an exact repeat after a resolved refusal; existing explicit memory export/import behavior remains covered",
+    "Command help, docs/features/git-task-sync.md and docs/skills/engram-use/SKILL.md describe the resulting one-command memory behavior and only the recovery cases that still require explicit commands; the change passes the full required gate and review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "project-memory",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1dea0-71bd-7512-9c79-443806ecaf50"
+  ],
+  "blockers": [],
+  "superseded_by": "01a218c7-571a-7bc0-85fd-bd4bfba779a7",
+  "disposal_reason": "Duplicate: Engram::Fable filed w-bd4bfba779a7 at 16:54Z for the same one-command memory sync. Sol 11330 already holds it, and Greg called the gap a bug to fix now (Asistant 43498a6e #2094), so it does not wait behind w-443806ecaf50. Kimi's verified facts (refusal at task_sync_sync.rs:53-58, no test for ordinary sync's memory refusal) are carried to w-bd4bfba779a7.",
+  "completion": null
+}

@@ -1,0 +1,31 @@
+{
+  "id": "01a218c9-3bb8-77b3-b281-0b5dfbf8cd23",
+  "external_ref": null,
+  "title": "Document the one-command task sync workflow in both projects' skills",
+  "outcome": "Document the one-command task sync workflow in both projects' skills",
+  "acceptance": [
+    "Engram and TermAl gain the same portable task-data-sync skill telling the sync owner to run `engram task-sync sync` after one-time enrollment: no Git commands, inventory roots, baselines, fingerprints, extra approval or new gate",
+    "The skill gives the simple workflow: export local planning, fetch and reconcile incoming changes, import them and publish by fast-forward; after resolving a reported conflict or held/refused import, repeat the original command with the same options rather than force-push, rebase or blindly retry",
+    "The skill states the practical limits: one sync writer per local project data folder, public-remote disclosure and `--no-push` when review is needed, live claims/delivery/private scratch never transfer, committed task deletions may retire ids, and memories use the explicit export/import route with `--include-memories`",
+    "Markdown-only changes pass the focused launcher link check and receive the required Codex+Claude review pair in each repository; Engram and TermAl coordinators record the matching ownership and landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "skills",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a218c7-026f-7aa2-8d27-17be55703464",
+  "disposal_reason": "Duplicate filed concurrently (Kimi 16:56Z, Fable 16:53Z) for Greg's request in Asistant #2089. Engram's portable usage skill already exists as docs/skills/engram-use/SKILL.md, so the change belongs there, not in a second skill. Kimi's content points (one writer per folder, claims and scratch don't transfer, deletions retire ids, memories stay explicit) are folded into w-17be55703464's acceptance. TermAl's mirror is tracked by Termal::Fable2 in TermAl.",
+  "completion": null
+}

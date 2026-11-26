@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-winb-engram-install-2026-11-26",
+    "revision_id": "bd0cd58ad6ee43658a7b8abdc2c9221e",
+    "previous": null,
+    "body_sha256": "98296021a3c72da9c51aa23c8630133e969ce09ec216dde39be8d145d0019410",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:33:07.356700400Z"
+    }
+  },
+  "body": "GREG, 2026-11-26 about 17:32Z, relayed by Engram::Asistant (mailbox 43498a6e #2112), verbatim: „Chwila!! Powien byc engram”. This was on the Windows B coding plan.\nAsistant's reading: Engram must be available and used in the coding sessions on Windows B. A plan without Engram, or one where only Central records notes, is not acceptable as the target. Establish the actual state of the Engram CLI/MCP and the project there, set up the support the sessions need and task sync where it's needed, and keep local claims distinct from synced tasks.\nScope (Engram::Fable), mirroring the DL560 precedent rules-greg-dl560-engram-install-2026-11-06:\n- this word covers installing the Engram binary on Windows B (932a546b), a release build of the exact landed master, backing up any existing binary first;\n- creating the Engram project's own local store there (ENGRAM_HOME=%USERPROFILE%\\.engram, as on Central);\n- joining it to Central's tasks and memories through the engram-data branch (data-init, fetch, import --empty-basis --include-memories);\n- wiring the Windows B coding sessions to it.\nClaims are LOCAL to each host's store and never transfer; synced task text and memories do. Assign work so that one item is not executed on two hosts. It grants nothing else outside the repository. Don't ask Greg again for Windows B Engram installs that this coding and sync work needs."
+}

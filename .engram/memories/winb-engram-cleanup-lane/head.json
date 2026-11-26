@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "winb-engram-cleanup-lane",
+  "head": {
+    "state": "active",
+    "chain": [
+      "bfc5b79291a14cb4a350880c4e00da28"
+    ]
+  }
+}
