@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Landed and installed the reviewed cleanup wording. All six live stores were readiness-ready; installed binary readiness is ready with mutation disabled. Fresh post-landing independent acceptance evaluation 9d26b7bfebb24f9e97c77b2d7fcc5925 passed 2/2 on the exact landed clean commit. No TermAl restart was performed; existing sessions retain their pinned build.",
+    "completed_at": "2026-11-26T00:56:54.340747800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "id": "01a21557-86f4-7342-a7f5-a8f61e481139",
+  "external_ref": null,
+  "title": "Open an Engram test runner on Windows B so Engram Windows FULLs can leave Central",
+  "outcome": "Open an Engram test runner on Windows B so Engram Windows FULLs can leave Central",
+  "acceptance": [
+    "A TermAl native \"Engram runner\" session exists on Windows B with one Engram clone (for example C:\\github\\Personal\\Engram-runner) whose push URL is disabled; it installs no Engram binary, opens no store and restarts nothing; its session name, path and HEAD are recorded here",
+    "One Engram Windows FULL runs there from a bundle or author-test ref of an exact candidate in a fresh worktree with the launcher's source_id equality, and its run id and result are recorded here; memory dl560-runner-checklist lists the Windows B Engram lane"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "greg-directed",
+    "runner"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
