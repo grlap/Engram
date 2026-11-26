@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "winb-engram-coder-lane",
+    "revision_id": "bd0b42981900478c83c35e9b63b7dd2b",
+    "previous": null,
+    "body_sha256": "5c6255afd3814415273352745c183ecdd7a1b465015704d4ac49650d0f79770c",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:57:21.450219600Z"
+    }
+  },
+  "body": "Windows B Engram coding lane, recorded 2026-11-26 from Engram::Fable’s onboarding brief and WinB session metadata. Native session-13 (Engram::Codex-WinB-Coder) is Codex gpt-6.2-sol at high reasoning effort. Workdir: C:\\GitHub\\Personal\\Engram-runner. The WinB-local Engram store exchanges task and memory text via engram-data. Claims stay local to Windows B, so this lane takes only items named by Engram::Fable. Send Termal::Opus2 a START before every Cargo job and an END after it. Wait for clearance when the slot is busy. Strict Clippy and full gates stay on Central and DL560 until w-dc1ab61c1687 lands."
+}

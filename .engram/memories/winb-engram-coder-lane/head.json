@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "winb-engram-coder-lane",
+  "head": {
+    "state": "active",
+    "chain": [
+      "bd0b42981900478c83c35e9b63b7dd2b"
+    ]
+  }
+}
