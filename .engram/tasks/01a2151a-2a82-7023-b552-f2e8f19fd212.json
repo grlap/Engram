@@ -1,0 +1,30 @@
+{
+  "id": "01a2151a-2a82-7023-b552-f2e8f19fd212",
+  "external_ref": null,
+  "title": "Let closed-task cleanup complete hidden or partly removed worktrees natively without asking Greg",
+  "outcome": "Let closed-task cleanup complete hidden or partly removed worktrees natively without asking Greg",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md \"Cleanup deletions\" (and the matching .logs/.evidence and worktree bullets) say that cleanup when all items the target served are closed proceeds without asking Greg, with the existing path, retention, live-work and unpushed-change checks kept; that when the non-forced form leaves hidden, read-only or partly removed content, the native completion `git worktree remove --force <checked path>` with a single `--force` (for a registered worktree) or `Remove-Item -LiteralPath <checked path> -Recurse -Force -Confirm:$false` (for a plain directory inside the repository) is allowed, and any remaining worktree registration is left in place and reported; and that every other failure still stops and is reported. The wording matches the text agreed for TermAl w-c969a2bea0d9.",
+    "Markdown only; both files stay identical; the focused launcher link check passes; a Codex plus Claude pair reviews it; the authority-text conditions (a) both coordinators' concurrence on the exact wording, (b) the wording sent to Greg, (c) a recorded final-diff audit, and Greg's verbatim word for the widening are recorded on the item before landing."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "coordination",
+    "greg-directed",
+    "ready-to-land"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

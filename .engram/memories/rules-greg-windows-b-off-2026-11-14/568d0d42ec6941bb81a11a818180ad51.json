@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-windows-b-off-2026-11-14",
+    "revision_id": "568d0d42ec6941bb81a11a818180ad51",
+    "previous": "60802dd2655d4a7c96de338a7b1909d6",
+    "body_sha256": "488f187f8869b7c50a67007914ba4a83429d613cff0290cd14ad7e5035b5cd05",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T00:51:54.851689100Z"
+    }
+  },
+  "body": "GREG, 2026-11-14, relayed by Engram::Asistant (mailbox 43498a6e).\n- About 22:33Z, #1221, verbatim: „Windows B jest wylaczony, chyba ze bardzo potrzebuja. sa problemy z pamiecia, nie jest wiarygodny”.\n- Earlier, via Fable2: „Windows B nie ruszam, ze wzgledu na problemy z pamiecia”.\n- Later, #1222: „moge zaktualizowac WIndows B i zobaczyc co sie dzieje”.\n- Then #1225: „WindosB ma najnowszy termal”.\n\nRule:\n- Don't assume Windows B (932a546b) is available or reliable.\n- Plan tests, gates and installs on Central, DL560 and the Mac only.\n- Windows B gets no Engram install.\n- Greg updated Windows B's TermAl to the latest build himself. Fable2 and Opus2 attest which build it runs. If it is the one-way b9186b44 build, the agreement is to accept it and watch, with no traffic to it and stop-only as the fallback.\n- A case that truly needs Windows B, with no alternative, goes to Greg with its reason. Independent work continues.\n- Windows evidence for landings comes from Central, under the Central slot rules.\n\nConsequence: B5 (w-a82d) takes the precondition as written, with Windows B out of the fleet. It follows w-9fcb.\n\nK4 (remote crediting test), GREG 2026-11-16 about 01:33Z, relayed by Engram::Asistant (mailbox 43498a6e #1332, message fde0415e). Asistant's wording: „Greg decyduje w sprawie K4: Windows B jest niestabilny, więc albo Windows Central, albo DL560. Dostosujcie plan bez uzależniania zakończenia od Windows B; sprawdźcie faktyczne role zlecającego i runnera tak, aby wybrany układ rzeczywiście testował zdalne zaliczanie. Jeśli Windows Central uruchamia test jako runner, odbiorca zaliczenia musi być innym hostem; raportujcie dokładnie pokryte systemy i kierunki.” Rule: K4 never depends on Windows B. The requester (credit receiver) and the runner must be different hosts, so a remote credit is actually exercised. Report exactly which operating systems and directions were covered.\n\nSUPERSEDED IN PART 2026-11-26 00:50Z. GREG, relayed by Engram::Asistant (43498a6e #2046, message 68837adb), verbatim: „windows B jest dostepny; testy przeszly bez problemu; zamowilem dodatkowe 32GB, przyjdzie dzis pozniej; mozemy troche przeniesc na WindowsB?” His BIOS test reservation has ended. Windows B is back in the fleet for tests, especially Windows work that unloads Central, on its current RAM. Engram has no native root there yet (dl560-runner-checklist); the Engram lane is being arranged with Termal::Fable2. Installs there are still not planned.\n\nENGRAM RUNNER ON WINDOWS B AUTHORIZED (2026-11-26 00:51Z, Engram::Asistant 43498a6e #2049, message d32bd651, reading Greg's word above): \"To upoważnia niezbędne przygotowanie osobnego klonu Engram runnera na Windows B do testów; proszę kontynuować z Fable2 bez dodatkowego pytania. Wyłącz push URL, bez instalacji i restartu.\" Scope: one Engram runner clone on Windows B with its push URL disabled, used for tests only. No Engram install, no store, no restart. Opus2 opens it through federation. Report to Greg when the runner and its first run actually start."
+}

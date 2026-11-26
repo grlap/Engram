@@ -1,0 +1,28 @@
+{
+  "id": "01a2152f-16fe-7d51-b4d0-41a84a384efc",
+  "external_ref": null,
+  "title": "Clarify checks before forcing closed-task cleanup",
+  "outcome": "Make the cleanup instructions explicit about protecting unique uncommitted content and handling targets whose served items cannot be identified.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md explain how to distinguish the narrow allowed native completion from a refusal caused by unique uncommitted tracked or untracked work, and preserve that work.",
+    "The matching instructions explain how to establish which items a target served and what to do when those items cannot be identified."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

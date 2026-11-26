@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Landed and pushed the reviewed Markdown-only skill change at c6803f2fdd51cf583cf3ca4d4248dc03dfcbc163; installed its exact release binary, preserved the previous executable, and verified readiness=true with build fingerprint cab44662eda87b25a4379755bb61d1561179734761d524760538c5d5b0d203ce. Fresh post-landing independent acceptance evaluation 798715e131ba4d5795332e2dc520d632 passed 2/2.",
+    "completed_at": "2026-11-25T23:57:52.324187800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
