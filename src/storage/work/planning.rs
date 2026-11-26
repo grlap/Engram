@@ -49,15 +49,16 @@ pub(super) use authority::{
     assert_actor_session, assert_revision, renew_holder_claim,
     validate_live_claim_for_item_in_scope, validate_live_claim_for_item_on, validate_live_claim_on,
 };
+pub(in crate::storage) use authority::{
+    control_work_binding_was_valid_on, validate_control_work_binding_in_scope,
+    validate_control_work_binding_on,
+};
 use authority::{
     new_root_open_descendant_count, peer_decomposition_admitted, rebase_planning_claim,
     validate_decomposition_budget, validate_planning_authority,
 };
 #[cfg(test)]
 use authority::{root_open_descendant_count, validate_root_descendant_budget};
-pub(in crate::storage) use authority::{
-    validate_control_work_binding_in_scope, validate_control_work_binding_on,
-};
 pub(super) use contributors::{
     add_root_contribution, expect_root_contributor, first_unaccounted_root_contributor,
     root_participant_is_accounted, unique_hashes, waive_root_contributor,

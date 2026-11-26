@@ -527,7 +527,7 @@ pub(in crate::storage) fn validate_control_work_binding_in_scope(
     }
 }
 
-fn control_work_binding_was_valid_on(
+pub(in crate::storage) fn control_work_binding_was_valid_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
     session_id: &SessionId,

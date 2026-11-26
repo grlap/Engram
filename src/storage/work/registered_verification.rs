@@ -143,38 +143,178 @@ fn validate_association(
         ));
     }
     let binding = &registration.binding;
-    let item = super::query::load_work_item(tx, binding.work_id)?;
+    let item = match super::query::load_work_item(tx, binding.work_id) {
+        Err(StoreError::WorkNotFound(_)) => {
+            return Err(refused(
+                "claim",
+                "the registered work does not exist in this store",
+            ));
+        }
+        loaded => loaded?,
+    };
     if item.project_id != *project {
         return Err(refused(
             "project_id",
             "registration belongs to another project",
         ));
     }
+    // The registered binding was this session's own claim when it was taken.
+    if !super::planning::control_work_binding_was_valid_on(tx, project, session, binding)? {
+        return Err(refused(
+            "claim",
+            "the registered claim and fence were never held by this session",
+        ));
+    }
+    validate_claim_lineage(tx, session, binding)?;
+    if item.lifecycle != crate::domain::WorkLifecycle::Open
+        || item.active_run_id != Some(binding.run_id)
+    {
+        return Err(refused(
+            "claim",
+            "the work or its run ended since registration",
+        ));
+    }
+    // The request time is taken before the write lock, so a parent that
+    // completed meanwhile is found here whatever that time says.
+    let run = super::query::load_work_run(tx, binding.run_id)?;
+    if !matches!(
+        run.state,
+        crate::domain::WorkRunState::Claimed | crate::domain::WorkRunState::Active
+    ) || !super::completion::run_uses_active_root_execution_in_scope(tx, &item, &run, None)?
+    {
+        return Err(refused(
+            "claim",
+            "the work or its run ended since registration",
+        ));
+    }
+    if !super::completion::ancestors_admit_execution(tx, &item)? {
+        return Err(refused(
+            "claim",
+            "a closed ancestor keeps the claim from being recovered",
+        ));
+    }
+    validate_root_lineage(tx, registration)?;
+    // A lost claim, closed ancestor or moved root is named before an edit
+    // that may have come with it.
     if item.revision != binding.work_revision {
         return Err(refused("work_revision", "work changed since registration"));
     }
-    super::planning::validate_control_work_binding_on(tx, project, session, binding, now).map_err(
-        |error| match error {
-            StoreError::ControlWorkBindingStale { .. } => {
-                refused("claim", "claim, fence or run moved since registration")
-            }
-            other => other,
-        },
-    )?;
-    // Naming retains its original holder and fence. Current claim authority
-    // was checked above; a release still ends the old binding.
-    let root =
+    let live = super::query::load_work_claim_optional(tx, binding.run_id)?.is_some_and(|claim| {
+        claim.claim_id == binding.claim_id
+            && claim.holder == *session
+            && claim.state == crate::domain::WorkClaimState::Active
+            && claim.expires_at > now
+    });
+    if !live {
+        return Err(refused(
+            "claim_live",
+            "the initiating session's claim has lapsed; send the record again once it claims the work again",
+        ));
+    }
+    // Holder writes wait while a handoff offer is open; acceptance ends the
+    // binding, and a cancelled or expired offer leaves it.
+    if super::execution::live_handoff_on(tx, binding.run_id, now)?.is_some() {
+        return Err(refused(
+            "claim_live",
+            "a handoff offer is open; send the record again once it is cancelled or expires",
+        ));
+    }
+    Ok(item)
+}
+
+/// The claim from the registered fence on: renewals, and recoveries by the
+/// initiating session at a higher fence, continue the binding. A later epoch
+/// that another session's claim or an accepted handoff started ends it, and
+/// so does a release at or after the registered fence. Only those three
+/// transitions move a claim between epochs: a renewal keeps holder and fence,
+/// and the checks after this one refuse a lifecycle or run change.
+fn validate_claim_lineage(
+    tx: &Transaction<'_>,
+    session: &SessionId,
+    binding: &crate::domain::ControlWorkBinding,
+) -> Result<(), StoreError> {
+    use crate::domain::WorkTransition;
+    for event in claim_transitions_on(tx, binding.run_id)? {
+        // A claim or an accepted handoff starts the epoch at its fence, held
+        // by its holder. A release records the fence it advanced to, so one
+        // at or after the registered fence ended the registered epoch or a
+        // later one.
+        let started = match &event.transition {
+            WorkTransition::Claimed { claim, .. } => Some((claim.fence, &claim.holder)),
+            WorkTransition::HandedOff { fence, to, .. } => Some((*fence, to)),
+            _ => None,
+        };
+        let ended = match (&event.transition, started) {
+            (_, Some((fence, holder))) => fence > binding.claim_fence && holder != session,
+            (WorkTransition::Released { fence, .. }, None) => *fence >= binding.claim_fence,
+            _ => false,
+        };
+        if ended {
+            return Err(refused(
+                "claim",
+                "the claim was released, handed off or taken by another session since registration",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The claim's named root: the registration names the root bound when the run
+/// was registered, and it must still be that naming. Checks credit only under
+/// the generation their record names, so a root that has since ended or been
+/// named again, which always takes a later generation, ends the binding.
+fn validate_root_lineage(
+    tx: &Transaction<'_>,
+    registration: &crate::domain::RegisteredVerificationAssociation,
+) -> Result<(), StoreError> {
+    let binding = &registration.binding;
+    // The newest event since the latest release: a release ends every
+    // binding recorded before it.
+    let (_, _, root) =
         super::feeds::latest_named_root_binding_on(tx, binding.run_id, binding.claim_id, i64::MAX)?
-            .map(|(_, _, event)| event)
             .ok_or_else(|| refused("root", "registration has no named root"))?;
+    // The host states registration time in milliseconds, so a root recorded
+    // within that millisecond counts as there when the run was registered.
+    if root.recorded_at.timestamp_millis() > registration.registered_at.timestamp_millis() {
+        return Err(refused(
+            "root",
+            "the root ended or was named again since registration",
+        ));
+    }
     if root.kind != NamedRootBindingKind::Bound
         || root.workspace_id != registration.root.workspace_id
         || root.generation != registration.root.generation
-        || root.recorded_at > registration.registered_at
     {
         return Err(refused("root", "named root moved since registration"));
     }
-    Ok(item)
+    Ok(())
+}
+
+/// The run's claim, release and handoff events, oldest first.
+fn claim_transitions_on(
+    tx: &Transaction<'_>,
+    run_id: crate::domain::WorkRunId,
+) -> Result<Vec<crate::domain::WorkEvent>, StoreError> {
+    let mut statement = tx.prepare(
+        "SELECT entry.object_id, object.canonical_json
+         FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.object_kind = 'work_event'
+           AND json_extract(object.canonical_json, '$.transition.kind')
+               IN ('claimed', 'released', 'handed_off')
+         ORDER BY entry.position",
+    )?;
+    let rows = statement.query_map(rusqlite::params![run_id.0.to_string()], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+    })?;
+    rows.map(|row| {
+        let (stored, bytes) = row?;
+        let id = crate::ObjectId::from_stored(stored.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored))?;
+        CanonicalObject::stored(&id, bytes)?.decode()
+    })
+    .collect()
 }
 
 pub(super) fn validate_request(

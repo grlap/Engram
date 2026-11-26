@@ -542,9 +542,28 @@ The host-private `verification_record` operation records the terminal results
 of a durably registered launcher run. Registration is **asserted by the host,
 not independently proven**. The host calls only for its durable
 registrations, never an unregistered command or an artifact found later.
-Engram validates the connection's project and session and the pinned current
-work revision, claim, fence and named root; later focus cannot retarget a
-result.
+Engram validates the connection's project and session, then checks the
+registration's binding, its claim history, named root and pinned work revision
+against the work as it stands; later focus cannot retarget a result. The record keeps the binding the
+host registered, and Engram accepts it while that binding's holder and source
+continue:
+
+- The project, initiating session, work, root execution, run, claim id and
+  the named root's workspace are the registered ones.
+- The registered claim and fence were the initiating session's own. The
+  claim may since have been renewed, or have lapsed and been recovered by that
+  session at a higher fence. A release at or after the registered fence, or a
+  claim or handoff that gives the claim to another session, ends the binding
+  for good.
+- The root bound when the run was registered, to the host's millisecond, is
+  the registered one, and it is still bound under that generation. Checks
+  credit only under the generation their record names, so a root that has
+  since ended, or been named again, which always takes a later generation,
+  ends the binding for good. A host that names the same path again keeps the
+  generation and records nothing new, so a restart leaves the binding as it
+  was.
+- When the record arrives, the initiating session holds the claim live with
+  no handoff offer open.
 
 `work_session_read` advertises `verification_record_v1` in its capabilities.
 Missing means unsupported: retain the result without sending. Install the
@@ -612,10 +631,19 @@ The receipt is `{operation, producer, verifications: [{stage, record_id}],
 run_outcome}`. The host persists one exact request and retries the same
 body/key after an unknown transport outcome or restart, never rerunning the
 test for settlement. Accepted exact replay returns the original ids even
-after claim movement. Changed intent conflicts. A new submission against a
-moved association returns `verification_record_refused` with
-`details.field` and `details.reason`, recording nothing; the host retains it
-as not credited, without changing the key or substituting a later claim.
+after claim movement. Changed intent conflicts. A submission Engram does not
+accept returns `verification_record_refused` with `details.field` and
+`details.reason`, recording nothing. One field means the binding may still
+continue: `claim_live`, when the initiating session's claim has lapsed but
+it can still claim the work again (a recovery, even at a higher fence), or
+when a handoff offer is open. The host keeps the same key and body and sends
+it again once the session holds a live claim with no offer open: after it
+recovers a lapsed claim, or after an open offer is cancelled or expires.
+Every other field is final, including `claim` for a claim under a closed
+ancestor: the host retains the record as not credited, without changing the
+key or substituting a later claim. Engram keeps no record of a refusal, so
+the host does not send again a record it retained as not credited, including
+one an earlier build refused.
 
 Records an earlier build bound from one registered check to several items stay
 readable; see

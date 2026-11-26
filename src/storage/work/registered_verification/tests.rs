@@ -5,6 +5,7 @@ use crate::domain::*;
 
 mod git_input;
 mod kept_root;
+mod reattest;
 mod work_session;
 
 struct Fixture {
@@ -43,9 +44,23 @@ fn fixture_with_create_and_root(
     create: &crate::domain::CreateWorkRequest,
     pin_root: bool,
 ) -> Fixture {
-    let at = |second| at(second + offset);
     let work = store.create_work(create, &DevelopmentNoopRedactor).unwrap();
-    let claim = claim(&mut store, &work, "runner", "claim", 2 + offset, 3600);
+    fixture_with_work_and_root(store, &work, offset, pin_root)
+}
+
+/// The fixture for work that already exists, such as a decomposed child.
+fn fixture_for_work(store: SqliteStore, work: &crate::domain::WorkItem, offset: i64) -> Fixture {
+    fixture_with_work_and_root(store, work, offset, true)
+}
+
+fn fixture_with_work_and_root(
+    mut store: SqliteStore,
+    work: &crate::domain::WorkItem,
+    offset: i64,
+    pin_root: bool,
+) -> Fixture {
+    let at = |second| at(second + offset);
+    let claim = claim(&mut store, work, "runner", "claim", 2 + offset, 3600);
     let work = store.get_work_item(work.work_id).unwrap();
     let session = SessionId("runner".into());
     let project = work.project_id.clone();
@@ -528,7 +543,7 @@ fn registered_verification_emits_host_wire_fixtures() {
 }
 
 #[test]
-fn registered_verification_stale_claim_refuses_but_committed_retry_replays() {
+fn registered_verification_same_holder_recovery_keeps_the_binding_and_retry_replays() {
     let mut f = fixture();
     let receipt = f.record().unwrap();
     let binding = f.request.registration.binding.clone();
@@ -539,12 +554,13 @@ fn registered_verification_stale_claim_refuses_but_committed_retry_replays() {
     let snapshot = f.snapshot();
     assert_eq!(f.record().unwrap(), receipt);
     assert_eq!(f.snapshot(), snapshot);
-    f.request.operation_key = "termal-run:test-stale".into();
-    f.request.registration.host_run_id = "test-stale".into();
-    assert!(
-        matches!(f.record(), Err(StoreError::RegisteredVerificationRefused { field, .. }) if field == "claim")
-    );
-    assert_eq!(f.snapshot(), snapshot);
+    // A second run registered under the old fence still continues: the same
+    // session holds the claim it recovered.
+    f.request.operation_key = "termal-run:test-recovered".into();
+    f.request.registration.host_run_id = "test-recovered".into();
+    let recovered = f.record_at(at(4001)).unwrap();
+    assert_eq!(recovered.verifications.len(), 1);
+    assert_ne!(recovered.producer, receipt.producer);
 }
 
 #[test]

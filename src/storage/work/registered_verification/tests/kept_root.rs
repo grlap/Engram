@@ -10,14 +10,13 @@ fn kept_root_registration_preserves_authority_and_root_refusals() {
         "late",
         "nonholder",
         "initiator",
-        "stale-fence",
         "released",
     ] {
         let mut f = fixture();
         f.use_shared_source();
         let binding = f.request.registration.binding.clone();
         let work = f.store.get_work_item(binding.work_id).unwrap();
-        let mut now = 10;
+        let now = 10;
         let expected_field = match case {
             "workspace" => {
                 f.request.registration.root.workspace_id = "another-workspace".into();
@@ -87,17 +86,6 @@ fn kept_root_registration_preserves_authority_and_root_refusals() {
                 f.request.registration.initiating_session_id = SessionId("peer".into());
                 "initiating_session_id"
             }
-            "stale-fence" => {
-                let recovered = claim(&mut f.store, &work, "runner", "recover", 4000, 3600);
-                assert!(recovered.fence > binding.claim_fence);
-                f.request.registration.registered_at = at(4001);
-                f.request.run.started_at = at(4001);
-                f.request.run.finished_at = at(4005);
-                f.request.checks[0].started_at = Some(at(4002));
-                f.request.checks[0].completed_at = Some(at(4005));
-                now = 4006;
-                "claim"
-            }
             "released" => {
                 f.store
                     .release_work(
@@ -143,18 +131,11 @@ fn kept_root_registration_preserves_authority_and_root_refusals() {
                 at(now),
             )
             .unwrap_err();
-        if case == "nonholder" {
-            assert!(
-                matches!(error, StoreError::WorkClaimMismatch { work } if work == binding.work_id),
-                "{case}: {error}"
-            );
-        } else {
-            assert!(
-                matches!(error, StoreError::RegisteredVerificationRefused { ref field, .. }
-                if field == expected_field),
-                "{case}: {error}"
-            );
-        }
+        assert!(
+            matches!(error, StoreError::RegisteredVerificationRefused { ref field, .. }
+            if field == expected_field),
+            "{case}: {error}"
+        );
         assert_eq!(f.snapshot(), before, "{case}: refusal must write nothing");
     }
 }
