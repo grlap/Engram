@@ -13,6 +13,7 @@
   "priority": 2,
   "labels": [
     "greg-directed",
+    "ready-to-land",
     "simplification",
     "test-infra"
   ],

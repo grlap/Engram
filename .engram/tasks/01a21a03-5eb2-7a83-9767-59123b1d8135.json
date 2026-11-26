@@ -1,0 +1,28 @@
+{
+  "id": "01a21a03-5eb2-7a83-9767-59123b1d8135",
+  "external_ref": null,
+  "title": "Let the test launcher stop a stalled run it started when no supervisor is attached",
+  "outcome": "Let the test launcher stop a stalled run it started when no supervisor is attached",
+  "acceptance": [
+    "The launcher's supported stop ends a run it started (its own process tree only) even when no supervisor is attached, and records the stop as the run's terminal outcome",
+    "A behaviour test starts a run that never finishes and stops it through the supported route without a supervisor"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a219ff-5da1-7ac1-90a3-33d337c8b9e5",
+  "disposal_reason": "Duplicate of Windows B's w-33d337c8b9e5, which has the exact scope: the launcher stop must work for a DETACHED FOCUSED run on Windows. Evidence carried over: `node scripts/test-launcher.mjs stop test-eb00a39e-9351-4693-9993-d1626d688e73` returned \"FAIL launcher: run has no owned Windows job or POSIX process-group supervisor; legacy and unsupported runs cannot be stopped\". scripts/launcher-stop.mjs:123-126 requires stopProtocol and full=true, and detached focused runs get neither. Owner: Engram::Codex-WinB-Coder3, after w-b07e55238659.",
+  "completion": null
+}

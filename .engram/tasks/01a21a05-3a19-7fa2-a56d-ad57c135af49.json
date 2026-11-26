@@ -1,0 +1,27 @@
+{
+  "id": "01a21a05-3a19-7fa2-a56d-ad57c135af49",
+  "external_ref": null,
+  "title": "Check retained publication sources after task-sync CLI replay",
+  "outcome": "Check retained publication sources after task-sync CLI replay",
+  "acceptance": [
+    "The task-sync materialization CLI replay test verifies the retained publication documents under pins and both policy files under after at their named paths after a completed replay, without recursively inventorying the fixture."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

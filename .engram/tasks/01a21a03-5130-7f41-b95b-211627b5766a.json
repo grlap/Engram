@@ -1,0 +1,30 @@
+{
+  "id": "01a21a03-5130-7f41-b95b-211627b5766a",
+  "external_ref": null,
+  "title": "Diagnose the Windows test that stalls on a single item with 20,000 notes",
+  "outcome": "Diagnose the Windows test that stalls on a single item with 20,000 notes",
+  "acceptance": [
+    "The operation the 20,000-note single-item test case drives is identified, with how its work grows with the item's note count, from code reading and a bounded measurement at smaller counts",
+    "The superlinear path, if any, is fixed or filed with evidence, and the test completes on Windows within a stated bound",
+    "No timeout is raised and no test is skipped to hide the stall"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "performance",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a21a02-e355-7040-a335-3b36da2305c7",
+  "disposal_reason": "Duplicate filed at the same time on Windows B by Engram::Opus-WinB-Coder4 with the root cause: the 20,000-note stall is quadratic fixture setup, because each note re-lists and re-persists the run's full evidence list (evidence.rs:202; checkpoints.rs:243-271). w-3b36da2305c7 carries the fix acceptance.",
+  "completion": null
+}
