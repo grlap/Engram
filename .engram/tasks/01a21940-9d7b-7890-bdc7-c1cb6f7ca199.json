@@ -1,0 +1,27 @@
+{
+  "id": "01a21940-9d7b-7890-bdc7-c1cb6f7ca199",
+  "external_ref": null,
+  "title": "Report applied memory retirements when explicit import journal cleanup fails",
+  "outcome": "An explicit combined folder import reports committed memory retirements even when it must stop after a journal cleanup failure.",
+  "acceptance": [
+    "On Windows, explicit combined import reports the committed retirement and affected native revision IDs before returning a journal sharing error, and reports the retirement only once across retry.",
+    "A behavioral regression holds a real journal read handle without delete sharing, observes the failure and retirement notice, and confirms the retry does not repeat it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
