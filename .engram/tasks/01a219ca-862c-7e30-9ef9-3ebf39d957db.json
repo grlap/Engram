@@ -1,0 +1,27 @@
+{
+  "id": "01a219ca-862c-7e30-9ef9-3ebf39d957db",
+  "external_ref": null,
+  "title": "Recompute task_bytes on the incremental import route so checkout-versus-blob length differences can't carry forward and wrongly reject near the 128 MiB limit",
+  "outcome": "Recompute task_bytes on the incremental import route so checkout-versus-blob length differences can't carry forward and wrongly reject near the 128 MiB limit",
+  "acceptance": [
+    "The incremental import's task_bytes accounting uses one length basis (Git blob length) throughout; a store whose recorded total came from checkout lengths is recomputed once at cutover, not carried forward",
+    "A regression test with CRLF-converted checkout files near the task-bytes limit shows the incremental route accepts a folder that a complete read accepts, and still refuses one that is genuinely over the limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
