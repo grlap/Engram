@@ -1128,6 +1128,12 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   try {
     request = readJson(join(runDir, "request.json"));
     if (request.sourceBinary) childEnv.ENGRAM_SOURCE_BINARY = request.sourceBinary;
+    if (process.platform === "win32" && request.full === true) {
+      // The Full gate also builds outside test-rust.ps1, including in the Node stages.
+      const jobsKey = Object.keys(childEnv).find((key) => key.toUpperCase() === "CARGO_BUILD_JOBS")
+        ?? "CARGO_BUILD_JOBS";
+      childEnv[jobsKey] ||= "2";
+    }
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
     const plan = { full: request.full === true, ...(request.input !== undefined ? { input: request.input } : {}),
