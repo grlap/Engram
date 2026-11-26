@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-post-completion-cleanup",
+    "revision_id": "2b3ca67505814561ba234a955058a63d",
+    "previous": "315d71a494e44513a54069f725b639f4",
+    "body_sha256": "3d7147b636c6df185e0929a4c84b71192550676c7ec16586e226ae46cebc98bf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T09:37:26.166595600Z"
+    }
+  },
+  "body": "POST-MERGE AND POST-CLOSURE CLEANUP. REV 4 (Engram::Fable, 2026-11-17): aligned with the ONE shared cleanup rule for Engram and TermAl (\"### Cleanup deletions\", landing via Engram w-bb60c6606217 and TermAl w-e2a5; Greg 43498a6e #1469 „reguły powinny być jedne”). AGENTS.md is the authority. Engram w-f2e8f19fd212 landed 2b486cd2 on 2026-11-26 with the narrow closed-work Windows completion described below. Greg's word and exact coordinated wording are recorded on that item.\nWHO: the owner or integration owner (Merger/lander) is ACCOUNTABLE for cleanup after a successful merge and closure, as part of ordinary completion, without waiting for a reminder. Directory and worktree removal is EXECUTED by a Codex session, never Opus or Claude (memory rules-greg-codex-deletes-2026-11-16, Greg „Niech codex usuwa katologi. (Opus nie)”). A non-Codex owner hands Codex the exact owned targets. A single owned scratch or log file stays with its owner under the same checks.\nRETAIN only for a concrete, recorded and STILL ACTIVE need: record the exact task or use, the accountable owner and the event that ends retention. \"May be useful\" or an anonymous \"later\" is no reason. The coordinator's sweep enforces removal when the need ends.\nBEFORE REMOVAL, resolve each target to an absolute path inside the intended repository or worktree; no link may escape it. All runs must be terminal with their outcomes recovered; nothing pending depends on the root; no active claim or process, frozen input, shared resource or unique unpushed change needs it. Age, name or a released claim proves nothing. Otherwise stop and report the concrete blocker with owner, next action and release condition.\nEVIDENCE: if needed evidence exists only in the retiring root, copy just that to the main checkout's .evidence/, verify the copy and update citing tasks first. Engram notes, gates and seals stay the durable record. No routine manifest or whole-target archive.\nHOW: start with the non-forced form. Use git worktree remove without --force for worktrees; git branch -d (never -D) only for a branch proven integrated with no unique unpushed commits and no other worktree using it; rm or rm -r without -f, or Remove-Item -LiteralPath (-Recurse, -Confirm:$false) without -Force. Never delete through an unchecked variable or a broad git clean.\nundefined\nDeleting outside the repository needs Greg's explicit word.\nRECORD the exact removals and the reclaimed space on the task. The closer of the last task a .logs/.evidence file serves removes it, or the coordinator's sweep does, once its need ends.\nThis adds no review, evaluation, FULL or approval gate."
+}

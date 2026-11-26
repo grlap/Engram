@@ -1,0 +1,28 @@
+{
+  "id": "01a21731-d54f-7e63-9bcb-dc1ab61c1687",
+  "external_ref": null,
+  "title": "Make master pass strict clippy on Rust 1.100 stable (map_unwrap_or, needless_range_loop)",
+  "outcome": "Make master pass strict clippy on Rust 1.100 stable (map_unwrap_or, needless_range_loop)",
+  "acceptance": [
+    "`cargo clippy --all-targets --all-features -- -D warnings` passes on Rust 1.100 stable (clippy 0.1.100) and still passes on 1.99.1, with no lint allowed or suppressed: the 22 map_unwrap_or and 5 needless_range_loop findings listed in the provenance note are rewritten",
+    "The full gate passes on the fixed candidate on Central; behaviour is unchanged, and no test is deleted or loosened"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "toolchain"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
