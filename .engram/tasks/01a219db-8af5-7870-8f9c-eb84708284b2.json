@@ -1,0 +1,27 @@
+{
+  "id": "01a219db-8af5-7870-8f9c-eb84708284b2",
+  "external_ref": null,
+  "title": "Replay a saved-basis rebuild receipt only while the planning baseline still belongs to its recorded cut",
+  "outcome": "Replay a saved-basis rebuild receipt only while the planning baseline still belongs to its recorded cut",
+  "acceptance": [
+    "A repeated saved-basis rebuild by the same actor and session replays its old receipt only when the current planning baseline still belongs to the recorded cut; otherwise it compares afresh and records a new cut",
+    "A behaviour test reproduces the scenario (rebuild from T carrying A over local B, a headless folder import restores B without changing T or the head, the same rebuild repeated) and shows the second rebuild leaves a current cut so the next ordinary import succeeds instead of refusing \"baseline advanced\""
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
