@@ -22,12 +22,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Implemented and landed registered-verification acceptance across benign same-holder claim recovery. Fast-forwarded and pushed master at bc0628b63e40cef96336154122d14b39d76b666a; registered FULL test-17947d6e passed 12/12 and independent evaluation 96c5f892 passed all 5 criteria on the same tree. Built and installed the exact RELEASE binary under Opus2 window W97-BC06: SHA-256 3cb094639c3a138343d815226a464be0d06c227331b90b59640a9971207c3f4a, build_fingerprint 15555cb5a1e5205689c72ccc296fb11d1965ef0b83b70be067b4a1870b67276a; previous binary backed up as C:\\Users\\grzeg\\.engram\\backups\\engram-20261126T1243Z-d147befbcc5d.exe. Readiness reports all six live stores ready; no process was stopped or restarted.",
+    "completed_at": "2026-11-26T12:45:53.235469500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
