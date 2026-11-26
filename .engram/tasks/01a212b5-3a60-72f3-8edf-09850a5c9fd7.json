@@ -19,12 +19,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Continuation windows now survive newer appends while preserving boundary-change refusal; regression test passed. Landed b5045331 on origin/master and installed its Release binary with ready=true; previous debug install retained as backup. Independent evaluation passed both criteria. TermAl run test-a6595018 was invalidated by the earlier debug install collision and was reported to Opus2/Fable; no rerun was performed.",
+    "completed_at": "2026-11-26T02:55:07.851179700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

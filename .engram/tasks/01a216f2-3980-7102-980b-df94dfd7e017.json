@@ -1,0 +1,27 @@
+{
+  "id": "01a216f2-3980-7102-980b-df94dfd7e017",
+  "external_ref": null,
+  "title": "Admit committed task-sync envelopes by their Git blob size",
+  "outcome": "A clean checkout whose CRLF conversion increases project.json beyond the per-file limit can still import a committed envelope within the raw Git bound.",
+  "acceptance": [
+    "Committed task-sync admission uses the selected commit envelope and its raw size, including on the task-only path, while loose imports and explicit checkout comparison retain their bounded worktree read.",
+    "A clean CRLF-expanded checkout reproduces the former false refusal and imports the valid committed envelope without adding a Git start on ordinary import."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

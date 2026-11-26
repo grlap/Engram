@@ -7,8 +7,8 @@
     "A registered launcher run longer than the claim's TTL (for example a 70-minute FULL under a 60-minute claim) ends with its verification record accepted: the run keeps the holder's claim live, for example by renewing it with the existing same-holder claim renewal at the launcher heartbeat, without changing the claim's identity or fence",
     "If the claim is genuinely released, handed off or recovered by another session during the run, the record is still refused with field claim, as today",
     "A behaviour test runs a registered run across the claim's original expiry and observes the record acknowledged",
-    "Re-sent unchanged after the same session recovers its lapsed claim (a higher fence), or after a restart that recovers the claim and re-names the root on the same workspace at a later generation, the record is accepted; a root bound to another workspace at any point since registration refuses it with field root, even if the root returns",
-    "While the initiating session holds no live claim, or the claim's root is not currently bound, the record is refused with the retryable field claim_live or root_bound respectively and nothing is stored, so the same key and body are accepted when sent again after recovery"
+    "Re-sent unchanged after the same session recovers its lapsed claim at a higher fence, with the claim's named root still bound under the registered generation (as when a restart has the host name the same path again), the record is accepted; a root that has since ended, been named again at a later generation, or been bound to another workspace refuses it with field root",
+    "While the initiating session holds no live claim that it can still recover, or a handoff offer is open, the record is refused with the retryable field claim_live and nothing is stored, so the same key and body are accepted when sent again after recovery; a claim a closed ancestor keeps from recovery is refused with field claim"
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-merger-role-2",
+    "revision_id": "0d26ed018dd74f838498f4a64d57cd48",
+    "previous": "7807cab4dc4b4274a52ac73ff84257a2",
+    "body_sha256": "794e5a82493494d5c7cd24f28302daa72bf153485b86a05df596a7e33b14f5b2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T02:40:27.693977100Z"
+    }
+  },
+  "body": "CONTINUATION of rules-merger-role, which is at its size limit; read both. Editor: Engram::Fable.\n\nONLY A REGISTERED RUN CREDITS (2026-11-25 21:15Z, narrowed 21:25Z per Kimi c15db92c #570). The stall: W8's closing check ran as a bare foreground `cargo test` at about 19:30Z, and Fix8 then waited 1 h 40 min for a record that could never come.\n- A check meant to earn credit runs either through the launcher (`node scripts/test-launcher.mjs focused --input commit -- <command>`, or `full`) or through an existing host-recorded declared native route (termal-tests.toml). Nothing else counts.\n- A bare cargo or node command never registers and never yields a host record or refusal.\n- A dependency on a host record exists only when a run id was issued. Never hold other landing work waiting on a record without one.\n- A named recovery owner needs a waker: at the BY time, the waiting party sends that owner a MAIL. A note alone wakes nobody.\n- A session-local timer, such as a CronCreate job, is only a backstop. It dies with the session or a host restart and is not a durable wake. The primary wake is always a mail or host event; record the timer's id where one is used.\n\nSUPERSEDING RULINGS (2026-11-25 21:23Z, joint with Termal::Fable2 ebe242f7 #8837; TermAl mirror: procedure-fixes-after-stalls-2026-11-25). A ruling that replaces an earlier one starts with \"SUPERSEDES #N\". Before acting on any ruling, the recipient re-reads its mailbox to the end. No TLA+: today's stalls were procedure errors, not races.\n\nINSTALL WINDOW AND RELEASE BUILD (2026-11-26 02:41Z, after Opus2 28ccc255 #1800). The W09850 landing installed a DEBUG build into C:\\Users\\grzeg\\.cargo\\bin\\engram.exe at about 02:35Z, during Opus3's registered TermAl run test-a6595018. That run's post-run source_id then failed (\"source owner executable no longer matches its pin\"), so 35/35 passing tests became ineligible.\n- The installed binary is always a RELEASE build of the exact landed tree: `cargo build --locked --release --bin engram -j1`, then install target/release/engram.exe.\n- Before ANY engram.exe replacement on Central, request Termal::Opus2's named Central INSTALL WINDOW, granted only when no launcher run is active. Install only inside it, then mail Opus2 and Fable the new hash and fingerprint."
+}
