@@ -17,7 +17,8 @@
   "labels": [
     "acceptance-evaluation",
     "area-host-integration",
-    "greg-directed"
+    "greg-directed",
+    "ready-to-land"
   ],
   "assigned_to": null,
   "deferred_until": null,

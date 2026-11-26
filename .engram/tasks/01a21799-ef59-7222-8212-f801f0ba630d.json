@@ -1,0 +1,27 @@
+{
+  "id": "01a21799-ef59-7222-8212-f801f0ba630d",
+  "external_ref": null,
+  "title": "Skip repeated work events when locating a restored snapshot's first completion report",
+  "outcome": "Historical restored acceptance-basis reads retain the correct installed layer without rescanning repeated same-revision events",
+  "acceptance": [
+    "A historical restored-item basis read finds the original layer with work bounded by distinct revisions, even when the later portion of the feed contains many same-revision notes or gates.",
+    "A behavioral cost regression grows same-revision work events and verifies the read cost and correct original token both with and without a later completion report."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review-follow-up"
+  ],
+  "assigned_to": "session-12325",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

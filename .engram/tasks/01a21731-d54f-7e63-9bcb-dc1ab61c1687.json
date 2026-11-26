@@ -13,6 +13,7 @@
   "priority": 1,
   "labels": [
     "gate",
+    "ready-to-land",
     "toolchain"
   ],
   "assigned_to": null,

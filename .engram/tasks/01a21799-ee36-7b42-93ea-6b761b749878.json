@@ -1,0 +1,27 @@
+{
+  "id": "01a21799-ee36-7b42-93ea-6b761b749878",
+  "external_ref": null,
+  "title": "Expose the acceptance basis in core focus and inspect for linked completion",
+  "outcome": "A core-only client can read the acceptance basis and complete a linked criterion after a label edit",
+  "acceptance": [
+    "Core focus and inspect return acceptance_basis from the same snapshot as their criteria, and core complete accepts that value after a label edit while still refusing it after a genuine contract change.",
+    "A behavioral core read-to-completion regression covers both the label edit and changed-contract refusal without reading an agent show receipt."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review-follow-up"
+  ],
+  "assigned_to": "session-12325",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
