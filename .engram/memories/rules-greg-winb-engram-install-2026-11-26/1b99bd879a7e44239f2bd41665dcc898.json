@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-winb-engram-install-2026-11-26",
+    "revision_id": "1b99bd879a7e44239f2bd41665dcc898",
+    "previous": "e55a87372c0b4bcb93ce83ca7d316d64",
+    "body_sha256": "4ef78c4aba8b39dc780d4f72f6421d6c3c5525c49ef1a3c3eceeb652046cb5b3",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-26T17:46:24.639205500Z"
+    }
+  },
+  "body": "GREG, 2026-11-26, relayed by Engram::Asistant (mailbox 43498a6e), on the Windows B coding plan:\n- about 17:32Z, #2112, verbatim: „Chwila!! Powien byc engram”;\n- #2114, verbatim: „Po to mamy sync engram. + Kimi. Dlatego robimy te toole.”;\n- EXPLICIT WORD, 17:46Z, #2124 (message 86b6fb34), verbatim: „Tak dla Engram na Window B.” It answers the joint question Fable #2122 / Fable2 #2864, which asked for:\n  - creating the local store C:\\Users\\Greg\\.engram on Windows B;\n  - enabling task sync and importing tasks and memories from engram-data;\n  - enabling the Engram MCP integration for the Engram AND TermAl projects on Windows B.\nBackground: the explicit word was needed because session-8's Claude Code classifier refused `engram init` and session-12 (Codex) refused under AGENTS.md \"changing user or global configuration ... needs Greg's explicit word\". Neither refusal was bypassed.\nSCOPE, per Asistant #2116: this set-up only, NOT standing consent for every future Windows B install. It covers:\n- the Engram binary install there: release build of master bc0628b6, installed at C:\\Users\\Greg\\.cargo\\bin\\engram.exe, build fdaead5a916e, schema d2859de61cfc, the same schema and rev as Central;\n- the store, the task-sync join and the per-project TermAl integration for both projects;\n- coding sessions (Opus or Codex gpt-6.2-sol, effort high).\nClaims are LOCAL to each host's store and never transfer; synced task text and memories do. Assign work so that one item is not executed on two hosts."
+}
