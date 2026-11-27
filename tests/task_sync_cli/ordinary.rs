@@ -422,6 +422,24 @@ fn one_command_keeps_the_peer_key_when_opting_in_after_a_peer() {
 #[cfg(windows)]
 #[test]
 fn one_command_reports_a_retirement_when_export_journal_cleanup_fails() {
+    assert_retirement_report_survives_journal_cleanup_failure(
+        |host| ordinary_sync_output(host, &[]),
+        |host| ordinary_sync_output(host, &["--no-push"]),
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn explicit_import_reports_a_retirement_when_export_journal_cleanup_fails() {
+    let import = |host: &Host| host.sync("import", &["--include-memories"]);
+    assert_retirement_report_survives_journal_cleanup_failure(import, import);
+}
+
+#[cfg(windows)]
+fn assert_retirement_report_survives_journal_cleanup_failure(
+    import: impl FnOnce(&Host) -> Output,
+    retry: impl FnOnce(&Host) -> Output,
+) {
     use std::os::windows::fs::OpenOptionsExt;
 
     const FILE_SHARE_READ: u32 = 1;
@@ -453,22 +471,30 @@ fn one_command_reports_a_retirement_when_export_journal_cleanup_fails() {
         .share_mode(FILE_SHARE_READ)
         .open(&proof)
         .unwrap();
-    let output = ordinary_sync_output(&local, &[]);
+    let output = import(&local);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("os error 32"), "{stderr}");
     let retirement =
         format!("Retired project memory `retiring-rule` with local revisions {prior_revision}");
-    assert!(stderr.contains(&retirement), "{stderr}");
+    assert!(
+        stderr
+            .split_once("os error 32")
+            .is_some_and(|(before_error, _)| before_error.contains(&retirement)),
+        "{stderr}"
+    );
+    assert_eq!(stderr.matches(&retirement).count(), 1, "{stderr}");
     assert!(proof.is_file());
     assert_eq!(local.head(), merged);
     assert_eq!(remote_tip(&remote), peer_tip);
     drop(reader);
 
-    let output = ordinary_sync_output(&local, &["--no-push"]);
+    let output = retry(&local);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(!stderr.contains(&retirement), "{stderr}");
+    assert!(
+        !stderr.contains("Retired project memory `retiring-rule`"),
+        "{stderr}"
+    );
     assert_eq!(remote_tip(&remote), peer_tip);
 }
 

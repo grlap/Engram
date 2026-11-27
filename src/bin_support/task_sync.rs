@@ -838,7 +838,7 @@ fn run_folder_exchange(
                             selected: &memories,
                             options: &resolutions,
                             bytes: memory_bytes,
-                            on_retirement: None,
+                            on_retirement: Some(&print_memory_retirement),
                         })
                         .as_ref(),
                     chrono::Utc::now(),

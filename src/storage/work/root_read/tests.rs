@@ -22,7 +22,7 @@ fn root_read_scope_shares_materialization_but_rechecks_selection() {
     let (store, work, id) = fixture();
     store
         .work_root_read_snapshot(|scope| {
-            let active = scope.active(work.work_id)?;
+            let active = scope.active_optional(work.work_id)?.unwrap();
             let current = scope.current(id)?;
             let retained = scope.retained(id)?;
             assert!(Rc::ptr_eq(&active, &current));
@@ -43,7 +43,8 @@ fn root_read_scope_never_joins_or_survives_a_writer() {
             [id.0.to_string()],
         )
         .unwrap();
-    let refused = store.work_root_read_snapshot(|scope| scope.active(work.work_id).map(|_| ()));
+    let refused =
+        store.work_root_read_snapshot(|scope| scope.active_optional(work.work_id).map(|_| ()));
     assert!(
         refused
             .unwrap_err()
@@ -141,7 +142,7 @@ fn root_read_scope_retained_and_active_generations_are_not_interchangeable() {
                 scope.current(old_id).is_err(),
                 "retained selection cannot prove exact-current selection"
             );
-            let active = scope.active(work.work_id)?;
+            let active = scope.active_optional(work.work_id)?.unwrap();
             assert_eq!(active.root_execution_id, new_run.root_execution_id);
             assert_ne!(active.root_execution_id, old_id);
             assert_eq!(scope.roots.borrow().len(), 2);
@@ -171,7 +172,7 @@ fn root_read_scope_uses_one_cut_across_a_second_connections_commit() {
         &reader,
         |reader| {
             reader.work_root_read_snapshot(|scope| {
-                let first = scope.active(work_id)?;
+                let first = scope.active_optional(work_id)?.unwrap();
                 let second = scope.current(id)?;
                 assert!(Rc::ptr_eq(&first, &second));
                 assert!(

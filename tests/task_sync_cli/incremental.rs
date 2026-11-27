@@ -216,6 +216,58 @@ const NOTES_A: [&str; 3] = ["--include-notes", "--origin-machine", "host-a"];
 const NOTES_B: [&str; 3] = ["--include-notes", "--origin-machine", "host-b"];
 
 #[test]
+fn task_sync_cli_adds_under_imported_parent_after_required_child_removal() {
+    let fixture = test_support::temp_home().unwrap();
+    let a = Host::new(fixture.path(), "a");
+    let b = Host::new(fixture.path(), "b");
+    let parent_ref = a.add_ref("Parent");
+    a.work(&["add", "Required child", "--under", &parent_ref]);
+    a.receipt("export", &[]);
+    a.commit("Publish parent and required child");
+    let exported = directory::read_folder(&a.folder()).unwrap();
+    let child = exported
+        .tree
+        .tasks
+        .iter()
+        .find(|task| task.title == "Required child")
+        .unwrap();
+    let parent_id = child.parent_id.unwrap();
+
+    b.merge_from(&a);
+    b.receipt("import", &["--empty-basis"]);
+    fs::remove_file(
+        a.folder()
+            .join("tasks")
+            .join(format!("{}.json", child.id.0)),
+    )
+    .unwrap();
+    a.commit("Remove required child from shared folder");
+    b.merge_from(&a);
+    b.receipt("import", &[]);
+
+    let store =
+        SqliteStore::open(project_database_path(&b.home, &ProjectId(PROJECT.into()))).unwrap();
+    let parent = store.get_work_item(parent_id).unwrap();
+    assert!(parent.active_run_id.is_none());
+    let removed = store.get_work_item(child.id).unwrap();
+    assert_eq!(removed.lifecycle, engram::WorkLifecycle::Cancelled);
+    assert_eq!(
+        removed.child_requirement,
+        engram::ChildRequirement::Required
+    );
+    drop(store);
+
+    let added = work(
+        &b.home,
+        &b.marker,
+        &["add", "New child", "--under", &parent_ref, "--json"],
+    );
+    let receipt: Value = serde_json::from_slice(&added.stdout).unwrap();
+    assert_eq!(receipt["parent_ref"], parent_ref);
+    assert_eq!(receipt["work"]["title"], "New child");
+}
+
+#[test]
 fn task_sync_cli_a_renewed_claim_takes_another_hosts_note_without_divergence() {
     let fixture = test_support::temp_home().unwrap();
     let (a, b, id) = noted_exchange(fixture.path());

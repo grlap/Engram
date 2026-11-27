@@ -15,7 +15,7 @@ use super::feeds::{
 };
 use super::planning::{normalize_text, root_participant_is_accounted, validate_live_claim_on};
 use super::query::{
-    active_root_execution, active_root_execution_optional, bounded_prerequisite_projection_rows,
+    active_root_execution_optional, bounded_prerequisite_projection_rows,
     completion_recovery_snapshot_on, current_required_child_waivers, feed_parts,
     load_retained_root_execution, load_root_execution, load_work_claim_optional, load_work_item,
     load_work_items_query, load_work_run, on_one_snapshot, parse_work_id, parse_work_run_id,
@@ -759,8 +759,14 @@ impl SqliteStore {
             return Ok(Vec::new());
         }
         let root_execution = match scope {
-            Some(scope) => scope.active(parent.root_id)?,
-            None => std::rc::Rc::new(active_root_execution(&self.connection, parent.root_id)?),
+            Some(scope) => scope.active_optional(parent.root_id)?,
+            None => active_root_execution_optional(&self.connection, parent.root_id)?
+                .map(std::rc::Rc::new),
+        };
+        // Imported planning can have disposed required children before any
+        // local execution exists to record a waiver against.
+        let Some(root_execution) = root_execution else {
+            return Ok(Vec::new());
         };
         let waived =
             current_required_child_waivers(&self.connection, parent.work_id, &root_execution)?;

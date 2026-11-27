@@ -116,17 +116,6 @@ impl RootReadScope<'_> {
         Ok(Some(Rc::clone(&root.value)))
     }
 
-    pub(in crate::storage) fn active(
-        &self,
-        root_id: WorkId,
-    ) -> Result<Rc<RootExecution>, StoreError> {
-        self.active_optional(root_id)?.ok_or_else(|| {
-            StoreError::InvalidWorkProjection(format!(
-                "root work {root_id:?} has no active execution"
-            ))
-        })
-    }
-
     pub(in crate::storage) fn retained(
         &self,
         id: RootExecutionId,
