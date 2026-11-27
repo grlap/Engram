@@ -1,0 +1,29 @@
+{
+  "id": "01a21c5f-fba3-7170-9dc0-509993f1cb1e",
+  "external_ref": null,
+  "title": "Cover the task-sync hold-back's invalid-overlay fallback with a CLI test where a non-divergent change names a held-back addition",
+  "outcome": "Cover the task-sync hold-back's invalid-overlay fallback with a CLI test where a non-divergent change names a held-back addition",
+  "acceptance": [
+    "A CLI test reaches the hold-back's trial-overlay fallback on a path where the outcome differs: A holds Child (a pending addition under a claimed Held), A has an unexported edit in Held's component, and B adds task X, unchanged here, with Child as parent or prerequisite. The import refuses with task_sync_divergent_planning, printing the set-aside, not task_sync_invalid_graph, and A's local change is intact",
+    "Removing the trial makes that test fail"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "sync",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
