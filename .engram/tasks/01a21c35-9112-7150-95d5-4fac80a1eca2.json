@@ -15,13 +15,24 @@
     "review",
     "sync"
   ],
-  "assigned_to": "Engram::Opus-WinB-Coder4",
+  "assigned_to": "Engram::Fable-WinB",
   "deferred_until": null,
   "lifecycle": "open",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
-  "blockers": [],
+  "blockers": [
+    {
+      "blocker_id": "01a21cbc-bd8b-7ee0-b774-f8ebbed425da",
+      "kind": "manual",
+      "detail": "Removed from separate WinB implementation. Its held-removal export guidance and remedy are covered in w-c39164e2c07b round 5. Await verified landing before recording the covered-by disposition.",
+      "created_by": {
+        "actor_id": "dev/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-11-27T11:21:01.062990500Z"
+    }
+  ],
   "superseded_by": null,
   "disposal_reason": null,
   "completion": null
