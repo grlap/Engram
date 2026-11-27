@@ -15,7 +15,7 @@
     "gate",
     "sync"
   ],
-  "assigned_to": null,
+  "assigned_to": "Engram::Codex-WinB-Coder-C000",
   "deferred_until": null,
   "lifecycle": "open",
   "parent_id": null,
