@@ -1,0 +1,29 @@
+{
+  "id": "01a21b25-2645-70a0-926f-927802c9e098",
+  "external_ref": null,
+  "title": "Test the cutover host-check reason allowlist through the Node boundary",
+  "outcome": "Test the cutover host-check reason allowlist through the Node boundary",
+  "acceptance": [
+    "Known fixed rehearsal helper failure reasons appear in the public structured error.",
+    "Empty or unexpected helper output maps to helper_failed without exposing the raw text."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "cutover",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
