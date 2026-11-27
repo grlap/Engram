@@ -1,0 +1,30 @@
+{
+  "id": "01a21bd1-e19c-7e92-b77e-0105c1993aaf",
+  "external_ref": null,
+  "title": "Judge a reported completion's unfinished required child after the mixed-graph checks in folder import",
+  "outcome": "Judge a reported completion's unfinished required child after the mixed-graph checks in folder import",
+  "acceptance": [
+    "In folder admission, a reported completion's required_child_unfinished refusal is applied only once the pass's mixed graph and durable checks pass, as open_descendants is, so a required child the graph checks refuse never holds its parent's completion or, through it, an ancestor's reported disposal",
+    "A behaviour test covers the folder that cancels P, reports P's child Q complete and adds R, a required child of Q closing a cycle only in the mixed graph: Q is applied, R refused, P cancelled",
+    "A behaviour test shows a parent's disposal applied when only its added child is refused for a cycle that does not pass through the parent",
+    "The Reported disposal docs sentence on additions the graph checks refuse matches the behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
