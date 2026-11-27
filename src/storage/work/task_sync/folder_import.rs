@@ -610,6 +610,29 @@ fn apply_on(
             refusing.remove(&id);
         }
     }
+    // A task the last import held is read again at every import, whether or
+    // not the incoming commit changed it. Beside this host's unpublished
+    // planning it stays held, and the rest of the import goes ahead.
+    if !refusing.is_empty()
+        && hold_back_beside_unpublished(
+            transaction,
+            request,
+            &head,
+            &refusing,
+            &mut changes,
+            &mut kept,
+            &mut set_aside,
+        )?
+    {
+        seeds = changes.keys().copied().collect();
+        for document in changes.values().flatten() {
+            seeds.extend(
+                graph::document_edges(document)
+                    .into_iter()
+                    .map(|(_, target)| target),
+            );
+        }
+    }
     let exit = |commit: Option<&str>| {
         format!(
             ". If the data branch already holds another host's commits merged on top, {}",
@@ -802,6 +825,132 @@ fn apply_on(
         memories: Vec::new(),
         memory_partial: false,
     })
+}
+
+/// Hold back the tasks the last import held whose retry meets this host's
+/// unpublished planning in what admission reads for them: their component in
+/// this host's planning, or in the graph the last import recorded. Mixing
+/// that planning in would refuse the whole import, so they stay held as they
+/// were and the rest goes ahead; so does another held task that names one of
+/// them. Only tasks the last import held are held back, never a change this
+/// host has not held, so no local planning is ever passed over. When what
+/// remains would not form a valid graph without them, nothing is held back
+/// and the import refuses as before. Their next retry follows the export of
+/// that planning. Returns whether anything was held back.
+fn hold_back_beside_unpublished(
+    transaction: &rusqlite::Transaction<'_>,
+    request: &FolderDeltaApply<'_>,
+    head: &FolderHead,
+    refusing: &BTreeSet<WorkId>,
+    changes: &mut BTreeMap<WorkId, Option<TaskDocument>>,
+    kept: &mut BTreeMap<WorkId, Option<String>>,
+    set_aside: &mut Vec<TaskSyncTaskResult>,
+) -> Result<bool, StoreError> {
+    let project = request.project;
+    let retried = changes
+        .keys()
+        .filter(|id| head.pending.contains_key(*id))
+        .copied()
+        .collect::<Vec<_>>();
+    // Whether a task's component, in this host's planning or in the graph the
+    // last import recorded, meets that planning. A component is closed, so
+    // one capture answers for every task it holds.
+    let mut native_meets = BTreeMap::new();
+    let mut recorded_meets = BTreeMap::new();
+    let mut held_back = BTreeSet::new();
+    let mut naming = BTreeMap::<WorkId, Vec<WorkId>>::new();
+    for &task in &retried {
+        let mut reach = BTreeSet::from([task]);
+        if let Some(Some(document)) = changes.get(&task) {
+            for (_, target) in graph::document_edges(document) {
+                reach.insert(target);
+                naming.entry(target).or_default().push(task);
+            }
+        }
+        let mut meets = false;
+        for seed in reach {
+            if !native_meets.contains_key(&seed) {
+                let component = super::closure::native::capture_on(
+                    transaction,
+                    project,
+                    request.profile,
+                    BTreeSet::from([seed]),
+                )?;
+                let touches = component
+                    .documents
+                    .keys()
+                    .chain(&component.missing)
+                    .any(|id| refusing.contains(id));
+                for &id in component.documents.keys() {
+                    native_meets.insert(id, touches);
+                }
+                native_meets.insert(seed, touches);
+            }
+            if !recorded_meets.contains_key(&seed) {
+                let component = super::closure::component::capture(
+                    transaction,
+                    project,
+                    crate::task_sync::TaskSyncGraphView::Baseline,
+                    BTreeSet::from([seed]),
+                )?;
+                let touches = component
+                    .documents
+                    .keys()
+                    .chain(&component.missing)
+                    .any(|id| refusing.contains(id));
+                for &id in component.documents.keys() {
+                    recorded_meets.insert(id, touches);
+                }
+                recorded_meets.insert(seed, touches);
+            }
+            meets |= native_meets[&seed] || recorded_meets[&seed];
+        }
+        if meets {
+            held_back.insert(task);
+        }
+    }
+    // Another held task that names a held-back one is held back with it.
+    let mut pending_names = held_back.iter().copied().collect::<Vec<_>>();
+    while let Some(target) = pending_names.pop() {
+        for &task in naming.get(&target).into_iter().flatten() {
+            if held_back.insert(task) {
+                pending_names.push(task);
+            }
+        }
+    }
+    if held_back.is_empty() {
+        return Ok(false);
+    }
+    let remaining = changes
+        .iter()
+        .filter(|(id, _)| !held_back.contains(*id))
+        .map(|(id, document)| (*id, document.clone()))
+        .collect::<BTreeMap<_, _>>();
+    // Admission validates the graph the remaining changes leave first.
+    if super::closure::overlay::capture_published_on(
+        transaction,
+        project,
+        &remaining,
+        &head.exported.keys().copied().collect(),
+    )
+    .is_err()
+    {
+        return Ok(false);
+    }
+    *changes = remaining;
+    for task in held_back {
+        // A held task keeps its fingerprint at hold time.
+        kept.insert(task, head.pending.get(&task).cloned().flatten());
+        set_aside.push(TaskSyncTaskResult {
+            task,
+            status: TaskSyncTaskStatus::Held,
+            reason: Some("local_planning_unpublished".into()),
+            detail: Some(
+                "this host changed planning related to this task that no export has published yet: export and commit that change, and the next import retries this task, which may still hold it for its own reason".into(),
+            ),
+        });
+    }
+    Ok(true)
 }
 
 /// The project that holds `task`, if any project does.
