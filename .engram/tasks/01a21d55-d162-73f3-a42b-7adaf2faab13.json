@@ -1,0 +1,31 @@
+{
+  "id": "01a21d55-d162-73f3-a42b-7adaf2faab13",
+  "external_ref": null,
+  "title": "Keep the task-sync export-commit proof across a rebuild retry",
+  "outcome": "Keep the task-sync export-commit proof across a rebuild retry",
+  "acceptance": [
+    "When an ordinary export refuses after proving its retained export commit (for example the held-removal invalid_graph refusal), the prescribed `--rebuild` retry keeps that admitted commit proof, or the refusal first tells the caller how to confirm that export while it is HEAD, so that the following ordinary import does not refuse with CommitContextRequired",
+    "A behavioural two-host CLI regression test: A exports and commits an unrelated change without importing it, then names a held removal; the export refuses, the printed rebuild runs, and A's next import, export and push all succeed",
+    "Fix in the next round right after the w-c39164e2c07b landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "land-then-fix",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

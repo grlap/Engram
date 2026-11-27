@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-6",
+    "revision_id": "081027c70a524965ae8ee511d5b6eb34",
+    "previous": "c04a888bca164817b00561ba0fd99666",
+    "body_sha256": "c64dbe0b5384f3486cf74e600463a757422b807e0310d64a96ee302dd1213b9c",
+    "retiring_target": {
+      "kind": "external",
+      "project": "termal",
+      "reference": "w-a29561736a4b"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T13:55:48.648606900Z"
+    }
+  },
+  "body": "CANONICAL, continued from termal-host-workarounds through -5 (which is full): live TermAl host workarounds for Engram agents (Engram::Fable, 2026-11-27).\n\nCLAUDE LAUNCHES DON'T SETTLE (2026-11-27 13:24Z, Fable2 #9029; TermAl w-a29561736a4b, P1, front of the WinB queue). This extends the PowerShell entry in -5. The Bash tool doesn't settle either: a Claude session's background launcher row ends by task_notification without a locator, so even a Bash background FULL stays \"received\". Case: Coder4's w-aedc run test-ea8f9fba, which passed 12/12. The cost is native credit only: its independent evaluation was still admitted and recorded 3/3 (record 90389634). Until w-a295 lands, prefer a Codex holder's FOREGROUND launch for an evaluation-critical FULL, which settles today. If an evaluation is refused for lack of a registered check, the broken-procedure rule applies. Retire this when w-a295 lands.\n\nNO CLEANUP ROUTE ON WINB (2026-11-27 13:55Z, Fable2 #9033; TermAl w-989c203d4e7f, P2). On WinB, Codex's exec policy refuses even a checked, non-forced `git worktree remove` for closed items, before launch: \"CreateProcess ... rejected: blocked by policy\". This hit Fable-WinB for w-8161 at 09:37Z and for w-aedc at 13:54Z, and hit Coord-WinB too. No supported route exists yet. Stop, report, and keep the leftovers listed in Fable-WinB's notes. Don't switch tool or executor. w-989c decides between a host-side removal and a configuration Greg authorizes. Retire this when w-989c lands."
+}

@@ -1,0 +1,31 @@
+{
+  "id": "01a21d55-b88e-7e51-95aa-c930f2676631",
+  "external_ref": null,
+  "title": "Make every printed task-sync `export --rebuild` remedy runnable as printed",
+  "outcome": "Make every printed task-sync `export --rebuild` remedy runnable as printed",
+  "acceptance": [
+    "Every task-sync refusal that names a rebuild export tells the caller to run the same export again with `--rebuild` added (or prints a complete invocation including the data directory, branch and profile flags), so it is accepted as printed in the task-only, notes (`--include-notes --origin-machine`), memories (`--include-memories`) and non-default `--branch` profiles",
+    "A behavioural CLI regression test reaches the ImportConflict refusal (a held task also changed here), reruns the export it ran with the printed rebuild flag in a non-default profile, and the rebuild succeeds and is followed by a clean import, export and push",
+    "Fix in the next round right after the w-c39164e2c07b landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "land-then-fix",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
