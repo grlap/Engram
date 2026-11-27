@@ -1,0 +1,27 @@
+{
+  "id": "01a21a70-b81f-7273-81b6-1b1fadc3ce97",
+  "external_ref": null,
+  "title": "Start the shared-deadline tests' timed holds only once the submission has begun",
+  "outcome": "Start the shared-deadline tests' timed holds only once the submission has begun",
+  "acceptance": [
+    "The shared-deadline evaluate tests start each timed lock hold only after the submitting thread has started its deadline, so a scheduler delay before the submission cannot shift the deadline past a hold's release"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

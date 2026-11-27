@@ -1,0 +1,29 @@
+{
+  "id": "01a21a70-a9a8-78b2-aa47-f3dd76d43b73",
+  "external_ref": null,
+  "title": "Answer an evaluation resend that owes nothing without waiting for the MCP service's shared store connection",
+  "outcome": "Answer an evaluation resend that owes nothing without waiting for the MCP service's shared store connection",
+  "acceptance": [
+    "An exact evaluate resend that owes no session registration and no focus move is answered from a read even while another call on the same MCP service holds the shared writable store connection",
+    "A behaviour test drives that resend through the evaluate word while a concurrent word on the same service holds the connection"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
