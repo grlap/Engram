@@ -171,11 +171,11 @@ pub(super) fn forest_with_edges(edges: usize) -> ProposeWorkPlanRequest {
     let mut input = large_request(MAX_WORK_PLAN_TASKS);
     // Preserve the former 128-descendant boundary as an interior two-tree
     // fixture. It now covers root-count/background scans, not the current cap.
-    for index in 1..=128 {
-        input.plan.tasks[index].parent_key = Some("task0".into());
+    for task in &mut input.plan.tasks[1..=128] {
+        task.parent_key = Some("task0".into());
     }
-    for index in 130..MAX_WORK_PLAN_TASKS {
-        input.plan.tasks[index].parent_key = Some("task129".into());
+    for task in &mut input.plan.tasks[130..MAX_WORK_PLAN_TASKS] {
+        task.parent_key = Some("task129".into());
     }
     input.plan.prerequisites = (1..=128)
         .flat_map(|from| {
@@ -268,11 +268,11 @@ fn atomic_plan_large_forest_scans_the_project_once_and_preserves_all_edges() {
 fn atomic_plan_nested_forest_checks_each_root_size_once() {
     let mut input = large_request(128);
     // Two four-level trees, each with several decomposed parents.
-    for index in 1..64 {
-        input.plan.tasks[index].parent_key = Some(format!("task{}", (index - 1) / 4));
+    for (offset, task) in input.plan.tasks[1..64].iter_mut().enumerate() {
+        task.parent_key = Some(format!("task{}", offset / 4));
     }
-    for index in 65..128 {
-        input.plan.tasks[index].parent_key = Some(format!("task{}", 64 + (index - 65) / 4));
+    for (offset, task) in input.plan.tasks[65..128].iter_mut().enumerate() {
+        task.parent_key = Some(format!("task{}", 64 + offset / 4));
     }
     let mut store = SqliteStore::open_in_memory().expect("store");
     take_descendant_scan_count();

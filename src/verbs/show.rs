@@ -1476,26 +1476,22 @@ pub(super) fn show_lines(
                     last.actor_context.as_deref(),
                 ))
             });
-        let result = last
-            .verification_result
-            .map(|result| {
-                format!(
-                    " ({})",
-                    serde_json::to_value(result)
-                        .ok()
-                        .and_then(|value| value.as_str().map(str::to_owned))
-                        .unwrap_or_default()
-                )
-            })
-            .unwrap_or_default();
+        let result = last.verification_result.map_or_else(String::new, |result| {
+            format!(
+                " ({})",
+                serde_json::to_value(result)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_default()
+            )
+        });
         lines.push(format!(
             "notes: {} recorded; latest {}{result}{}{}: \"{}\"",
             view.evidence_count,
             evidence_kind_word(last.evidence_kind),
             if last.non_holder { " (non-holder)" } else { "" },
             by.as_ref()
-                .map(|actor| format!(" by {actor}"))
-                .unwrap_or_default(),
+                .map_or_else(String::new, |actor| format!(" by {actor}")),
             super::short_note(&last.summary)
         ));
     }

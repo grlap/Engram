@@ -775,10 +775,9 @@ impl StaleCitation {
         };
         Ok(match (&self.cause, judged) {
             (StaleCause::RegisteredGit { checked, naming }, _) if checked.source_id().is_some() => {
-                let scope = naming
-                    .as_ref()
-                    .map(|mismatch| format!(", but {}", mismatch.describe()))
-                    .unwrap_or_default();
+                let scope = naming.as_ref().map_or_else(String::new, |mismatch| {
+                    format!(", but {}", mismatch.describe())
+                });
                 format!(
                     "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}{scope}; run a check on the intended current source, then evaluate declaring its complete identity with --source-id-file",
                     checked.identity, checked.workspace_id

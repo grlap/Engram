@@ -1165,6 +1165,38 @@ fn memory_sync_cli_revision_file_with_other_bytes_refuses_before_task_writes() {
 }
 
 #[test]
+fn memory_sync_cli_loose_memory_tree_refusal_names_restore() {
+    let (owned, marker, home) = setup();
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let args = ["--include-memories", "--json"];
+    work(
+        &home,
+        &marker,
+        &["remember", "shared rule", "--key", "rule"],
+    );
+    work(&home, &marker, &["add", "first task"]);
+    success(sync_output(&home, &marker, "export", &folder, &args));
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Record the first exchange"]);
+    success(sync_output(&home, &marker, "import", &folder, &args));
+
+    fs::rename(folder.join("memories"), owned.path().join("saved-memories")).unwrap();
+    work(&home, &marker, &["add", "task awaiting export"]);
+    let before = files(&folder);
+    let refused = sync_output(&home, &marker, "export", &folder, &args);
+    assert!(!refused.status.success());
+    let error = refusal_json(&refused);
+    assert_eq!(error["error"]["code"], "memory_export_component_changed");
+    let reason = error["error"]["details"]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("restore") && reason.contains("retry"),
+        "{reason}"
+    );
+    assert_eq!(files(&folder), before, "no task file was written");
+}
+
+#[test]
 fn memory_sync_cli_incremental_import_applies_new_memories() {
     let (owned, marker, source) = setup();
     let target = owned.path().join("second-home");
@@ -1223,6 +1255,18 @@ fn memory_sync_cli_incremental_import_applies_new_memories() {
     );
     let project = ProjectId("memory-cli-fixture".into());
     let store = SqliteStore::open(project_database_path(&target, &project)).unwrap();
+    let observed = DataWorktree::observe(marker.parent().unwrap(), data, "engram-data").unwrap();
+    let published = directory::read_resolved_data_folder_with_memories(&observed).unwrap();
+    let second = published
+        .tree
+        .tasks
+        .iter()
+        .find(|task| task.title == "second task")
+        .unwrap();
+    let imported_task = store.get_work_item(second.id).unwrap();
+    assert_eq!(imported_task.title, second.title);
+    assert_eq!(imported_task.outcome, second.outcome);
+    assert_eq!(imported_task.lifecycle, second.lifecycle);
     assert!(
         store
             .project_memory_sync_head(&project, "second")

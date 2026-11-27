@@ -108,9 +108,8 @@ fn diagnostics_only_policy_recovery_reports_missing_and_malformed_columns_withou
         fixture
             .execute_batch("ALTER TABLE control_policy_state RENAME TO old_policy_state;")
             .expect("rename current policy state");
-        let epoch_column = policy_epoch_definition
-            .map(|definition| format!("{definition},"))
-            .unwrap_or_default();
+        let epoch_column =
+            policy_epoch_definition.map_or_else(String::new, |definition| format!("{definition},"));
         fixture
             .execute_batch(&format!(
                 "CREATE TABLE control_policy_state (

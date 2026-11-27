@@ -363,8 +363,8 @@ fn atomic_plan_invalid_graphs_and_limits_leave_store_unchanged() {
                 request.plan.tasks = (0..6)
                     .map(|index| task(&format!("depth{index}"), None))
                     .collect();
-                for index in 1..6 {
-                    request.plan.tasks[index].parent_key = Some(format!("depth{}", index - 1));
+                for (index, task) in request.plan.tasks[1..6].iter_mut().enumerate() {
+                    task.parent_key = Some(format!("depth{index}"));
                 }
                 request.plan.prerequisites.clear();
             }

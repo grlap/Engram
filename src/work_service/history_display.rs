@@ -158,9 +158,8 @@ fn transition_detail(
             replacement_id,
             reason,
         } => {
-            let replacement = replacement_id
-                .map(|id| format!(" by {}", work_ref(id)))
-                .unwrap_or_default();
+            let replacement =
+                replacement_id.map_or_else(String::new, |id| format!(" by {}", work_ref(id)));
             format!("to {}{replacement} because {reason}", lifecycle.word())
         }
         T::RequiredChildWaived {

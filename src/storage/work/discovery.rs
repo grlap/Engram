@@ -293,8 +293,9 @@ impl SqliteStore {
                     .transpose()?
                     .flatten();
                 let (note, note_actor_id, note_actor_kind) = note
-                    .map(|(summary, actor, kind)| (Some(summary), Some(actor), Some(kind)))
-                    .unwrap_or_default();
+                    .map_or((None, None, None), |(summary, actor, kind)| {
+                        (Some(summary), Some(actor), Some(kind))
+                    });
                 let note_identity = note
                     .as_ref()
                     .and(hash)

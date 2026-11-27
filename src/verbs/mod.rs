@@ -308,21 +308,18 @@ fn collapsed_changes(
         } else {
             short(text)
         };
-        let actor = actor_id
-            .as_ref()
-            .map(|actor| {
-                format!(
-                    " by {}",
-                    terminal_safe_actor_label(
-                        &change.display_producer.as_ref().map_or_else(
-                            || identity.actor(actor),
-                            |producer| producer.label(&identity)
-                        ),
-                        actor_context.as_deref()
-                    )
+        let actor = actor_id.as_ref().map_or_else(String::new, |actor| {
+            format!(
+                " by {}",
+                terminal_safe_actor_label(
+                    &change.display_producer.as_ref().map_or_else(
+                        || identity.actor(actor),
+                        |producer| producer.label(&identity)
+                    ),
+                    actor_context.as_deref()
                 )
-            })
-            .unwrap_or_default();
+            )
+        });
         // A source change is what a peer must not lose to the line bound,
         // and the attribution can be long, so it comes after the text there.
         let line = if matches!(

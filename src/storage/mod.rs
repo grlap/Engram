@@ -2048,8 +2048,7 @@ pub struct BackupManifest {
 fn unique_sibling_path(path: &Path, label: &str) -> std::path::PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or_default();
+        .map_or(0, |elapsed| elapsed.as_nanos());
     let name = path.file_name().map_or_else(
         || "store".into(),
         |name| name.to_string_lossy().into_owned(),

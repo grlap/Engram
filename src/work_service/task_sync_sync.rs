@@ -134,23 +134,22 @@ impl LocalWorkService {
             .export_sync_folder(&mut data, &profile, sync_memories, &on_retirement)
             .await?;
         for _ in 0..2 {
-            let incoming = match first_fetch.take() {
-                Some(incoming) => incoming,
-                None => {
-                    let incoming = fetch(&data, options.remote).await?;
-                    if sync_memories
-                        && let Some(remote_tip) = incoming.as_deref()
-                        && let Some(local) = data.head_commit().filter(|local| *local != remote_tip)
-                    {
-                        git::require_immutable_memory_revisions(
-                            &data.checkout,
-                            &self.project_id,
-                            remote_tip,
-                            local,
-                        )?;
-                    }
-                    incoming
+            let incoming = if let Some(incoming) = first_fetch.take() {
+                incoming
+            } else {
+                let incoming = fetch(&data, options.remote).await?;
+                if sync_memories
+                    && let Some(remote_tip) = incoming.as_deref()
+                    && let Some(local) = data.head_commit().filter(|local| *local != remote_tip)
+                {
+                    git::require_immutable_memory_revisions(
+                        &data.checkout,
+                        &self.project_id,
+                        remote_tip,
+                        local,
+                    )?;
                 }
+                incoming
             };
             let merged_profile = match incoming.as_deref() {
                 Some(incoming) => merge(&mut data, incoming, &basis, sync_memories).await?,

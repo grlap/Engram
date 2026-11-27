@@ -1,7 +1,7 @@
 //! Orientation, listing, and show word handlers.
 
 use super::{
-    AgentVerbs, ChildRequirement, DEFAULT_LIMIT, DateTime, Holder, LsInput,
+    AgentVerbs, ChildRequirement, DEFAULT_LIMIT, DateTime, Guidance, Holder, LsInput,
     MAX_AGENT_WORK_RESPONSE_BYTES, MAX_COMPACT_CHANGE_ITEMS, MAX_NEXT_PAGES, NextInput, Receipt,
     StoreError, Utc, VerbError, WorkAvailability, WorkFocusView, WorkLifecycle, WorkNextQuery,
     WorkNextSection, changes_not_delivered, compact_next_lines, compact_next_receipt,
@@ -117,8 +117,7 @@ impl AgentVerbs {
         let mut guidance = view
             .focus
             .as_ref()
-            .map(|focus| self.guidance(focus, "next", now))
-            .unwrap_or_default();
+            .map_or_else(Guidance::default, |focus| self.guidance(focus, "next", now));
         if let Some(first) = ready.iter().find(|item| {
             item.availability == WorkAvailability::Ready
                 && view

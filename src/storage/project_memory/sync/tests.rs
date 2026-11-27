@@ -531,9 +531,9 @@ fn remember(store: &mut SqliteStore, body: &str, revise: bool) {
 }
 
 fn capture(store: &SqliteStore, selected: Option<&KeyHistory>) -> KeyHistory {
-    let basis = selected
-        .map(|s| BTreeMap::from([(s.key.clone(), s.clone())]))
-        .unwrap_or_default();
+    let basis = selected.map_or_else(BTreeMap::new, |s| {
+        BTreeMap::from([(s.key.clone(), s.clone())])
+    });
     let result = store
         .export_project_memory_sync(&crate::ProjectId("sync-project".into()), &basis)
         .unwrap();

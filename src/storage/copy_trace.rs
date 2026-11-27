@@ -106,7 +106,7 @@ pub(crate) fn take() -> Vec<String> {
         record
             .borrow_mut()
             .take()
-            .map(|mut record| {
+            .map_or_else(Vec::new, |mut record| {
                 if record.busy.calls != 0 {
                     record
                         .steps
@@ -114,7 +114,6 @@ pub(crate) fn take() -> Vec<String> {
                 }
                 record.steps
             })
-            .unwrap_or_default()
     })
 }
 

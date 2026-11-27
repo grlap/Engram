@@ -783,14 +783,12 @@ fn record_baseline(
 /// The members of `next` whose documents differ from `previous`, and the
 /// members of `previous` that `next` leaves out.
 fn changes(previous: Option<&TaskTree>, next: &TaskTree) -> BTreeMap<WorkId, Option<TaskDocument>> {
-    let held = previous
-        .map(|tree| {
-            tree.tasks
-                .iter()
-                .map(|task| (task.id, task))
-                .collect::<BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
+    let held = previous.map_or_else(BTreeMap::new, |tree| {
+        tree.tasks
+            .iter()
+            .map(|task| (task.id, task))
+            .collect::<BTreeMap<_, _>>()
+    });
     let mut changes = next
         .tasks
         .iter()

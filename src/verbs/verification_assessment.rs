@@ -135,8 +135,9 @@ fn append_bound_lines(lines: &mut Vec<String>, bound: &AcceptanceBoundVerificati
         safe(&basis.workspace_id),
         basis
             .source_root_generation
-            .map(|generation| format!(", root generation {generation}"))
-            .unwrap_or_default(),
+            .map_or_else(String::new, |generation| format!(
+                ", root generation {generation}"
+            )),
     ));
     lines.push(format!(
         "    bound here at {} by {}{}, on sighting {}; measured revision {} in workspace {} at {}",
@@ -146,8 +147,10 @@ fn append_bound_lines(lines: &mut Vec<String>, bound: &AcceptanceBoundVerificati
             .binder
             .session_id
             .as_ref()
-            .map(|session| format!(" (session {})", safe(&session.0)))
-            .unwrap_or_default(),
+            .map_or_else(String::new, |session| format!(
+                " (session {})",
+                safe(&session.0)
+            )),
         bound.sighting.as_str(),
         safe(&bound.measurement.source_revision),
         safe(&bound.measurement.workspace_id),

@@ -157,8 +157,9 @@ impl AgentVerbs {
         let superseding = projection
             .supersedes
             .as_ref()
-            .map(|failed| format!(", superseding the carried failure {failed}"))
-            .unwrap_or_default();
+            .map_or_else(String::new, |failed| {
+                format!(", superseding the carried failure {failed}")
+            });
         let lines = vec![format!(
             "recorded {} evaluation on {work_ref} \"{}\": {}/{} pass, {outcome}{superseding}{replay}{}",
             projection.mode.word(),

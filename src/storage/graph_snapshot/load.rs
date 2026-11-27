@@ -285,8 +285,9 @@ impl<'a> GraphValidationIndexes<'a> {
         let mut blockers: Vec<crate::WorkGraphSnapshotBlocker> = self
             .blockers_by_item
             .get(&work_id)
-            .map(|group| group.iter().map(|blocker| (*blocker).clone()).collect())
-            .unwrap_or_default();
+            .map_or_else(Vec::new, |group| {
+                group.iter().map(|blocker| (*blocker).clone()).collect()
+            });
         count_graph_validation_work(blockers.len());
         blockers.sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
         if blockers

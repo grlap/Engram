@@ -272,7 +272,9 @@ pub fn preflight_component(
         Some(root) => {
             ensure!(
                 read_root_for_capability(&root, true)?.0 == *basis,
-                crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: on-disk memory tree differs from the committed basis")
+                crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid(
+                    "memory_export_component_changed: on-disk memory tree differs from the committed basis. Preserve any loose memory edits, then restore the committed memory component and retry export."
+                )
             );
             ensure_revision_bytes(&root, selected)?;
         }

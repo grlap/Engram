@@ -126,7 +126,7 @@ impl Project {
                 .resolve_work_ref(&self.id, work)
                 .ok()
                 .and_then(|item| item.active_run_id);
-            run.map(|run| {
+            run.map_or_else(Vec::new, |run| {
                 store
                     .work_run_evidence(run)
                     .expect("run evidence")
@@ -134,7 +134,6 @@ impl Project {
                     .map(|hash| hash.as_str().to_owned())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_default()
         } else {
             Vec::new()
         };

@@ -434,8 +434,7 @@ pub(super) fn preview_projection(
                 evidence.len(),
                 work.acceptance
                     .get(verdict.criterion.wrapping_sub(1))
-                    .map(String::as_str)
-                    .unwrap_or_default(),
+                    .map_or("", String::as_str),
             )
         })
         .collect::<Vec<_>>();

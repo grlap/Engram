@@ -584,15 +584,13 @@ impl LocalWorkService {
             disk,
             // A rebuild wrote this host's version of every conflicted held
             // task, so those are no longer held.
-            pending: previous
-                .map(|(_, head)| {
-                    head.pending
-                        .iter()
-                        .filter(|(id, _)| !plan.conflicted.contains(id))
-                        .map(|(id, fingerprint)| (*id, fingerprint.clone()))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            pending: previous.map_or_else(BTreeMap::new, |(_, head)| {
+                head.pending
+                    .iter()
+                    .filter(|(id, _)| !plan.conflicted.contains(id))
+                    .map(|(id, fingerprint)| (*id, fingerprint.clone()))
+                    .collect()
+            }),
             // Every change the plan saw, passed over by an import or not, is
             // in this export, except a held task's: its held bytes stay, so
             // what changed here stays owed until the hold resolves.
@@ -605,9 +603,8 @@ impl LocalWorkService {
                 // does not read its tasks again, but reads the complete folder.
                 BTreeMap::new()
             } else {
-                let mut exported = previous
-                    .map(|(_, head)| head.exported.clone())
-                    .unwrap_or_default();
+                let mut exported =
+                    previous.map_or_else(BTreeMap::new, |(_, head)| head.exported.clone());
                 for (relative, bytes) in &files {
                     exported.insert(
                         task_id(relative)?,
@@ -1189,15 +1186,13 @@ impl LocalWorkService {
     ) -> Result<(&'static str, Files, TaskTree, u64)> {
         let folder = data.checkout.join(".engram");
         let head = plan.head.as_ref().map(|(_, head)| head);
-        let pending = head
-            .map(|head| {
-                head.pending
-                    .keys()
-                    .copied()
-                    .filter(|id| !plan.conflicted.contains(id))
-                    .collect::<BTreeSet<_>>()
-            })
-            .unwrap_or_default();
+        let pending = head.map_or_else(BTreeSet::new, |head| {
+            head.pending
+                .keys()
+                .copied()
+                .filter(|id| !plan.conflicted.contains(id))
+                .collect::<BTreeSet<_>>()
+        });
         let mut files = Files::new();
         let mut tasks = Vec::new();
         for (&id, document) in &plan.changes {
