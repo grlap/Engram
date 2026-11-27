@@ -1,0 +1,30 @@
+{
+  "id": "01a21b42-2e52-75c3-a8b7-922bbe53a7fe",
+  "external_ref": null,
+  "title": "Admit another host's supersede or cancel of a shared task through task-sync import instead of refusing it as unsupported fields",
+  "outcome": "Admit another host's supersede or cancel of a shared task through task-sync import instead of refusing it as unsupported fields",
+  "acceptance": [
+    "When one host supersedes a shared task (`update supersede` with a replacement and reason) and exports it, an ordinary task-sync import on another enrolled host applies the supersession: the task becomes superseded by the same replacement with the same disposal reason, through the existing disposal transition, instead of refusing the task with unsupported_fields lifecycle, superseded_by, disposal_reason",
+    "The same holds for a cancellation with a disposal reason",
+    "A disposition the receiving host cannot apply (for example the replacement is absent, or the task has engaged local execution) is held or refused by name with a remedy that the next step accepts, never applied partially",
+    "A two-store CLI test supersedes a shared task on one host and observes the other host's ordinary import apply it, and the docs (task-planning-text.md 'Edits on an enrolled destination') describe the admitted disposition"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a21b01-6658-7f22-abae-aedc1cb982d2",
+  "disposal_reason": "Duplicate: w-aedc1cb982d2 already tracks the import refusing a Changed delta whose lifecycle, superseded_by or disposal_reason differ, with a fix in progress; this case (w-8448 on TermAl's WinB) is recorded there as its second occurrence",
+  "completion": null
+}

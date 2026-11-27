@@ -1,0 +1,30 @@
+{
+  "id": "01a21b67-f435-7363-a5ca-794682a77013",
+  "external_ref": null,
+  "title": "Let a coordinator transfer a live claim from an unavailable holder session, with an audited reason",
+  "outcome": "Let a coordinator transfer a live claim from an unavailable holder session, with an audited reason",
+  "acceptance": [
+    "A project-bound coordinator session can move a live claim held by another session to a named successor session (or release it) before it lapses, with a required reason; the event is immutable, attributed to the acting session and records the prior holder, successor and reason",
+    "The prior holder's claim is fenced at once: any later gate, note-as-holder, done, handoff or renew from it is refused with a reason naming the transfer; nothing it did before the transfer is lost or rewritten",
+    "The successor receives the claim with the existing recovery semantics (contribution and waiver accounting as for --recover), and show/next display the transfer",
+    "Behaviour tests cover: transfer by a coordinator, refusal for a session without that standing, the old holder's refused writes, and the successor's ordinary work and done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "claims",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

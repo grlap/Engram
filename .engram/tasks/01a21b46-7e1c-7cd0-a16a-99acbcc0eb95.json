@@ -1,0 +1,27 @@
+{
+  "id": "01a21b46-7e1c-7cd0-a16a-99acbcc0eb95",
+  "external_ref": null,
+  "title": "Fix master's clippy::single_match_else in the task-sync sync loop so clippy -D warnings passes on rustc 1.99",
+  "outcome": "Fix master's clippy::single_match_else in the task-sync sync loop so clippy -D warnings passes on rustc 1.99",
+  "acceptance": [
+    "`cargo clippy --locked --all-targets --all-features -- -D warnings` passes on master with rustc 1.99.1 / clippy 0.1.99 (the DL560 toolchain): src/work_service/task_sync_sync.rs no longer trips clippy::single_match_else at the `match first_fetch.take()` in the sync loop"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "gate",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a21a23-dbd9-7fd2-9625-b9e46fa6cb4f",
+  "disposal_reason": "Duplicate. w-b9e46fa6cb4f (owner 11330) already fixes all 26 Clippy sites on master 9ebd6275 that R15 introduced, including the single_match_else in task_sync_sync.rs. Its candidate 7387076d passed strict Clippy 1.100 on WinB (test-774ff371). Under Greg's #1396 („Clippy nie powinno blokowac check-inu”) other candidates proceed meanwhile.",
+  "completion": null
+}

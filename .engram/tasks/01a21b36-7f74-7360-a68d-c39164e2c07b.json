@@ -1,0 +1,30 @@
+{
+  "id": "01a21b36-7f74-7360-a68d-c39164e2c07b",
+  "external_ref": null,
+  "title": "Make the task-sync set-aside remedy work: import after setting another host's task changes aside still refuses divergent planning",
+  "outcome": "Make the task-sync set-aside remedy work: import after setting another host's task changes aside still refuses divergent planning",
+  "acceptance": [
+    "When a host has an unexported local planning change and the data branch already holds another host's commits on top of its admitted basis, following the remedy the refusal names, exactly as printed, ends with both hosts' changes imported and this host's change exported, with no --rebuild and no branch moved back",
+    "Every refusal on that path names a remedy that the next step actually accepts. A behaviour test runs the printed remedy literally on a two-store fixture (local revise on store B; store A's commit adding and changing other tasks on top) and reaches a clean import, export and push",
+    "The case reported by TermAl's WinB store (local revise on w-7e7cc49528b9, incoming 2e8df1a8, admitted basis 6bf31a25, set-aside commit 085506a4) is recovered by the supported path, or by the fixed build, with nothing lost"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
