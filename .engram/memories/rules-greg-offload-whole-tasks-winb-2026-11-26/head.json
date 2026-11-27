@@ -5,7 +5,8 @@
   "head": {
     "state": "active",
     "chain": [
-      "f90da1a2fd7a4e7e9f244f32be6f1d25"
+      "f90da1a2fd7a4e7e9f244f32be6f1d25",
+      "d6beaa54bd2d444bb85ab2234c7dd7ff"
     ]
   }
 }

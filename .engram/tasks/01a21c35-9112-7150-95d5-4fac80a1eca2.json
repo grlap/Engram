@@ -1,0 +1,28 @@
+{
+  "id": "01a21c35-9112-7150-95d5-4fac80a1eca2",
+  "external_ref": null,
+  "title": "Give a held removal beside an unexported local task that names it a working task-sync exit instead of a release-and-import loop",
+  "outcome": "Give a held removal beside an unexported local task that names it a working task-sync exit instead of a release-and-import loop",
+  "acceptance": [
+    "When another host removed a task this host holds, and an unexported local task names it (a child or prerequisite), the export refusal and the import's held-task detail name an exit that succeeds: for example, apply the held removal or drop the reference here, then export; following the printed guidance no longer cycles between import and export",
+    "A CLI test drives a held pending removal through the printed set-aside: import, export, commit, revert, release and import, and checks that the removal lands and both hosts converge"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

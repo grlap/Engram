@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-offload-whole-tasks-winb-2026-11-26",
+    "revision_id": "d6beaa54bd2d444bb85ab2234c7dd7ff",
+    "previous": "f90da1a2fd7a4e7e9f244f32be6f1d25",
+    "body_sha256": "2a191291ba4e621411e411b74f2aee2d5e72fb5a55cbf44136a657ef58989e2f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T08:19:18.409637500Z"
+    }
+  },
+  "body": "GREG, 2026-11-26, relayed by Engram::Asistant (mailbox 43498a6e):\n- about 18:31Z, #2131, verbatim: „P0, co to sa za dowody ? nie moze po prostu WindowsB zamknac task ? czemu musimy przenosic wszystko na centrale ? prosciej bedzie zrobic caly task na Windows B +Kimi”;\n- 18:33Z, #2133, verbatim: „no to jest to co chcemy, robimy offload/delegacje do WindowsB. i tak sie robi, odciazajac centrale”.\nRULE for both projects:\n- Offload WHOLE tasks to Windows B to take load off Central. A Windows B session with the local Engram does the claim, code, launcher-recorded tests, review pair, acceptance evaluation and `done` locally, when possible.\n- The completion syncs to Central through engram-data as a reported outcome. The seal and evidence stay on WinB by design (git-task-sync.md:1002-1004).\n- Do NOT make moving evidence to Central a condition; w-8b8b95107bd8 is lowered to P3.\n- Mark each such item on the home store as \"executed on Windows B\", so no second host takes it.\n- Coordinate WinB resources with TermAl: Termal::Opus2 serializes cargo, and coders mail START and END.\n- Landing on master and the Central install stay integration steps.\n- Report actual starts and real obstacles.\nPilot: w-b534c27ad852 by Engram::Codex-WinB-Coder2 (WinB session-15).\n\nREV 2 (Engram::Fable, 2026-11-27 08:19Z). GREG, relayed by Engram::Asistant (43498a6e #2189), verbatim: „termal, engram, mamy dl560 i windows B, to powinno wystarczyc tak ?”. Legal needs Central's capacity. The plan both coordinators agreed (Fable #2190 to Asistant, Fable2 concurrence ebe242f7 #9022):\n- Every NEW Engram coding item goes to a WinB coder (Fable-WinB intake, #160). Central coders finish their current item, then take nothing new on Central.\n- No Engram cargo on Central. FULLs and focused legs run on WinB or DL560.\n- Review and evaluation run where the claim lives.\n- On Central stay only the Merger's landing release build, readiness and install (-j1, in a gap Opus2 names), the coordinators and Central's data sync.\n- Central memory floor for Legal builds, ruled by Opus2 #8227: Legal admission at FV >= 22,020,096 KiB; new spawns during a build only at FV >= 25,165,824; below 15,728,640, notify and admit nothing new."
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a21c04-1d0d-7c52-b548-980ce6d1020f",
+  "external_ref": null,
+  "title": "Update the architecture overview to describe task sync through the dedicated data worktree and orphan data branch",
+  "outcome": "Update the architecture overview to describe task sync through the dedicated data worktree and orphan data branch",
+  "acceptance": [
+    "docs/architecture.md describes task-sync exchange through the dedicated MAIN/.engram-data/ worktree and the orphan engram-data branch, with no tracked .engram files on the code branch and no sparse-checkout setup, matching docs/features/git-task-sync.md"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
