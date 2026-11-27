@@ -73,8 +73,14 @@ async function fingerprint(file) {
 async function host(action, target) {
   if (process.platform !== "win32") fail("windows_required", "preflight");
   const result = await waited(`cutover host ${action}`, () => child("pwsh", ["-NoProfile", "-NonInteractive", "-File", helper, "-Action", action, "-Target", target, "-EnginePid", String(process.pid)]));
-  if (result.code !== 0) fail("host_check_failed", action);
-  return result.stdout.trim();
+  const output = result.stdout.trim();
+  if (result.code !== 0) {
+    const detail = action === "RehearsalConsumers"
+      ? { reason: ["census_unavailable", "scope_invalid", "census_failed"].includes(output) ? output : "helper_failed" }
+      : undefined;
+    fail("host_check_failed", action, undefined, detail);
+  }
+  return output;
 }
 async function secureDirectory(directory) { await fs.mkdir(directory, { recursive: true, mode: 0o700 }); await host("SecureDirectory", directory); }
 async function guard(scope, home) {

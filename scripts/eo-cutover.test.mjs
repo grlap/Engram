@@ -251,23 +251,116 @@ test("host helper protects private scratch with an explicit ACL", { skip: proces
   assert.equal(result, 0);
 });
 
-test("host census refuses another cutover engine even when its wrapper is gone", { skip: process.platform !== "win32" }, async t => {
-  const directory = fixtureHome("cutover-orphan-", t);
+async function withRehearsalEngine(directory, work, plan, inspect) {
   const engine = path.join(directory, "eo-cutover.mjs");
   await fs.writeFile(engine, "process.on('message', () => process.disconnect()); process.send('ready');\n");
-  const child = spawn(process.execPath, [engine], { windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  const child = spawn(process.execPath, [engine, "--plan", plan, "--work-directory", work],
+    { windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
   const ended = new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
   try {
-    await new Promise((resolve, reject) => { child.once("message", resolve); child.once("error", reject); });
-    const result = await new Promise((resolve, reject) => {
+    await Promise.race([new Promise(resolve => child.once("message", resolve)), ended.then(() => {
+      throw new Error("rehearsal fixture engine exited before reporting ready");
+    })]);
+    return await inspect();
+  } finally {
+    if (child.connected) child.send("finish");
+    assert.equal(await ended, 0);
+  }
+}
+
+test("rehearsal census recognizes an orphaned engine only in its own target", { skip: process.platform !== "win32" }, async t => {
+  const directory = fixtureHome("cutover-orphan-", t);
+  const target = path.join(directory, "rehearsal work");
+  const sibling = `${target}-other`;
+  await withRehearsalEngine(directory, sibling, path.join(target, "sibling plan.json"), async () => {
+    const census = selected => new Promise((resolve, reject) => {
       const check = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.resolve("scripts/eo-cutover-host.ps1"),
-        "-Action", "RehearsalConsumers", "-Target", directory, "-EnginePid", String(process.pid)], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+        "-Action", "RehearsalConsumers", "-Target", selected, "-EnginePid", String(process.pid)], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
       let text = ""; check.stdout.setEncoding("utf8").on("data", value => { text += value; });
       check.once("error", reject); check.once("close", code => resolve({ code, count: Number(text.trim()) }));
     });
-    assert.equal(result.code, 0);
-    assert.ok(result.count >= 1);
-  } finally { if (child.connected) child.send("finish"); assert.equal(await ended, 0); }
+    assert.deepEqual(await census(target), { code: 0, count: 0 });
+    assert.deepEqual(await census(sibling), { code: 0, count: 1 });
+  });
+});
+
+test("Windows census uses readable rehearsal scope and keeps live checks conservative", { skip: process.platform !== "win32" }, async t => {
+  const root = fixtureHome("cutover-census-", t);
+  const fixtureScript = path.join(root, "census.ps1");
+  const hostScript = path.resolve("scripts/eo-cutover-host.ps1");
+  const target = path.join(root, "rehearsal home");
+  await fs.writeFile(fixtureScript, `
+param([string]$HostScript, [string]$Target, [string]$ProcessCase, [string]$Action)
+function Get-CimInstance {
+    switch ($ProcessCase) {
+        'equals' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe --home="' + $Target + '" work next' }
+            [pscustomobject]@{ ProcessId = 43; Name = 'engram.exe'; CommandLine = 'engram.exe "--home=' + $Target + '-sibling" work next' }
+        }
+        'unreadable-node' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'node.exe'; ExecutablePath = 'C:\\node\\node.exe'; CommandLine = $null }
+        }
+        'unreadable-engram' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; ExecutablePath = $null; CommandLine = $null }
+        }
+        'home-from-env' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe mcp' }
+        }
+        'relative-home' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe --home local mcp' }
+        }
+        'incomplete-quote' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe --home "' + $Target }
+        }
+        'nonbreaking-space' {
+            $parent = Split-Path -Parent $Target
+            $leaf = Split-Path -Leaf $Target
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe --home="' + $parent + '"\\' + $leaf + ' work next' }
+        }
+        'unrelated' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe --home "' + $Target + '-sibling" mcp' }
+            [pscustomobject]@{ ProcessId = 43; Name = 'node.exe'; CommandLine = 'node.exe unrelated.mjs "' + $Target + '"' }
+        }
+        'journal' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'node.exe'; CommandLine = 'node.exe .\\eo-cutover.mjs --rollback "' + (Join-Path $Target 'journal.json') + '"' }
+        }
+        'migration' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; CommandLine = 'engram.exe migration --warn-slow export --database "' + (Join-Path $Target 'engram.db') + '" --out elsewhere.json' }
+        }
+        'local-executable' {
+            [pscustomobject]@{ ProcessId = 42; Name = 'engram.exe'; ExecutablePath = (Join-Path $Target 'engram.exe'); CommandLine = 'engram.exe mcp' }
+        }
+        'census-unavailable' {
+            throw 'private fixture details'
+        }
+    }
+}
+& $HostScript -Action $Action -Target $Target
+exit $LASTEXITCODE
+`);
+  const census = (processCase, action = "RehearsalConsumers", selected = target) => new Promise((resolve, reject) => {
+    const child = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", fixtureScript, hostScript, selected, processCase, action],
+      { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    child.stdout.setEncoding("utf8").on("data", value => { stdout += value; });
+    child.stderr.setEncoding("utf8").on("data", value => { stderr += value; });
+    child.once("error", reject);
+    child.once("close", code => resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() }));
+  });
+  const count = stdout => ({ code: 0, stdout, stderr: "" });
+  const refused = { code: 1, stdout: "", stderr: '{"code":"host_inspection_failed"}' };
+  for (const processCase of ["equals", "journal", "migration", "incomplete-quote"]) {
+    assert.deepEqual(await census(processCase), count("1"), processCase);
+  }
+  for (const processCase of ["unreadable-node", "unreadable-engram", "home-from-env", "relative-home", "local-executable", "unrelated"]) {
+    assert.deepEqual(await census(processCase), count("0"), processCase);
+  }
+  assert.deepEqual(await census("nonbreaking-space", "RehearsalConsumers", path.join(root, "case\u00a0copy")), count("1"));
+  assert.deepEqual(await census("census-unavailable"), { ...refused, stdout: "census_unavailable" });
+  assert.deepEqual(await census("unrelated", "RehearsalConsumers", "relative"), { ...refused, stdout: "scope_invalid" });
+  assert.deepEqual(await census("unrelated", "Consumers"), count("1"));
+  assert.deepEqual(await census("journal", "Consumers"), count("1"));
+  assert.deepEqual(await census("unreadable-node", "Consumers"), refused);
 });
 
 test("public PowerShell entry invokes the engine and keeps malformed plan content private", { skip: process.platform !== "win32" }, async t => {
@@ -288,25 +381,28 @@ test("public PowerShell entry invokes the engine and keeps malformed plan conten
   await assert.rejects(fs.stat(work), { code: "ENOENT" });
 });
 
-test("public PowerShell rollback reads the empty main-file journal key and restores complete packets", { skip: process.platform !== "win32" }, async t => {
+test("public PowerShell rollback restores complete packets while a sibling rehearsal is active", { skip: process.platform !== "win32" }, async t => {
   const f = await fixture(t);
   const result = await executePlan(f.plan, f.options);
   const journal = JSON.parse(await fs.readFile(result.journal, "utf8"));
   assert.ok(Object.hasOwn(journal.projects[0].old, ""));
-  const rollback = await new Promise((resolve, reject) => {
+  const sibling = `${f.options.workDirectory}-sibling`;
+  const siblingPlan = path.join(f.options.workDirectory, "sibling plan.json");
+  const rollback = await withRehearsalEngine(f.root, sibling, siblingPlan, () => new Promise((resolve, reject) => {
     const entry = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.resolve("scripts/eo-cutover.ps1"),
       "-RollbackJournal", result.journal], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
     entry.stdout.setEncoding("utf8").on("data", value => { text += value; }); entry.stderr.setEncoding("utf8").on("data", value => { text += value; });
     entry.once("error", reject); entry.once("close", code => resolve({ code, text }));
-  });
+  }));
   const diagnostics = [];
   const safeToken = value => typeof value === "string" && /^[A-Za-z0-9_]{1,64}$/u.test(value);
   for (const line of rollback.text.slice(-2048).split(/\r?\n/u)) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
     if (safeToken(event?.code) && safeToken(event?.stage)) {
-      diagnostics.push(`${event.code} (${event.stage})`);
+      const reason = safeToken(event.reason) ? ": " + event.reason : "";
+      diagnostics.push(`${event.code} (${event.stage})${reason}`);
       if (diagnostics.length === 3) break;
     }
   }
