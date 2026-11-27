@@ -1,0 +1,28 @@
+{
+  "id": "01a21cc4-e771-7d10-a140-c0003b6f64a0",
+  "external_ref": null,
+  "title": "Keep work commands working under a parent whose required child an imported folder removal cancelled on a store with no root execution",
+  "outcome": "Keep work commands working under a parent whose required child an imported folder removal cancelled on a store with no root execution",
+  "acceptance": [
+    "On a store whose tasks arrived by task-sync import, so its roots have no root execution, after an incoming folder removal disposes a required child as Cancelled, `engram work add X --under <its parent>` (and other work commands whose receipt lists waivable children) succeed instead of failing with 'root work … has no active execution'",
+    "A CLI test reproduces the two-host sequence: B enrolled by import, A's task file removed and committed, B imports the removal, then B adds a child under the parent"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
