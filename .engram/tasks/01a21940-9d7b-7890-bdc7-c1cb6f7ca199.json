@@ -17,12 +17,19 @@
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Completed after fresh independent acceptance evaluation 41e09a81361146b9aaa5b34aa8e7117e passed 2/2 on clean landed commit f02e85fd8fb49d4f7196b3e09a519033b40c8c87 (tree 14c81e0bff61ca215cfd7773d600d8399bcbe957). The same combined landing carries w-c0003b6f64a0; its status remains open, assigned to peer-actor-2854c7550b913cfad6430a83, pending its post-landing independent evaluation and completion. No TermAl restart was performed; Opus2/Fable's 17:27Z restart hold is active.",
+    "completed_at": "2026-11-27T17:13:09.695273Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }
