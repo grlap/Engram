@@ -18,12 +18,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "An incremental task-folder import now applies a peer's cancellation or supersession of a task the destination holds Open, as the ordinary Disposed event (lifecycle, replacement, reason), instead of refusing it as unsupported_fields. It is held as active_run under live local or descendant execution, refused as open_descendants while a descendant at any depth stays open (judged after the mixed-graph checks), and refused as durable_graph when a replacement closes a cycle through retired work. It ends a dormant run, lapsed claim and lapsed handoff offer and waives the departed holder, as local disposal does. Covered by storage tests (folder_apply::disposals, including the two-store round trip and exact repeat) and the two-host incremental CLI test. Landed as 4a7d8428 (FULL test-ea8f9fba PASS 12/12; independent evaluation 90389634 3/3). The round-5 ordering Medium is deferred to w-a45a8cba7e4c.",
+    "completed_at": "2026-11-27T13:50:28.469271500Z",
+    "actor": {
+      "actor_id": "dev/claude",
+      "actor_kind": "agent"
+    }
+  }
 }
