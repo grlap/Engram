@@ -1,13 +1,13 @@
 {
   "id": "01a21b67-f435-7363-a5ca-794682a77013",
   "external_ref": null,
-  "title": "Let a coordinator transfer a live claim from an unavailable holder session, with an audited reason",
+  "title": "Let an operator transfer or release a live claim held by a stopped holder session, with an audited reason",
   "outcome": "Let a coordinator transfer a live claim from an unavailable holder session, with an audited reason",
   "acceptance": [
-    "A project-bound coordinator session can move a live claim held by another session to a named successor session (or release it) before it lapses, with a required reason; the event is immutable, attributed to the acting session and records the prior holder, successor and reason",
-    "The prior holder's claim is fenced at once: any later gate, note-as-holder, done, handoff or renew from it is refused with a reason naming the transfer; nothing it did before the transfer is lost or rewritten",
-    "The successor receives the claim with the existing recovery semantics (contribution and waiver accounting as for --recover), and show/next display the transfer",
-    "Behaviour tests cover: transfer by a coordinator, refusal for a session without that standing, the old holder's refused writes, and the successor's ordinary work and done"
+    "An operator-surface command moves a live claim held by another session to a named successor session, or releases it, before it lapses. It requires a reason that records the evidence that the holder is stopped or paused (for example, the TermAl pause or refusal state), and an exact compare-and-swap on the current claim. The actor is recorded as asserted attribution. It is one transaction that composes the existing Released event and an optional Claimed{recovered: true} event, so history, contributions and waivers follow the existing recovery contract, and the old source-root and registered-verification epoch end exactly as they do at a release",
+    "The prior holder is fenced at once: any later gate, holder note, done, handoff or renew from it is refused with a reason that names the transfer and its locator. Nothing it recorded before the transfer is lost or rewritten. Genuine new peer observations from it are kept as non-holder observations",
+    "show and next display the transfer: the prior holder, the successor, the reason and the acting actor",
+    "Behaviour tests cover a transfer to a successor, a release, a refusal on a claim CAS mismatch, the old holder's refused writes, and the successor's ordinary work through done"
   ],
   "acceptance_bindings": [],
   "evaluation_mode": null,
