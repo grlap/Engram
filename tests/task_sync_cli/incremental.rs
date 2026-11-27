@@ -1314,6 +1314,96 @@ fn task_sync_cli_another_hosts_exact_revert_of_a_task_exported_here_is_imported(
     assert_eq!(a.receipt("export", &[])["route"], "unchanged");
 }
 
+#[test]
+fn task_sync_cli_another_hosts_supersession_and_cancellation_import_incrementally_and_return_unchanged()
+ {
+    let fixture = test_support::temp_home().unwrap();
+    let root = fixture.path();
+    let a = Host::new(root, "a");
+    let b = Host::new(root, "b");
+    for title in ["Old", "Replacement", "Dropped"] {
+        a.work(&["add", title]);
+    }
+    assert_eq!(a.receipt("export", &[])["route"], "bootstrap");
+    let a_basis = root.join("a-basis.json");
+    fs::copy(a.folder().join("project.json"), &a_basis).unwrap();
+    a.commit("Publish planning from A");
+    assert_eq!(
+        a.receipt("import", &["--basis", a_basis.to_str().unwrap()])["route"],
+        "enrol"
+    );
+    let tasks = directory::read_folder(&a.folder()).unwrap().tree.tasks;
+    let id = |title: &str| tasks.iter().find(|task| task.title == title).unwrap().id;
+    let (old, replacement, dropped) = (id("Old"), id("Replacement"), id("Dropped"));
+    b.merge_from(&a);
+    b.receipt("import", &["--empty-basis"]);
+    let item = |host: &Host, id: engram::WorkId| {
+        SqliteStore::open(project_database_path(
+            &host.home,
+            &ProjectId(PROJECT.into()),
+        ))
+        .unwrap()
+        .get_work_item(id)
+        .unwrap()
+    };
+
+    // A supersedes one open task with another and cancels a third.
+    a.work(&[
+        "update",
+        &old.0.to_string(),
+        "--supersede-with",
+        &replacement.0.to_string(),
+        "--reason",
+        "Folded into the replacement",
+    ]);
+    a.work(&[
+        "update",
+        &dropped.0.to_string(),
+        "--cancel",
+        "No longer needed",
+    ]);
+    assert_eq!(a.receipt("export", &[])["written"], 2);
+    a.commit("Supersede and cancel on A");
+
+    // B takes both through the ordinary incremental import.
+    b.merge_from(&a);
+    let imported = b.receipt("import", &[]);
+    assert_eq!(imported["route"], "incremental");
+    let statuses = imported["tasks"].as_array().unwrap();
+    assert_eq!(statuses.len(), 2, "{imported}");
+    assert!(
+        statuses.iter().all(|task| task["status"] == "applied"),
+        "{imported}"
+    );
+    let superseded = item(&b, old);
+    assert_eq!(superseded.lifecycle, engram::WorkLifecycle::Superseded);
+    assert_eq!(superseded.superseded_by, Some(replacement));
+    assert_eq!(
+        item(&b, dropped).lifecycle,
+        engram::WorkLifecycle::Cancelled
+    );
+    assert_eq!(
+        b.task_file(old)["disposal_reason"],
+        "Folded into the replacement"
+    );
+
+    // B's own export carries the same lifecycle, replacement and reason, so
+    // it writes nothing; the same folder again changes nothing.
+    assert_eq!(b.receipt("export", &[])["route"], "unchanged");
+    let revisions = [old, dropped].map(|id| item(&b, id).revision);
+    let repeat = b.receipt("import", &[]);
+    assert_eq!(repeat["route"], "unchanged", "{repeat}");
+    assert_ne!(repeat["changed"], true, "{repeat}");
+    assert!(
+        repeat["tasks"]
+            .as_array()
+            .is_none_or(std::vec::Vec::is_empty),
+        "{repeat}"
+    );
+    assert_eq!([old, dropped].map(|id| item(&b, id).revision), revisions);
+    assert_eq!(b.receipt("export", &[])["route"], "unchanged");
+}
+
 /// Two hosts enrolled on host A's published task after A renamed it,
 /// published the rename and B imported it, and that task's id.
 fn published_rename(root: &Path) -> (Host, Host, engram::WorkId) {

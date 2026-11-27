@@ -10,6 +10,28 @@ fn refusal(id: WorkId, reason: &'static str, detail: String) -> Conflict {
     Conflict { id, reason, detail }
 }
 
+/// Each reported supersession the plan selects, with the replacement it links.
+pub(super) fn replacements(
+    plan: &DeltaPlan,
+    prospective: &Prospective<'_>,
+) -> Vec<(WorkId, WorkId)> {
+    plan.tasks
+        .iter()
+        .filter(|task| {
+            matches!(&task.delta,
+                crate::task_sync::folder_plan::TaskDelta::Changed(change)
+                    if change.reported_disposal)
+        })
+        .filter_map(|task| {
+            prospective
+                .resolved
+                .get(&task.id)
+                .and_then(|document| document.superseded_by)
+                .map(|replacement| (task.id, replacement))
+        })
+        .collect()
+}
+
 pub(super) fn admit_owner(
     transaction: &rusqlite::Transaction<'_>,
     prospective: &Prospective<'_>,
@@ -117,16 +139,23 @@ pub(super) fn graphs(
         .relation_changes()
         .map(|(id, _)| id)
         .collect::<HashSet<_>>();
-    if changed.is_empty() {
+    let replaced = replacements(plan, prospective);
+    if changed.is_empty() && replaced.is_empty() {
         return Ok(());
     }
     // Retired owners remain in the durable graph. Apply only the currently
     // selected edits; a refused owner's historical edges must stay intact.
+    // A selected supersession adds its replacement link the same way.
     let mut durable = retained.clone();
     for (id, _) in plan.relation_changes() {
         let task = prospective.resolved_task(id)?;
         if let Some(old) = durable.get_mut(&id) {
             old.prerequisites.clone_from(&task.prerequisites);
+        }
+    }
+    for &(id, replacement) in &replaced {
+        if let Some(old) = durable.get_mut(&id) {
+            old.superseded_by = Some(replacement);
         }
     }
     for id in plan.additions() {
@@ -135,6 +164,7 @@ pub(super) fn graphs(
     let candidates = changed
         .iter()
         .copied()
+        .chain(replaced.iter().map(|&(id, _)| id))
         .chain(plan.additions())
         .collect::<HashSet<_>>();
     let cycles = dependency_cycles(&durable.into_values().collect::<Vec<_>>());

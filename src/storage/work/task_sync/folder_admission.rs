@@ -1,5 +1,6 @@
 //! Admission and application of the changes a resolved folder asks of an
-//! enrolled destination: additions, scalar edits and execution-free removals.
+//! enrolled destination: additions, scalar edits, reported outcomes and
+//! execution-free removals.
 //!
 //! Admission runs in two stages before any write. The first judges each
 //! task on its own: what the planner found it asks, and whether this store
@@ -284,7 +285,8 @@ fn activity_keys(task: &TaskDocument) -> impl Iterator<Item = (String, String)> 
 /// admitted task advances the caller's exchange baseline.
 ///
 /// Admitted changes remove old relations, restore additions, apply scalars
-/// and new relations, then dispose removals in hierarchy postorder. The caller checks
+/// and new relations, dispose removals in hierarchy postorder, then record
+/// reported outcomes, children before parents. The caller checks
 /// the result against the new membership and records it.
 pub(super) fn apply_plan(
     transaction: &rusqlite::Transaction<'_>,
@@ -445,7 +447,11 @@ pub(super) fn apply_on(
                 task.id,
                 &change.relations,
             )?,
-            TaskDelta::Changed(change) if change.scalar.is_some() || change.reported_completion => {
+            TaskDelta::Changed(change)
+                if change.scalar.is_some()
+                    || change.reported_completion
+                    || change.reported_disposal =>
+            {
                 reads
                     .eligibility(transaction, task.id)?
                     .map(|(reason, detail)| Conflict {
@@ -461,7 +467,8 @@ pub(super) fn apply_on(
             TaskDelta::Unchanged | TaskDelta::RetainedLocal | TaskDelta::Changed(_) => None,
         };
         let conflict = if conflict.is_none()
-            && matches!(&task.delta, TaskDelta::Changed(change) if change.reported_completion)
+            && matches!(&task.delta, TaskDelta::Changed(change)
+                if change.reported_completion || change.reported_disposal)
             && super::super::completion::live_descendant_execution_authority(
                 transaction,
                 task.id,
@@ -601,7 +608,23 @@ pub(super) fn apply_on(
             .collect::<Vec<_>>()
     };
     if plan.relation_changes().next().is_none() && (!additions.is_empty() || !removals.is_empty()) {
-        let retained = retained_graph(prospective, &admitted_removals, &admitted(&conflicts))?;
+        // A disposal admitted so far frees its open-descendant capacity for
+        // an addition; a later refusal of it is judged again on the mixed graph.
+        let disposed = plan
+            .tasks
+            .iter()
+            .filter(|task| {
+                matches!(&task.delta, TaskDelta::Changed(change) if change.reported_disposal)
+                    && !conflicts.contains_key(&task.id.0)
+            })
+            .map(|task| task.id)
+            .collect::<Vec<_>>();
+        let retained = retained_graph(
+            prospective,
+            &admitted_removals,
+            &disposed,
+            &admitted(&conflicts),
+        )?;
         absorb(retained, &mut conflicts, &mut batch);
         name_dependents_of_refusals(prospective, &additions, &mut conflicts);
     }
@@ -620,7 +643,11 @@ pub(super) fn apply_on(
             conflicts.insert(id.0, conflict);
         }
     }
-    let durable = if plan.relation_changes().next().is_some() {
+    // A replacement link joins the durable combined graph, as a relation edge
+    // does, so either is judged against retired work's edges too.
+    let durable = if plan.relation_changes().next().is_some()
+        || !relations::replacements(plan, prospective).is_empty()
+    {
         Some(durable()?)
     } else {
         None
@@ -721,6 +748,48 @@ pub(super) fn apply_on(
         if unfinished_child {
             continue;
         }
+        // As for a local disposal, every descendant at any depth ends first.
+        // A refused descendant keeps its local document, so its ancestor
+        // waits with it; an admitted removal is applied before any disposal.
+        // These refusals wait until this pass's graph is valid, so that an
+        // addition the graph checks refuse never holds its ancestor back.
+        let mut unfinished = Vec::new();
+        let mut children = HashMap::<WorkId, Vec<&TaskDocument>>::new();
+        for task in effective.values() {
+            if let Some(parent) = task.parent_id {
+                children.entry(parent).or_default().push(task);
+            }
+        }
+        for task in &selected.tasks {
+            if !matches!(&task.delta, TaskDelta::Changed(change) if change.reported_disposal) {
+                continue;
+            }
+            let mut open = None::<WorkId>;
+            let mut pending = vec![task.id];
+            let mut seen = HashSet::new();
+            while let Some(parent) = pending.pop() {
+                for child in children.get(&parent).into_iter().flatten() {
+                    if !seen.insert(child.id) {
+                        continue;
+                    }
+                    if matches!(
+                        child.lifecycle,
+                        WorkLifecycle::Open | WorkLifecycle::Proposed
+                    ) && open.is_none_or(|known| child.id.0 < known.0)
+                    {
+                        open = Some(child.id);
+                    }
+                    pending.push(child.id);
+                }
+            }
+            if let Some(descendant) = open {
+                unfinished.push(Conflict {
+                    id: task.id,
+                    reason: "open_descendants",
+                    detail: format!("descendant {} remains unfinished", descendant.0),
+                });
+            }
+        }
         // A later owner refusal restores its current edges. Recheck removal
         // targets against that actual mixed graph, including chains of targets
         // retained by an earlier pass, before locating any remaining fault.
@@ -777,7 +846,13 @@ pub(super) fn apply_on(
                     continue;
                 }
             }
-            break;
+            if unfinished.is_empty() {
+                break;
+            }
+            for conflict in unfinished {
+                conflicts.insert(conflict.id.0, conflict);
+            }
+            continue;
         };
         let mut named = false;
         if let Some(located) = fault.located {
@@ -877,30 +952,6 @@ pub(super) fn apply_on(
         )?;
     }
     relations::apply_additions(transaction, plan, actor, now)?;
-    if plan.relation_changes().next().is_some() {
-        final_graph()?;
-    }
-    // Children close before their parent; no local child seal is fabricated.
-    let mut completions = plan
-        .tasks
-        .iter()
-        .filter_map(|task| match &task.delta {
-            TaskDelta::Changed(change) if change.reported_completion => Some(task.id),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    completions.sort_by_key(|id| (std::cmp::Reverse(prospective.ancestors(*id).len()), id.0));
-    for id in completions {
-        super::reported::apply_on(
-            transaction,
-            prospective.resolved_task(id)?,
-            prospective.snapshots.get(&id).cloned().ok_or_else(|| {
-                StoreError::InvalidWorkProjection("reported task has no snapshot".into())
-            })?,
-            actor,
-            now,
-        )?;
-    }
     let mut ordered = removals
         .into_iter()
         .map(|id| {
@@ -922,6 +973,42 @@ pub(super) fn apply_on(
         // boundary rather than relying on a run-free field alone.
         let admitted = removal_item(transaction, id, now)?;
         super::super::planning::apply_folder_disposal_on(transaction, admitted, actor, now)?;
+    }
+    // Children end before their parent, whether completed, cancelled or
+    // superseded, after the removals admission already counted as ended; no
+    // local child seal is fabricated.
+    let mut outcomes = plan
+        .tasks
+        .iter()
+        .filter_map(|task| match &task.delta {
+            TaskDelta::Changed(change) if change.reported_completion => Some((task.id, true)),
+            TaskDelta::Changed(change) if change.reported_disposal => Some((task.id, false)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    outcomes.sort_by_key(|(id, _)| (std::cmp::Reverse(prospective.ancestors(*id).len()), id.0));
+    for (id, completed) in outcomes {
+        let task = prospective.resolved_task(id)?;
+        if completed {
+            super::reported::apply_on(
+                transaction,
+                task,
+                prospective.snapshots.get(&id).cloned().ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("reported task has no snapshot".into())
+                })?,
+                actor,
+                now,
+            )?;
+        } else {
+            super::reported::dispose_on(transaction, task, actor, now)?;
+        }
+    }
+    // Admission named every durable cycle it could predict; this stays the
+    // guard that rolls the whole folder back.
+    if plan.relation_changes().next().is_some()
+        || !relations::replacements(plan, prospective).is_empty()
+    {
+        final_graph()?;
     }
     Ok(Application {
         plan: selected,
@@ -1919,17 +2006,36 @@ fn name_native_support_users(
 /// can close a cycle that neither the folder nor the origin history holds.
 ///
 /// `removed` names held tasks the import would take out of the planning;
-/// only admitted execution-free removals belong in this set.
+/// only admitted execution-free removals belong in this set. `disposed`
+/// names held tasks whose reported disposal is admitted so far: each counts
+/// as ended here, keeping its current structure, since its replacement link
+/// is judged with the mixed graph.
 fn retained_graph(
     prospective: &Prospective<'_>,
     removed: &HashSet<WorkId>,
+    disposed: &[WorkId],
     additions: &[WorkId],
 ) -> Result<GraphFindings, StoreError> {
+    let ended = disposed
+        .iter()
+        .map(|id| {
+            let mut task = (*prospective.current.get(id).ok_or_else(|| {
+                StoreError::InvalidWorkProjection("a disposed task is not held".into())
+            })?)
+            .clone();
+            task.lifecycle = WorkLifecycle::Cancelled;
+            task.superseded_by = None;
+            task.disposal_reason
+                .clone_from(&prospective.resolved_task(*id)?.disposal_reason);
+            Ok(task)
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
     let mut base = prospective
         .current
         .iter()
-        .filter(|(id, _)| !removed.contains(id))
+        .filter(|(id, _)| !removed.contains(id) && !disposed.contains(id))
         .map(|(_, &task)| task)
+        .chain(&ended)
         .collect::<Vec<_>>();
     base.sort_by_key(|task| task.id.0);
     check_graph(

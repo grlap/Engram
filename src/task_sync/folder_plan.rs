@@ -8,8 +8,9 @@
 //! (claims, runs, completion, provenance, identity) is a separate admission
 //! question, answered inside the applying transaction.
 //!
-//! Applicable deltas are additions, omissions of enrolled members, and
-//! scalar and relation edits of tasks both sides hold. Every other
+//! Applicable deltas are additions, omissions of enrolled members, scalar
+//! and relation edits of tasks both sides hold, and a reported completion,
+//! cancellation or supersession of a task this side holds open. Every other
 //! requested delta is classified with a named reason. Admission can leave it
 //! unapplied and report it without dropping the folder's independent changes.
 
@@ -73,6 +74,10 @@ pub struct TaskChange {
     pub relations: RelationChange,
     /// An incoming completed outcome, with no local seal or evidence credit.
     pub reported_completion: bool,
+    /// An incoming cancellation or supersession of a task this store holds
+    /// Open: its lifecycle, replacement and reason, as the resolved document
+    /// carries them.
+    pub reported_disposal: bool,
     /// Additive notes or monotonic informational activity, never runtime state.
     pub shared: bool,
     /// The other changed fields, in document order.
@@ -224,7 +229,8 @@ impl DeltaPlan {
     }
 
     /// Whether every requested delta is of a kind this exchange applies:
-    /// an addition, enrolled removal, scalar or relation edit. Admission may still refuse it.
+    /// an addition, enrolled removal, scalar or relation edit, or a reported
+    /// completion, cancellation or supersession. Admission may still refuse it.
     #[must_use]
     pub fn is_applicable(&self) -> bool {
         self.project.is_empty()
@@ -430,6 +436,13 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
             crate::WorkLifecycle::Open | crate::WorkLifecycle::Proposed
         )
         && incoming.completion.is_some();
+    // A peer's cancellation or supersession of work this store still holds
+    // Open. The stored-tree rules already bind the lifecycle, replacement and
+    // reason together; a completion change stays unsupported beside it.
+    let reported_disposal = matches!(
+        incoming.lifecycle,
+        crate::WorkLifecycle::Cancelled | crate::WorkLifecycle::Superseded
+    ) && held.lifecycle == crate::WorkLifecycle::Open;
     let unsupported = changed_fields![
         external_ref => ExternalRef,
         evaluation_mode => EvaluationMode,
@@ -446,7 +459,12 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
     .filter_map(|(field, changed)| {
         (changed
             && !(reported_completion
-                && matches!(field, TaskField::Lifecycle | TaskField::Completion)))
+                && matches!(field, TaskField::Lifecycle | TaskField::Completion))
+            && !(reported_disposal
+                && matches!(
+                    field,
+                    TaskField::Lifecycle | TaskField::SupersededBy | TaskField::DisposalReason
+                )))
         .then_some(field)
     })
     .collect::<Vec<_>>();
@@ -467,6 +485,7 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         && scalar.is_empty()
         && relations.is_empty()
         && !reported_completion
+        && !reported_disposal
         && !shared
     {
         return Ok(TaskDelta::Unchanged);
@@ -483,6 +502,7 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         scalar,
         relations,
         reported_completion,
+        reported_disposal,
         shared,
         unsupported,
     })))

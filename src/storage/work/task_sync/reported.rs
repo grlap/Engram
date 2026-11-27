@@ -1,4 +1,5 @@
 //! Imported completion is an inert report, never a local successful run.
+//! An imported cancellation or supersession is the ordinary disposal event.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, Transaction, params};
@@ -28,63 +29,12 @@ pub(super) fn apply_on(
     {
         return Err(invalid("reported completion lost admission"));
     }
-    let mut run = item
-        .active_run_id
-        .map(|id| query::load_work_run(transaction, id))
-        .transpose()?;
-    let mut claim = run
-        .as_ref()
-        .map(|run| query::load_work_claim_optional(transaction, run.run_id))
-        .transpose()?
-        .flatten();
-    if let Some(claim) = &mut claim
-        && claim.state == crate::WorkClaimState::Active
-    {
-        claim.state = crate::WorkClaimState::Released;
-        claim.revision += 1;
-        claim.fence += 1;
-        claim.expires_at = now;
-        planning::persist_claim(transaction, claim)?;
-    }
-    // A restored root need never have had its own run: a child's local
-    // execution can still have created the root aggregate that this report
-    // must close and bind in its canonical event.
-    let mut execution = if item.work_id == item.root_id {
-        query::active_root_execution_optional(transaction, item.root_id)?
-    } else {
-        run.as_ref()
-            .map(|run| query::load_root_execution(transaction, run.root_execution_id))
-            .transpose()?
-    };
-    if let Some(run) = &mut run {
-        let fence = if let Some(claim) = &claim {
-            claim.fence
-        } else {
-            transaction.query_row(
-                "SELECT claim_fence_head FROM work_runs WHERE run_id = ?1",
-                [run.run_id.0.to_string()],
-                |row| row.get::<_, i64>(0),
-            )?
-        };
-        run.state = WorkRunState::Cancelled;
-        run.executor = None;
-        run.revision += 1;
-        run.updated_at = now;
-        planning::persist_work_run(transaction, run, fence)?;
-    }
-    // As for native root completion, end this iteration even if optional
-    // descendants retain dormant runs. Admission already excluded live
-    // descendant authority; those old runs must not keep the next iteration
-    // on this generation's contributors, waivers and child seals.
-    if let Some(execution) = &mut execution
-        && item.work_id == item.root_id
-        && execution.state == RootExecutionState::Active
-    {
-        execution.state = RootExecutionState::Cancelled;
-        execution.revision += 1;
-        execution.updated_at = now;
-        planning::persist_root_execution(transaction, execution)?;
-    }
+    let Ended {
+        run,
+        claim,
+        execution,
+        released: _,
+    } = end_dormant_execution(transaction, &item, actor, now)?;
     snapshot.origin = item.origin;
     snapshot
         .source_snapshot_id
@@ -143,6 +93,186 @@ pub(super) fn apply_on(
         },
     )?;
     Ok(())
+}
+
+/// A peer's cancellation or supersession of work this store holds Open,
+/// recorded as the ordinary disposal event with the document's replacement
+/// and reason. Like a reported completion it ends any dormant local run and
+/// claim without crediting it, and fabricates no execution state.
+pub(super) fn dispose_on(
+    transaction: &Transaction<'_>,
+    task: &TaskDocument,
+    actor: &ActorContext,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let mut item = query::load_work_item(transaction, task.id)?;
+    let open_descendants: i64 = transaction.query_row(
+        "WITH RECURSIVE descendants(work_id) AS (
+             SELECT work_id FROM work_items WHERE parent_id = ?1
+             UNION
+             SELECT child.work_id FROM work_items child
+             JOIN descendants parent ON child.parent_id = parent.work_id
+         )
+         SELECT COUNT(*) FROM descendants
+         JOIN work_items item USING(work_id)
+         WHERE item.lifecycle IN ('proposed', 'open')",
+        [item.work_id.0.to_string()],
+        |row| row.get(0),
+    )?;
+    let reason = task.disposal_reason.clone();
+    let lifecycle_matches = match task.lifecycle {
+        WorkLifecycle::Cancelled => task.superseded_by.is_none(),
+        WorkLifecycle::Superseded => task.superseded_by.is_some(),
+        _ => false,
+    };
+    if item.lifecycle != WorkLifecycle::Open
+        || open_descendants != 0
+        || !lifecycle_matches
+        || reason.is_none()
+        || super::folder_admission::engaged_run(transaction, task.id, now)?.is_some()
+        || super::super::completion::live_descendant_execution_authority(transaction, task.id, now)?
+    {
+        return Err(invalid("reported disposal lost admission"));
+    }
+    let reason = reason.unwrap_or_default();
+    let Ended {
+        run,
+        claim,
+        mut execution,
+        released,
+    } = end_dormant_execution(transaction, &item, actor, now)?;
+    // As a local disposal does, account for a child's departed holder that
+    // never contributed, so the root's own completion is not left waiting on
+    // it. The waiver is attributed to the importing actor; it credits nothing.
+    if item.work_id != item.root_id
+        && let (Some(holder), Some(execution)) = (released.as_ref(), execution.as_mut())
+        && planning::waive_root_contributor(execution, holder, &actor.actor_id, &reason)
+    {
+        execution.revision += 1;
+        execution.updated_at = now;
+        planning::persist_root_execution(transaction, execution)?;
+    }
+    item.lifecycle = task.lifecycle;
+    item.superseded_by = task.superseded_by;
+    item.active_run_id = None;
+    item.revision += 1;
+    item.updated_at = now;
+    planning::persist_work_item(transaction, &item)?;
+    feeds::append_work_event(
+        transaction,
+        &WorkEventDraft {
+            schema_version: crate::schema::SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: run.as_ref().map(|run| run.run_id),
+            revision: item.revision,
+            work: item.clone(),
+            run,
+            root_execution: execution,
+            claim,
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Disposed {
+                lifecycle: item.lifecycle,
+                replacement_id: item.superseded_by,
+                reason,
+            },
+            actor: actor.clone(),
+            created_at: now,
+        },
+    )?;
+    Ok(())
+}
+
+/// The runtime state a reported outcome ended, bound into its event.
+struct Ended {
+    run: Option<crate::WorkRun>,
+    claim: Option<crate::WorkClaim>,
+    execution: Option<crate::RootExecution>,
+    /// The holder of a lapsed claim this outcome released.
+    released: Option<crate::SessionId>,
+}
+
+/// Ends a dormant run and its expired claim for a reported outcome, and the
+/// root's active execution when the task is that root. Admission already
+/// excluded live execution on the task and its descendants.
+fn end_dormant_execution(
+    transaction: &Transaction<'_>,
+    item: &crate::WorkItem,
+    actor: &ActorContext,
+    now: DateTime<Utc>,
+) -> Result<Ended, StoreError> {
+    let mut run = item
+        .active_run_id
+        .map(|id| query::load_work_run(transaction, id))
+        .transpose()?;
+    // As a local disposal does, a lapsed handoff offer on the run ends with
+    // its audited expiry; admission already held a live one.
+    if let Some(run) = &run {
+        feeds::expire_handoff_offers(transaction, run.run_id, now, actor)?;
+    }
+    let mut claim = run
+        .as_ref()
+        .map(|run| query::load_work_claim_optional(transaction, run.run_id))
+        .transpose()?
+        .flatten();
+    let mut released = None;
+    if let Some(claim) = &mut claim
+        && claim.state == crate::WorkClaimState::Active
+    {
+        released = Some(claim.holder.clone());
+        claim.state = crate::WorkClaimState::Released;
+        claim.revision += 1;
+        claim.fence += 1;
+        claim.expires_at = now;
+        planning::persist_claim(transaction, claim)?;
+    }
+    // A restored root need never have had its own run: a child's local
+    // execution can still have created the root aggregate that this report
+    // must close and bind in its canonical event.
+    let mut execution = if item.work_id == item.root_id {
+        query::active_root_execution_optional(transaction, item.root_id)?
+    } else {
+        run.as_ref()
+            .map(|run| query::load_root_execution(transaction, run.root_execution_id))
+            .transpose()?
+    };
+    if let Some(run) = &mut run {
+        let fence = if let Some(claim) = &claim {
+            claim.fence
+        } else {
+            transaction.query_row(
+                "SELECT claim_fence_head FROM work_runs WHERE run_id = ?1",
+                [run.run_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )?
+        };
+        run.state = WorkRunState::Cancelled;
+        run.executor = None;
+        run.revision += 1;
+        run.updated_at = now;
+        planning::persist_work_run(transaction, run, fence)?;
+    }
+    // As for native root completion, end this iteration even if optional
+    // descendants retain dormant runs. Admission already excluded live
+    // descendant authority; those old runs must not keep the next iteration
+    // on this generation's contributors, waivers and child seals.
+    if let Some(execution) = &mut execution
+        && item.work_id == item.root_id
+        && execution.state == RootExecutionState::Active
+    {
+        execution.state = RootExecutionState::Cancelled;
+        execution.revision += 1;
+        execution.updated_at = now;
+        planning::persist_root_execution(transaction, execution)?;
+    }
+    Ok(Ended {
+        run,
+        claim,
+        execution,
+        released,
+    })
 }
 
 /// Check the exact report named by a native event, independently of current

@@ -965,8 +965,8 @@ fn a_required_child_of_a_graph_culprit_is_named_for_its_ancestor() {
 #[test]
 fn a_dependent_of_additions_over_the_open_descendant_limit_is_named_for_its_reference() {
     // The held parent has two open children. The folder shows the second
-    // cancelled, a change refused on its own, so the planning the import
-    // would leave keeps it open. The folder's additions bring the root to the
+    // cancelled and optional; the requirement change is refused on its own,
+    // so the planning the import would leave keeps it open. The folder's additions bring the root to the
     // limit in the folder; with the open second child, the planning the
     // import would leave is over it, so the added children take it over
     // together. Another root requires one of them, and its id sorts first so
@@ -980,15 +980,16 @@ fn a_dependent_of_additions_over_the_open_descendant_limit_is_named_for_its_refe
     dependent.id = WorkId(uuid::Uuid::from_u128(1));
     dependent.prerequisites = vec![children[0].id];
     let (dependent_id, required) = (dependent.id, children[0].id);
-    // Every addition and the cancelled child.
+    // Every addition and the refused child.
     let refused = children.len() + 2;
     let mut additions = children;
     additions.push(dependent);
-    let cancelled = edited(&fixture.tree, fixture.second, |task| {
+    let refused_disposal = edited(&fixture.tree, fixture.second, |task| {
         task.lifecycle = WorkLifecycle::Cancelled;
         task.disposal_reason = Some("dropped elsewhere".into());
+        task.child_requirement = ChildRequirement::Optional;
     });
-    let resolved = with(&cancelled, additions);
+    let resolved = with(&refused_disposal, additions);
     let before = state(&store);
     reset_counters();
     let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());

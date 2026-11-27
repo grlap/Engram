@@ -386,7 +386,10 @@ planning transitions in the same transaction, alongside scalar edits. Each
 added or edited task then exports exactly as the folder carries it, and an
 added task joins the exchange. An eligible task omitted from the last
 exchange is locally cancelled by an ordinary `Disposed` event, with no run
-or other runtime state. Other unsupported fields, including structural moves,
+or other runtime state. A task the destination holds Open that the folder
+carries as cancelled or superseded takes that
+[reported disposal](#reported-disposal). Other unsupported fields, including
+structural moves and a lifecycle change of a task held in any other state,
 produce a per-task refusal with their field names. A note selection that
 differs from the baseline's refuses earlier as `task_sync_divergent_planning`,
 or `task_sync_invalid_graph` when the folder and requested selection disagree.
@@ -420,7 +423,42 @@ required child would remain Open or Proposed after admitted changes. Reporting
 a child complete leaves an open root's aggregate available for its siblings.
 Reporting the root complete ends its aggregate even if optional children retain
 dormant runs; reopening after disposing unfinished descendants allocates the
-next execution generation.
+next execution generation. Ending a dormant run also expires any lapsed
+handoff offer on it, with its audited event, as a local disposal does.
+
+#### Reported disposal
+
+Another host's cancellation or supersession of a task this destination holds
+Open is recorded as the ordinary `Disposed` event a local disposal writes: the
+folder's lifecycle, replacement and reason, attributed to the importing actor.
+A planning edit carried beside it applies first. Like a reported completion it
+is held as `active_run` while the task or a descendant has live execution, and
+it ends a dormant run, its lapsed claim and any lapsed handoff offer without
+credit and without creating a run, claim or root execution. As a local
+disposal does, it waives that lapsed holder as a contributor to an open root,
+attributed to the importing actor with the document's reason, and expires the
+offer with its audited event. As locally, every descendant ends first:
+while a descendant at any depth would stay Open or Proposed after the admitted
+changes, the task is refused as `open_descendants`. That is judged once the
+mixed graph is otherwise valid, so an addition the graph checks refuse never
+holds its ancestor's disposal. Admitted removals run
+first, then descendants are disposed before their ancestors, in one
+transaction. The replacement may be a task the same folder adds, and a
+disposal admitted so far frees its open-descendant capacity for that
+addition. Like a relation change, a replacement link is checked against the
+durable graph, including retired work: a supersession that would close a
+cycle there is refused as `durable_graph`, while the folder's independent
+changes still apply. Unlike a local supersession, the replacement is not
+required to be live here: the peer chose it, and this store may already have
+ended it, as a local supersession followed by ending the replacement would
+also leave it. An exact repeat changes nothing, and
+the disposed task exports and round-trips with the same lifecycle,
+replacement and reason. A disposal of a task held Proposed, completed,
+cancelled or superseded stays an unsupported field. A disposed required child
+still needs the parent's explicit waiver before the parent completes locally;
+a reported completion of the parent needs none, since it carries no native
+seal and admission only refuses it while a required child stays Open or
+Proposed.
 
 A task takes an addition only when nothing the destination holds
 contradicts it:
@@ -551,8 +589,9 @@ precedes an ancestor-execution conflict. An unrelated executing root does not
 block removal. The remaining graph is validated even with no additions.
 
 Old prerequisites and blockers are removed first, then additions are restored,
-scalar edits and new relations apply, and children-before-parents removals
-finish the transaction. Removal retains the task row, original parent/root
+scalar edits and new relations apply, children-before-parents removals follow,
+and reported completions and disposals finish the transaction, children
+before parents. Removal retains the task row, original parent/root
 and relations, import origins, notes/activity and all prior records. The
 event carries the importing actor and time, with every runtime snapshot
 absent. It creates no claim, run, root execution, grant, contributor, waiver
@@ -1027,8 +1066,9 @@ hold a shared-only strict delta, and unexported local facts survive for the next
 outgoing capture. The receipt claims only actual native effects of that import.
 
 An imported baseline and its membership fingerprint retain the exact incoming
-documents. A local reported completion may also abandon this host's expired
-episode through its actual canonical completion event. That local fact overlays
+documents. A local reported completion or disposal may also abandon this
+host's expired episode through its actual canonical completion or disposal
+event. That local fact overlays
 the baseline on the next export; it never rewrites the prepared input or its
 receipt's imported head. Incoming shared assertions create no native activity
 events themselves.
@@ -1093,12 +1133,15 @@ an attributed restored completion, stay out of ready work and can satisfy an
 ordinary prerequisite. Cancelled and superseded tasks retain explicit disposal
 state and reasons. No local completion seal, acceptance pass or host proof is
 manufactured; native execution still uses its ordinary admission and policy.
-An enrolled destination applies the supported planning fields, relations and
-reported completion described by the
-[folder exchange](#edits-on-an-enrolled-destination), with per-task outcomes.
-The profile contains no original disposal actor or time. Its local history
-labels disposal as `disposal_reported`, attributed to the importing actor as a
-report at import time, rather than claiming they performed the original act.
+An enrolled destination applies the supported planning fields, relations,
+reported completion and [reported disposal](#reported-disposal) described by
+the [folder exchange](#edits-on-an-enrolled-destination), with per-task
+outcomes. The profile contains no original disposal actor or time. A task
+restored already cancelled or superseded shows that disposal in its local
+history as `disposal_reported`, attributed to the importing actor as a report
+at import time, rather than claiming they performed the original act. A task
+this store held Open and an enrolled import then disposes records an ordinary
+`disposed` event, likewise attributed to the importing actor at import time.
 
 ## Refusal codes
 

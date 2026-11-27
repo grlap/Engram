@@ -685,9 +685,9 @@ fn apply_planned_changes(
                 super::shared::merge_notes(&mut outgoing.notes, before.notes.clone())?;
                 super::shared::merge_activity(&mut outgoing.activity, before.activity.clone())?;
             }
-            if plan.tasks.iter().any(|change| change.id == task.id && matches!(&change.delta, folder_plan::TaskDelta::Changed(change) if change.reported_completion)) {
+            if plan.tasks.iter().any(|change| change.id == task.id && matches!(&change.delta, folder_plan::TaskDelta::Changed(change) if change.reported_completion || change.reported_disposal)) {
                 for alias in outgoing.activity.keys().cloned().collect::<Vec<_>>() {
-                    super::activity::after_reported_completion(transaction, &mut outgoing, Some(&alias))?;
+                    super::activity::after_reported_outcome(transaction, &mut outgoing, Some(&alias))?;
                 }
             }
             if applied.get(&task.id).copied() != Some(&outgoing) {

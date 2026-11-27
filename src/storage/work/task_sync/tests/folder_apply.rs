@@ -3,6 +3,7 @@ use super::super::folder_admission::{Conflict, NAMED_CONFLICT_LIMIT, conflict_me
 use super::*;
 
 mod any_host;
+mod disposals;
 mod failure_modes;
 mod shared_updates;
 use crate::{

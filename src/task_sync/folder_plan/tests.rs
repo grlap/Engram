@@ -475,38 +475,54 @@ fn reparenting_stays_unsupported_while_prerequisites_are_planned() {
     );
 }
 
+fn cancelled(task: &TaskDocument) -> TaskDocument {
+    edited(task, |task| {
+        task.lifecycle = WorkLifecycle::Cancelled;
+        task.disposal_reason = Some("Dropped".into());
+    })
+}
+
+fn superseded(task: &TaskDocument, by: WorkId) -> TaskDocument {
+    let mut task = task.clone();
+    task.lifecycle = WorkLifecycle::Superseded;
+    task.superseded_by = Some(by);
+    task.disposal_reason = Some("Replaced".into());
+    task
+}
+
 #[test]
-fn disposal_names_changed_fields_and_completion_is_a_reported_outcome() {
+fn an_open_task_disposed_elsewhere_is_a_reported_outcome_and_completion_is_too() {
     let a = task("a");
     let b = task("b");
     let current = tree(&[a.clone(), b.clone()]);
     let membership = members(&[&a, &b]);
-    let cases = [
-        (
-            edited(&a, |task| {
-                task.lifecycle = WorkLifecycle::Cancelled;
-                task.disposal_reason = Some("Dropped".into());
-            }),
-            vec![TaskField::Lifecycle, TaskField::DisposalReason],
-        ),
-        (
-            edited(&a, |task| {
-                task.lifecycle = WorkLifecycle::Superseded;
-                task.superseded_by = Some(b.id);
-                task.disposal_reason = Some("Replaced".into());
-            }),
-            vec![
-                TaskField::Lifecycle,
-                TaskField::SupersededBy,
-                TaskField::DisposalReason,
-            ],
-        ),
-    ];
-    for (changed, fields) in cases {
+    let disposed = TaskDelta::Changed(Box::new(TaskChange {
+        reported_disposal: true,
+        ..TaskChange::default()
+    }));
+    for changed in [cancelled(&a), superseded(&a, b.id)] {
         let resolved = tree(&[changed, b.clone()]);
         let plan = deltas(plan(&current, &resolved, &membership));
-        assert_eq!(delta(&plan, a.id), &self::fields(fields));
+        assert_eq!(delta(&plan, a.id), &disposed);
+        assert!(plan.is_applicable());
+        assert_eq!(plan.changed_ids().collect::<Vec<_>>(), vec![a.id]);
     }
+    // A planning edit made before the disposal travels beside it.
+    let renamed = tree(&[
+        edited(&cancelled(&a), |task| task.title = "a renamed".into()),
+        b.clone(),
+    ]);
+    assert_eq!(
+        delta(&deltas(plan(&current, &renamed, &membership)), a.id),
+        &TaskDelta::Changed(Box::new(TaskChange {
+            scalar: Some(ScalarChange {
+                title: Some("a renamed".into()),
+                ..ScalarChange::default()
+            }),
+            reported_disposal: true,
+            ..TaskChange::default()
+        }))
+    );
     let resolved = tree(&[
         edited(&a, |task| {
             task.lifecycle = WorkLifecycle::Completed;
@@ -523,6 +539,35 @@ fn disposal_names_changed_fields_and_completion_is_a_reported_outcome() {
         }))
     );
     assert!(reported.is_applicable());
+}
+
+#[test]
+fn a_disposal_of_work_this_side_holds_ended_or_proposed_stays_unsupported() {
+    let b = task("b");
+    let proposed = edited(&task("proposed"), |task| {
+        task.lifecycle = WorkLifecycle::Proposed;
+    });
+    let ended = cancelled(&task("ended"));
+    let current = tree(&[proposed.clone(), ended.clone(), b.clone()]);
+    let resolved = tree(&[cancelled(&proposed), superseded(&ended, b.id), b.clone()]);
+    let plan = deltas(plan(
+        &current,
+        &resolved,
+        &members(&[&proposed, &ended, &b]),
+    ));
+    assert_eq!(
+        delta(&plan, proposed.id),
+        &fields(vec![TaskField::Lifecycle, TaskField::DisposalReason])
+    );
+    assert_eq!(
+        delta(&plan, ended.id),
+        &fields(vec![
+            TaskField::Lifecycle,
+            TaskField::SupersededBy,
+            TaskField::DisposalReason,
+        ])
+    );
+    assert!(!plan.is_applicable());
 }
 
 #[test]
