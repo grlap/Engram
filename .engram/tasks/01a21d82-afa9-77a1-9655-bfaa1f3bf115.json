@@ -1,0 +1,28 @@
+{
+  "id": "01a21d82-afa9-77a1-9655-bfaa1f3bf115",
+  "external_ref": null,
+  "title": "Run the backup manifest fixture within SQLite path limits in nested Windows worktrees",
+  "outcome": "Run the backup manifest fixture within SQLite path limits in nested Windows worktrees",
+  "acceptance": [
+    "The backup manifest cut test passes on Windows from a nested checkout with the same path budget as the failing combined gate",
+    "The test continues verifying the staged backup cut by an independent SQLite read"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1a4d8-ff00-70b1-8651-3dcb26f7fe39",
+  "disposal_reason": "Duplicate of the existing Windows backup fixture path-limit item identified by Engram::Fable #238. Full failed-run evidence and the independent staged-cut requirement were preserved in note a033924664d14b7e9667602b64a6e on w-3dcb26f7fe39.",
+  "completion": null
+}
