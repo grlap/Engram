@@ -14,10 +14,10 @@
       "inventory_root": "e6e48c10142ffa6b60ad08c6464b6ec93ce711de58da22ed5bd462b1dbf82125",
       "task_count": 2428,
       "cut": {
-        "position": 260120,
+        "position": 260128,
         "anchor": {
-          "object_kind": "task_sync_import_planning",
-          "object_id": "8b4b81167f65423783eb52d2a157c6a3"
+          "object_kind": "unadmitted_execution_observation",
+          "object_id": "eaa05b57801f470cb95cd488fb8f3033"
         }
       }
     }
