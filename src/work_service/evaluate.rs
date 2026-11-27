@@ -60,7 +60,22 @@ pub const EVALUATE_WORD_ONLY_RESERVE: usize = 3072;
 const SERVICE_ENVELOPE_BUDGET: usize = MAX_AGENT_WORK_RESPONSE_BYTES - EVALUATE_WORD_RESERVE;
 
 impl LocalWorkService {
-    /// Records one acceptance evaluation on the targeted item's active run.
+    /// The evaluation alone, without the item's view, for tests that read
+    /// only the evaluation's result.
+    #[cfg(test)]
+    pub(crate) fn work_evaluate_on(
+        &self,
+        input: &WorkEvaluateInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkEvaluateResult, StoreError> {
+        self.evaluate_on(input, false, now)
+            .map(|(result, _)| result)
+    }
+
+    /// Records one acceptance evaluation on the targeted item's active run,
+    /// and returns it with the item's view as it reads afterwards, taken on
+    /// the connection the evaluation already holds, so answering waits for no
+    /// other call.
     ///
     /// # Errors
     ///
@@ -69,11 +84,24 @@ impl LocalWorkService {
     /// for policy, identity, criteria, provenance, or size reasons, or the
     /// row-free response envelope cannot fit the agent budget (checked
     /// before anything is recorded).
-    pub(crate) fn work_evaluate_on(
+    pub(crate) fn work_evaluate_viewed_on(
         &self,
         input: &WorkEvaluateInput,
         now: DateTime<Utc>,
-    ) -> Result<WorkEvaluateResult, StoreError> {
+    ) -> Result<(WorkEvaluateResult, crate::WorkFocusView), StoreError> {
+        let (result, view) = self.evaluate_on(input, true, now)?;
+        let view = view.ok_or_else(|| {
+            StoreError::InvalidWorkProjection("the evaluation's view was not taken".into())
+        })?;
+        Ok((result, view))
+    }
+
+    fn evaluate_on(
+        &self,
+        input: &WorkEvaluateInput,
+        want_view: bool,
+        now: DateTime<Utc>,
+    ) -> Result<(WorkEvaluateResult, Option<crate::WorkFocusView>), StoreError> {
         let ParsedEvaluation {
             mode,
             verdicts,
@@ -81,6 +109,9 @@ impl LocalWorkService {
             supersedes,
             verdict_bytes,
         } = parse_evaluation_words(input)?;
+        // The open, the source read and the write share one deadline; inside
+        // the word's own, the earlier one holds.
+        let _deadline = crate::storage::OperationDeadlineScope::operation();
         // The session registers just before the evaluation's first write,
         // after the checks below.
         let mut store = self.lock_store_at(now)?;
@@ -278,16 +309,49 @@ impl LocalWorkService {
             )?;
             fit_projection(&mut result)?;
             ensure_agent_response_budget(&result, "work_evaluate")?;
-            // A replay answers without a write of its own; the session
-            // registers here, after its last refusal.
-            self.register_on(&mut store, now)?;
-            return self.focus_held_result(
-                &mut store,
-                target,
-                basis.claim.as_ref(),
-                Ok(result),
-                now,
-            );
+            // A replay answers without a new record. When the resend owes
+            // nothing, it answers from that read, without the writer, as a
+            // resend after a host's timeout should. When it owes the session's
+            // registration or a holder's focus, those are written in one
+            // transaction that answers the same recorded attempt or refuses.
+            // A new process reusing a registered process-default session owes
+            // no registration: its row is read, not written.
+            let mut register_at = self.process_default_registration_due(now);
+            if register_at.is_some()
+                && store.work_session_row_exists(&self.project_id, &self.session_id)?
+            {
+                self.process_default_registered();
+                register_at = None;
+            }
+            // A holder's focus moves to a named item only, as it always has,
+            // and is owed only when it is not already there.
+            let holds = target.is_some()
+                && basis.claim.as_ref().is_some_and(|claim| {
+                    claim.holder == self.session_id
+                        && claim.state == crate::domain::WorkClaimState::Active
+                        && claim.expires_at > now
+                });
+            let focus_owed = holds
+                && store
+                    .work_session_state(&self.project_id, &self.session_id, now)?
+                    .focused_work_id
+                    != Some(work.work_id);
+            if register_at.is_some() || focus_owed {
+                store.replay_acceptance_evaluation_owing(
+                    &request,
+                    &DevelopmentNoopRedactor,
+                    run_id,
+                    register_at.map(|now| (&self.session_id, now)),
+                    focus_owed,
+                )?;
+                if register_at.is_some() {
+                    self.process_default_registered();
+                }
+            }
+            let view = want_view
+                .then(|| self.focus_view(&store, work.work_id, false, true, now))
+                .transpose()?;
+            return Ok((result, view));
         }
         if work.revision != input.acceptance_basis {
             return Err(StoreError::WorkRevisionConflict {
@@ -313,12 +377,25 @@ impl LocalWorkService {
         }
         let visible = preflight.projection.verdicts.len();
 
+        // The record, the session's registration and a holder's focus commit
+        // in one transaction: once it commits, nothing is left to write, so
+        // no wait can stand between the recorded evaluation and its answer.
+        // A holder's focus moves to a named item only, as it always has.
         let register_at = self.process_default_registration_due(now);
-        let receipt = store.record_acceptance_evaluation_registering(
-            &request,
-            &DevelopmentNoopRedactor,
-            register_at.map(|now| (&self.session_id, now)),
-        )?;
+        let register = register_at.map(|now| (&self.session_id, now));
+        let receipt = if target.is_some() {
+            store.record_acceptance_evaluation_focusing(
+                &request,
+                &DevelopmentNoopRedactor,
+                register,
+            )?
+        } else {
+            store.record_acceptance_evaluation_registering(
+                &request,
+                &DevelopmentNoopRedactor,
+                register,
+            )?
+        };
         if register_at.is_some() {
             self.process_default_registered();
         }
@@ -337,7 +414,10 @@ impl LocalWorkService {
         // covers drift and keeps every count exact.
         fit_projection(&mut result)?;
         ensure_agent_response_budget(&result, "work_evaluate")?;
-        self.focus_held_result(&mut store, target, basis.claim.as_ref(), Ok(result), now)
+        let view = want_view
+            .then(|| self.focus_view(&store, work.work_id, false, true, now))
+            .transpose()?;
+        Ok((result, view))
     }
 
     fn assemble(

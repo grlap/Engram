@@ -173,11 +173,15 @@ pub(in crate::storage) fn measure_binding_destination_reusing(
     {
         Some(measured) => measured.ok().cloned(),
         None => {
-            crate::source::inspect(
-                std::path::Path::new(&event.workspace_id),
-                crate::source::MAX_BUDGET,
-            )
-            .source_id
+            // Inside an operation's deadline the read gets what remains of
+            // it, as the operation's own measurement does.
+            let budget = crate::storage::operation_deadline::cap(crate::source::MAX_BUDGET);
+            if budget.is_zero() {
+                return Err(invalid(
+                    "the operation's time limit ended before the destination's source read",
+                ));
+            }
+            crate::source::inspect(std::path::Path::new(&event.workspace_id), budget).source_id
         }
     }
     .ok_or_else(|| invalid("destination source identity is unavailable"))?;

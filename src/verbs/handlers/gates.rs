@@ -105,6 +105,9 @@ impl AgentVerbs {
         input: EvaluateInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        // One deadline for the submission: every store open, the source read
+        // and the write share it instead of each waiting anew.
+        let _deadline = crate::storage::OperationDeadlineScope::operation();
         let mut evaluation = crate::WorkEvaluateInput {
             work_ref: None,
             mode: input.mode,
@@ -132,11 +135,12 @@ impl AgentVerbs {
         })?;
         let work_ref = view.status.work.short_ref.clone();
         evaluation.work_ref = Some(view.status.work.work_id.0.to_string());
-        let result = self
+        // The view after the evaluation comes from the connection the
+        // evaluation holds, so answering waits for no other call.
+        let (result, after) = self
             .service
-            .work_evaluate_on(&evaluation, now)
+            .work_evaluate_viewed_on(&evaluation, now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "evaluate", now);
         let mut projection = result.projection;
         let mut evaluation_obligations =

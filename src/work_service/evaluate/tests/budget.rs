@@ -10,7 +10,7 @@ use crate::domain::{
 };
 use crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES;
 
-const SESSION: &str = "budget-evaluator-session";
+pub(super) const SESSION: &str = "budget-evaluator-session";
 
 fn session_actor() -> ActorContext {
     ActorContext {
@@ -28,7 +28,7 @@ fn session_actor() -> ActorContext {
 
 /// A claimed root with the given criteria and one generic evidence object,
 /// created directly in storage so the criteria count is the fixture's choice.
-fn claimed_root(
+pub(super) fn claimed_root(
     database: &Path,
     project: &ProjectId,
     criteria: Vec<String>,
@@ -101,7 +101,7 @@ fn claimed_root(
     (work.short_ref, basis, evidence)
 }
 
-fn service(database: &Path, project: &ProjectId) -> LocalWorkService {
+pub(super) fn service(database: &Path, project: &ProjectId) -> LocalWorkService {
     LocalWorkService::new(
         database.to_path_buf(),
         project.clone(),

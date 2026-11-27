@@ -112,6 +112,14 @@ impl OpenGuard {
                         Some(pause) => std::thread::sleep(pause),
                         None => return Err(open_lock_busy()),
                     }
+                    // Inside a clock-read deadline (a copy's, a control
+                    // allowance's or an operation's), read the clock again
+                    // after the pause, so no try comes after the deadline.
+                    if lock_wait == LockWait::CopyDeadline
+                        && limit.is_some_and(|limit| Instant::now() >= limit)
+                    {
+                        return Err(open_lock_busy());
+                    }
                 }
                 // A file system that cannot lock, or cannot lock through a
                 // handle opened only to read (an emulated lock on a network

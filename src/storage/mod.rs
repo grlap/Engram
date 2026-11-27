@@ -43,6 +43,7 @@ pub use named_root_read::NamedRootReadRefusal;
 mod named_root_sighting_read;
 mod objects_tasks;
 mod open_schema;
+pub(crate) mod operation_deadline;
 #[cfg(test)]
 pub(crate) use open_schema::CopyProbePoint;
 #[cfg(test)]
@@ -54,6 +55,7 @@ pub(crate) use open_schema::with_store_lock_wait;
 pub use open_schema::{
     CopyInterrupt, LiveAuthority, RestoreCopyReport, VerifiedStoreCopy, installed_sidecar_problem,
 };
+pub(crate) use operation_deadline::OperationDeadlineScope;
 mod policy_admin;
 mod project_memory;
 mod schema_diagnostics;
@@ -84,6 +86,12 @@ pub(crate) use work::take_work_catalog_fts_delete_statements;
 pub(crate) use work::validate_work_import_input;
 #[cfg(test)]
 pub(crate) use work::with_writer_admission_test_policy;
+#[cfg(test)]
+pub(crate) use work::with_writer_commit_hook;
+#[cfg(test)]
+pub(crate) use work::with_writer_settle_hook;
+#[cfg(test)]
+pub(crate) use work::writer_admission_acquisitions;
 
 pub(crate) const UNKNOWN_BLOCKER_REFUSAL: &str =
     "blocker_id does not name an active blocker of this work item";

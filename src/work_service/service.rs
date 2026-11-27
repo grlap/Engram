@@ -23,6 +23,22 @@ use super::{
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// The pause between two tries for the service's store connection while an
+/// operation's deadline bounds the wait.
+const CONNECTION_POLL: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// The refusal when another call held the service's store connection until
+/// the operation's deadline: a busy store, as SQLite's own refusal is.
+fn connection_busy_past_deadline() -> StoreError {
+    StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        Some(
+            "another call on this service held its store connection until the operation's time limit; submit it again"
+                .into(),
+        ),
+    ))
+}
+
 thread_local! {
     /// One read word's read-only connection, while that word runs on this
     /// thread; see [`LocalWorkService::one_read_connection`].
@@ -443,7 +459,34 @@ impl LocalWorkService {
         })?;
         let started = crate::phase_trace::start();
         let mutex_started = crate::diagnostics::transaction::mutex_start();
-        let store = cached.lock();
+        let store = match crate::storage::operation_deadline::current() {
+            None => cached.lock(),
+            // Another call on this service, such as a concurrent MCP word,
+            // may hold the connection; an operation's deadline ends this wait
+            // as it ends the waits for SQLite's own locks.
+            Some(deadline) => loop {
+                match cached.try_lock() {
+                    Ok(store) => break Ok(store),
+                    Err(std::sync::TryLockError::Poisoned(poisoned)) => break Err(poisoned),
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        // Never sleep past the deadline, and read the clock
+                        // again before the next try, so no try comes after it.
+                        let left = deadline.saturating_duration_since(std::time::Instant::now());
+                        if !left.is_zero() {
+                            std::thread::sleep(left.min(CONNECTION_POLL));
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            crate::diagnostics::transaction::mutex_finished(mutex_started);
+                            crate::phase_trace::finish(
+                                crate::phase_trace::Phase::StoreMutexWait,
+                                started,
+                            );
+                            return Err(connection_busy_past_deadline());
+                        }
+                    }
+                }
+            },
+        };
         crate::diagnostics::transaction::mutex_finished(mutex_started);
         crate::phase_trace::finish(crate::phase_trace::Phase::StoreMutexWait, started);
         let store = store.map_err(|_| {

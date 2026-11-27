@@ -121,7 +121,7 @@ fn replace(wait: Option<CopyWait>) -> Option<CopyWait> {
 /// that it outlives them: a copy connection used without a scope waits for
 /// no lock at all.
 #[must_use = "a copy connection waits for no lock once its scope is dropped"]
-pub(super) struct CopyWaitScope {
+pub(in crate::storage) struct CopyWaitScope {
     previous: Option<CopyWait>,
 }
 
@@ -139,6 +139,20 @@ impl Drop for CopyWaitScope {
     fn drop(&mut self) {
         replace(self.previous);
     }
+}
+
+/// Makes `connection` wait for a lock until `deadline` by the clock, while
+/// the returned scope lives: SQLite's busy timeout counts the sleeps it asks
+/// for, which can overrun, so a wait that must end at an operation's
+/// deadline reads the clock instead. The caller puts the connection's own
+/// busy timeout back before dropping the scope.
+pub(in crate::storage) fn wait_until(
+    connection: &rusqlite::Connection,
+    deadline: Instant,
+) -> rusqlite::Result<CopyWaitScope> {
+    let scope = CopyWaitScope::enter(Some(deadline));
+    LockWait::CopyDeadline.install(connection)?;
+    Ok(scope)
 }
 
 /// What a copy's busy handler does next.

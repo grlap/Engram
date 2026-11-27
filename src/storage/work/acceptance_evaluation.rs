@@ -211,7 +211,94 @@ impl SqliteStore {
         redactor: &R,
         register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
-        self.record_acceptance_evaluation_inner(request, redactor, register, false)
+        self.record_acceptance_evaluation_inner(request, redactor, register, false, false)
+    }
+
+    /// [`Self::record_acceptance_evaluation_registering`] for the evaluate
+    /// word, which also moves the evaluator's focus to the item, in the same
+    /// transaction, when the evaluator holds the item's live claim: a fresh
+    /// record and a replay alike leave nothing to write once they commit, so
+    /// no later wait can stand between a recorded evaluation and its answer.
+    ///
+    /// # Errors
+    ///
+    /// Refuses as that function does.
+    pub(crate) fn record_acceptance_evaluation_focusing<R: Redactor>(
+        &mut self,
+        request: &RecordAcceptanceEvaluationRequest,
+        redactor: &R,
+        register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
+    ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+        self.record_acceptance_evaluation_inner(request, redactor, register, false, true)
+    }
+
+    /// Answers an exact resend of an evaluation already recorded under
+    /// `attempt`, writing in one transaction only what the resend owes: the
+    /// fresh process-default session `register` names, and, when
+    /// `focus_holder` asks for it, the evaluator's focus while it holds
+    /// `run`'s live claim. It never records an
+    /// evaluation: when the attempt is no longer recorded on the item as this
+    /// transaction reads it, nothing is written and it is refused.
+    ///
+    /// # Errors
+    ///
+    /// Refuses when the evaluator's session is not a live one, the item
+    /// belongs to another project, the attempt is not recorded, the
+    /// registration fails, or the writer is not admitted.
+    pub(crate) fn replay_acceptance_evaluation_owing<R: Redactor>(
+        &mut self,
+        request: &RecordAcceptanceEvaluationRequest,
+        redactor: &R,
+        run: crate::domain::WorkRunId,
+        register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
+        focus_holder: bool,
+    ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+        inspect_work_request(redactor, request, &request.evaluator)?;
+        crate::storage::admit_live_actor_session(&request.evaluator)?;
+        let evaluator_session = IdentityShape::of_request(request)
+            .evaluator()
+            .cloned()
+            .ok_or_else(|| refused(request.work_id, "the evaluator must carry a session id"))?;
+        let attempt = attempt_identity(request, run)?;
+        let transaction = self.begin_work_mutation()?;
+        if let Some((session_id, now)) = register {
+            super::session::register_process_default_work_session_on(
+                &transaction,
+                &request.project_id,
+                session_id,
+                now,
+            )?;
+        }
+        let item = load_work_item(&transaction, request.work_id)?;
+        if item.project_id != request.project_id {
+            return Err(refused(item.work_id, "the item belongs to another project"));
+        }
+        let Some(mut receipt) = replay_operation::<AcceptanceEvaluationReceipt>(
+            &transaction,
+            OPERATION,
+            &attempt.key,
+            &attempt.fingerprint,
+        )?
+        else {
+            return Err(refused(
+                item.work_id,
+                "the resent evaluation is no longer recorded on this run; read the item and submit it again",
+            ));
+        };
+        let moved = focus_holder_on(
+            &transaction,
+            focus_holder,
+            &item,
+            run,
+            &evaluator_session,
+            request.recorded_at,
+        )?;
+        transaction.commit()?;
+        if let Some(moved) = moved {
+            moved.record(&request.project_id, &evaluator_session);
+        }
+        receipt.replayed = true;
+        Ok(receipt)
     }
 
     /// Seed immutable records from earlier builds for historical reader tests.
@@ -222,7 +309,7 @@ impl SqliteStore {
         request: &RecordAcceptanceEvaluationRequest,
         redactor: &R,
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
-        self.record_acceptance_evaluation_inner(request, redactor, None, true)
+        self.record_acceptance_evaluation_inner(request, redactor, None, true, false)
     }
 
     fn record_acceptance_evaluation_inner<R: Redactor>(
@@ -231,6 +318,7 @@ impl SqliteStore {
         redactor: &R,
         register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
         historical: bool,
+        focus_holder: bool,
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
         inspect_work_request(redactor, request, &request.evaluator)?;
         crate::storage::admit_live_actor_session(&request.evaluator)?;
@@ -314,7 +402,18 @@ impl SqliteStore {
             &attempt.key,
             &attempt.fingerprint,
         )? {
+            let moved = focus_holder_on(
+                &transaction,
+                focus_holder,
+                &item,
+                attempt_run,
+                &evaluator_session,
+                request.recorded_at,
+            )?;
             transaction.commit()?;
+            if let Some(moved) = moved {
+                moved.record(&request.project_id, &evaluator_session);
+            }
             receipt.replayed = true;
             return Ok(receipt);
         }
@@ -723,7 +822,18 @@ impl SqliteStore {
                 None
             },
         )?;
+        let moved = focus_holder_on(
+            &transaction,
+            focus_holder,
+            &item,
+            run_id,
+            &evaluator_session,
+            request.recorded_at,
+        )?;
         transaction.commit()?;
+        if let Some(moved) = moved {
+            moved.record(&request.project_id, &evaluator_session);
+        }
         Ok(receipt)
     }
 
@@ -1043,6 +1153,32 @@ fn append_evaluation(
         &receipt,
     )?;
     Ok(receipt)
+}
+
+/// When `focus_holder` asks for it and `session` holds `run`'s live claim,
+/// moves that session's focus to `item` inside the evaluation's own
+/// transaction, so nothing is left to write once the evaluation commits.
+fn focus_holder_on(
+    transaction: &rusqlite::Transaction<'_>,
+    focus_holder: bool,
+    item: &crate::domain::WorkItem,
+    run: crate::domain::WorkRunId,
+    session: &SessionId,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<super::session::FocusMove>, StoreError> {
+    if !focus_holder {
+        return Ok(None);
+    }
+    let held = load_work_claim_optional(transaction, run)?.is_some_and(|claim| {
+        &claim.holder == session
+            && claim.state == crate::domain::WorkClaimState::Active
+            && claim.expires_at > now
+    });
+    if !held {
+        return Ok(None);
+    }
+    super::session::focus_work_session_on(transaction, &item.project_id, session, item, now)
+        .map(Some)
 }
 
 /// The latest run of an item by generation, when any exists.

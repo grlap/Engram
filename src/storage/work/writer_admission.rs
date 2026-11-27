@@ -39,6 +39,20 @@ impl<'connection> WorkMutation<'connection> {
         &mut self.transaction
     }
     pub(super) fn commit(self) -> rusqlite::Result<()> {
+        #[cfg(test)]
+        test_policy::before_commit();
+        // Nothing commits after its operation's deadline: by then the answer
+        // is due, so the write is given back whole and refused as a busy
+        // store. Once COMMIT starts, its outcome stands.
+        if crate::storage::operation_deadline::current()
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.rollback()?;
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some("the operation's time limit ended before the write committed".into()),
+            ));
+        }
         let Self {
             origin_scope,
             transaction,
@@ -49,6 +63,10 @@ impl<'connection> WorkMutation<'connection> {
         let result = transaction.commit();
         timing.committed(result.is_ok());
         drop(warning);
+        #[cfg(test)]
+        if result.is_ok() {
+            test_policy::after_commit();
+        }
         result
     }
 
@@ -214,13 +232,40 @@ impl SqliteStore {
             |row| row.get::<_, u32>(0),
         )?));
         let window = self.writer_admission.as_ref();
-        let allowance = window.map_or(ordinary_timeout, WriterAdmissionWindow::remaining);
+        // An operation's deadline, shared with its open, ends this wait too.
+        let deadline = crate::storage::operation_deadline::current();
+        let uncapped = window.map_or(ordinary_timeout, WriterAdmissionWindow::remaining);
+        let allowance = crate::storage::operation_deadline::cap(uncapped);
         #[cfg(test)]
         test_policy::observe_allowance(allowance);
         let autocommit = self.connection.is_autocommit();
-        if window.is_some() && autocommit {
-            self.connection.busy_timeout(allowance)?;
+        // A write never begins after its operation's deadline, even with the
+        // writer free: by then the operation's answer is already due.
+        let expired = || deadline.is_some_and(|deadline| Instant::now() >= deadline);
+        if autocommit && expired() {
+            return Err(deadline_passed(started.elapsed(), allowance));
         }
+        let bounded = (window.is_some() || deadline.is_some()) && autocommit;
+        // Inside a deadline the wait reads the clock: SQLite's busy timeout
+        // counts the sleeps it asks for, which can overrun and admit the
+        // writer after the deadline has passed.
+        // The wait ends at the operation's own deadline, or sooner at the
+        // ordinary or window limit, both read from one clock sample here.
+        let clock_end = crate::storage::operation_deadline::earliest(
+            deadline,
+            Instant::now().checked_add(uncapped),
+        );
+        let _clock_wait = if let Some(end) = clock_end.filter(|_| bounded && deadline.is_some()) {
+            Some(crate::storage::open_schema::wait_for_lock_until(
+                &self.connection,
+                end,
+            )?)
+        } else {
+            if bounded {
+                self.connection.busy_timeout(allowance)?;
+            }
+            None
+        };
         // The shared connection borrow allows restoring the handler before
         // returning the guard. Autocommit is checked; a nested BEGIN refuses
         // without rolling back the caller's transaction.
@@ -234,16 +279,26 @@ impl SqliteStore {
             },
         );
         let acquired = Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate);
+        #[cfg(test)]
+        test_policy::observe_acquisition(started, Instant::now());
         match &acquired {
             Ok(_) => timing.acquired(),
             Err(error) => timing.begin_failed(error, autocommit),
         }
-        if window.is_some() && autocommit {
+        if bounded {
             // Restore on both acquisition outcomes, before any body runs.
             self.connection.busy_timeout(ordinary_timeout)?;
         }
         let transaction = acquired
             .map_err(|source| admission_error(source, autocommit, started.elapsed(), allowance))?;
+        // Admitted only as the deadline passed: give the writer back before
+        // anything is written.
+        if expired() {
+            let rolled_back = transaction.rollback();
+            timing.rolled_back(rolled_back.is_ok());
+            rolled_back?;
+            return Err(deadline_passed(started.elapsed(), allowance));
+        }
         require_work_schema_version(&transaction, self.work_schema_version)?;
         let origin_scope = super::task_sync::enter_origin_scope(&transaction)?;
         Ok(WorkMutation {
@@ -269,6 +324,20 @@ pub(crate) fn begin_immediate<'connection>(
     test_policy::before_acquisition();
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     Ok((warning, transaction))
+}
+
+/// The refusal of a write its operation's deadline has already passed: a busy
+/// store, as a writer the deadline ended the wait for is.
+fn deadline_passed(elapsed: Duration, allowance: Duration) -> StoreError {
+    admission_error(
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("the operation's time limit ended before the write began".into()),
+        ),
+        true,
+        elapsed,
+        allowance,
+    )
 }
 
 fn admission_error(
@@ -320,3 +389,9 @@ pub(crate) use test_policy::advance_writer_admission_window;
 pub(crate) use test_policy::last_writer_admission_allowance;
 #[cfg(test)]
 pub(crate) use test_policy::with_writer_admission_test_policy;
+#[cfg(test)]
+pub(crate) use test_policy::with_writer_commit_hook;
+#[cfg(test)]
+pub(crate) use test_policy::with_writer_settle_hook;
+#[cfg(test)]
+pub(crate) use test_policy::writer_admission_acquisitions;

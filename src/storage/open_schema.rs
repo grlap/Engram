@@ -54,6 +54,7 @@ mod restore_copy;
 mod store_copy;
 mod verification_applicability;
 use lock_wait::LockWait;
+pub(in crate::storage) use lock_wait::wait_until as wait_for_lock_until;
 #[cfg(test)]
 pub(crate) use lock_wait::with_store_lock_wait;
 use open_guard::OpenGuard;
@@ -147,12 +148,25 @@ impl SqliteStore {
     fn open_existing_read_only_with(path: &Path, retry: ProtocolRetry) -> Result<Self, StoreError> {
         let connection = Self::open_existing_read_only_connection(path)?;
         connection.pragma_update(None, "query_only", true)?;
-        Self::from_connection_with_lock_wait(
+        // Inside an operation's deadline the open's waits end at it, as a
+        // writable open's do; the store keeps its own wait afterwards.
+        let deadline = super::operation_deadline::current();
+        let _deadline = deadline.map(|deadline| lock_wait::CopyWaitScope::enter(Some(deadline)));
+        let ordinary = lock_wait::store_lock_wait();
+        let store = Self::from_connection_with_lock_wait(
             connection,
             None,
-            LockWait::Timeout(lock_wait::store_lock_wait()),
+            if deadline.is_some() {
+                LockWait::CopyDeadline
+            } else {
+                LockWait::Timeout(ordinary)
+            },
             retry,
-        )
+        )?;
+        if deadline.is_some() {
+            store.connection.busy_timeout(ordinary)?;
+        }
+        Ok(store)
     }
 
     /// A read-only SQLite connection to an existing store file, not yet
@@ -616,8 +630,13 @@ impl SqliteStore {
         // lock wait of the open, for the open lock, each statement and each
         // retry, ends when the allowance does: the clock-read wait a copy uses
         // keeps that one expiry, so a busy store is refused while the host
-        // still waits for the answer.
-        let expiry = super::control_runtime::request_budget::expiry();
+        // still waits for the answer. Inside an operation's deadline, such as
+        // an evaluation's, the open's waits end at that deadline, so the open
+        // and the operation's later write share one budget.
+        let expiry = super::operation_deadline::earliest(
+            super::control_runtime::request_budget::expiry(),
+            super::operation_deadline::current(),
+        );
         // An open can wait a minute for another opener or writer. It is its
         // own operation, named even inside a control startup or request.
         let _warning = crate::operation_time::Warning::start("store open");
@@ -1207,6 +1226,14 @@ impl SqliteStore {
                     match lock_wait.retry_pause(limit, std::time::Instant::now()) {
                         Some(pause) => std::thread::sleep(pause),
                         None => return Err(rusqlite::Error::SqliteFailure(error, message).into()),
+                    }
+                    // Inside a clock-read deadline (a copy's, a control
+                    // allowance's or an operation's), read the clock again
+                    // after the pause, so no try comes after the deadline.
+                    if lock_wait == LockWait::CopyDeadline
+                        && limit.is_some_and(|limit| std::time::Instant::now() >= limit)
+                    {
+                        return Err(rusqlite::Error::SqliteFailure(error, message).into());
                     }
                 }
                 Err(error) => return Err(error.into()),

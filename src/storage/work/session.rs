@@ -176,6 +176,134 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
     LIMIT ?6
 ";
 
+/// A focus move written in a transaction, for the word's disclosure once that
+/// transaction commits.
+#[must_use = "record the move once its transaction commits"]
+pub(in crate::storage) struct FocusMove(Option<Moved>);
+
+/// The focus a move left, the item it moved to, and that item's binding.
+struct Moved {
+    from: Option<(WorkId, String)>,
+    to: (WorkId, String),
+    binding: Option<super::focus_journal::FocusBinding>,
+}
+
+impl FocusMove {
+    /// Records the move in the word's focus journal, after the transaction
+    /// that wrote it has committed.
+    pub(in crate::storage) fn record(
+        self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+    ) {
+        if let Some(Moved { from, to, binding }) = self.0 {
+            super::focus_journal::record_move(project_id, session_id, from, to, binding);
+        }
+    }
+}
+
+/// Moves `session_id`'s focus to `item` inside `transaction`, which commits
+/// it with the caller's own write. The caller has checked that `item`
+/// belongs to `project_id`.
+pub(in crate::storage) fn focus_work_session_on(
+    transaction: &Transaction<'_>,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    item: &crate::domain::WorkItem,
+    now: DateTime<Utc>,
+) -> Result<FocusMove, StoreError> {
+    let work_id = item.work_id;
+    // A word that discloses its focus change reads the move here, in the
+    // transaction that writes it; nothing is read without a journal. The
+    // disclosure never refuses the move: a failed read records none.
+    let moved = if super::focus_journal::recording() {
+        let previous = || -> Result<Option<(WorkId, String)>, StoreError> {
+            transaction
+                .query_row(
+                    "SELECT focused_work_id FROM work_session_state
+                     WHERE project_id = ?1 AND session_id = ?2",
+                    params![project_id.0, session_id.0],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten()
+                .map(|stored| {
+                    let previous = load_work_item(transaction, parse_work_id(&stored)?)?;
+                    Ok((previous.work_id, previous.short_ref))
+                })
+                .transpose()
+        };
+        match previous() {
+            Ok(from) if from.as_ref().is_some_and(|(id, _)| *id == work_id) => None,
+            Ok(from) => Some(Moved {
+                from,
+                to: (item.work_id, item.short_ref.clone()),
+                binding: super::focus_journal::focus_binding_on(
+                    transaction,
+                    project_id,
+                    session_id,
+                    item,
+                    now,
+                ),
+            }),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    // A staged change page was projected under the previous focus. A
+    // different focus discards it so the next call recomputes the same
+    // interval under the new visibility basis; nothing is confirmed here.
+    transaction.execute(
+        "UPDATE work_session_state SET
+             tentative_project_cursor = NULL,
+             tentative_delivery_token = NULL,
+             tentative_delivery_payload = NULL
+         WHERE project_id = ?1 AND session_id = ?2
+           AND focused_work_id IS NOT ?3",
+        params![project_id.0, session_id.0, work_id.0.to_string()],
+    )?;
+    transaction.execute(
+        "INSERT INTO work_session_state (
+             project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+         ) VALUES (?1, ?2, ?3, 0, ?4)
+         ON CONFLICT(project_id, session_id) DO UPDATE SET
+             focused_work_id = excluded.focused_work_id,
+             updated_at_ms = excluded.updated_at_ms",
+        params![
+            project_id.0,
+            session_id.0,
+            work_id.0.to_string(),
+            now.timestamp_millis()
+        ],
+    )?;
+    Ok(FocusMove(moved))
+}
+
+impl SqliteStore {
+    /// Whether `session_id` already has its session row in `project_id`, by a
+    /// read alone: a process that reuses a registered process-default session
+    /// owes no registration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the row cannot be read.
+    pub(crate) fn work_session_row_exists(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+    ) -> Result<bool, StoreError> {
+        Ok(self.connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_session_state
+                 WHERE project_id = ?1 AND session_id = ?2
+             )",
+            params![project_id.0, session_id.0],
+            |row| row.get::<_, i64>(0),
+        )? == 1)
+    }
+}
+
 /// Registers a fresh process-default session inside `transaction`: it
 /// reclaims idle process-default sessions past retention and inserts this
 /// session's row, unless the row exists. Returns whether it registered. The
@@ -1112,79 +1240,9 @@ impl SqliteStore {
                 "focused work must belong to the bound project".into(),
             ));
         }
-        // A word that discloses its focus change reads the move here, in the
-        // transaction that writes it; nothing is read without a journal. The
-        // disclosure never refuses the move: a failed read records none.
-        let moved = if super::focus_journal::recording() {
-            let previous = || -> Result<Option<(WorkId, String)>, StoreError> {
-                transaction
-                    .query_row(
-                        "SELECT focused_work_id FROM work_session_state
-                         WHERE project_id = ?1 AND session_id = ?2",
-                        params![project_id.0, session_id.0],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .optional()?
-                    .flatten()
-                    .map(|stored| {
-                        let previous = load_work_item(&transaction, parse_work_id(&stored)?)?;
-                        Ok((previous.work_id, previous.short_ref))
-                    })
-                    .transpose()
-            };
-            match previous() {
-                Ok(from) if from.as_ref().is_some_and(|(id, _)| *id == work_id) => None,
-                Ok(from) => Some((
-                    from,
-                    super::focus_journal::focus_binding_on(
-                        &transaction,
-                        project_id,
-                        session_id,
-                        &item,
-                        now,
-                    ),
-                )),
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-        // A staged change page was projected under the previous focus. A
-        // different focus discards it so the next call recomputes the same
-        // interval under the new visibility basis; nothing is confirmed here.
-        transaction.execute(
-            "UPDATE work_session_state SET
-                 tentative_project_cursor = NULL,
-                 tentative_delivery_token = NULL,
-                 tentative_delivery_payload = NULL
-             WHERE project_id = ?1 AND session_id = ?2
-               AND focused_work_id IS NOT ?3",
-            params![project_id.0, session_id.0, work_id.0.to_string()],
-        )?;
-        transaction.execute(
-            "INSERT INTO work_session_state (
-                 project_id, session_id, focused_work_id, project_cursor, updated_at_ms
-             ) VALUES (?1, ?2, ?3, 0, ?4)
-             ON CONFLICT(project_id, session_id) DO UPDATE SET
-                 focused_work_id = excluded.focused_work_id,
-                 updated_at_ms = excluded.updated_at_ms",
-            params![
-                project_id.0,
-                session_id.0,
-                work_id.0.to_string(),
-                now.timestamp_millis()
-            ],
-        )?;
+        let moved = focus_work_session_on(&transaction, project_id, session_id, &item, now)?;
         transaction.commit()?;
-        if let Some((from, binding)) = moved {
-            super::focus_journal::record_move(
-                project_id,
-                session_id,
-                from,
-                (item.work_id, item.short_ref.clone()),
-                binding,
-            );
-        }
+        moved.record(project_id, session_id);
         self.work_session_state(project_id, session_id, now)
     }
 

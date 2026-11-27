@@ -94,6 +94,12 @@ pub(crate) use writer_admission::begin_immediate;
 pub(crate) use writer_admission::last_writer_admission_allowance;
 #[cfg(test)]
 pub(crate) use writer_admission::with_writer_admission_test_policy;
+#[cfg(test)]
+pub(crate) use writer_admission::with_writer_commit_hook;
+#[cfg(test)]
+pub(crate) use writer_admission::with_writer_settle_hook;
+#[cfg(test)]
+pub(crate) use writer_admission::writer_admission_acquisitions;
 mod status;
 pub(in crate::storage) mod task_sync;
 pub(crate) use status::SelectedStatusNote;

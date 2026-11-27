@@ -117,10 +117,15 @@ impl LiveCurrency {
         {
             let workspace = &candidate.evidence.source_basis.workspace_id;
             result.roots.entry(workspace.clone()).or_insert_with(|| {
-                let observation = crate::source::inspect(
-                    std::path::Path::new(workspace),
-                    crate::source::MAX_BUDGET,
-                );
+                // Inside an operation's deadline the read gets what remains of
+                // it, so the read and the write after it share one budget.
+                let budget = crate::storage::operation_deadline::cap(crate::source::MAX_BUDGET);
+                if budget.is_zero() {
+                    return Err(
+                        "the operation's time limit ended before the source read".to_owned()
+                    );
+                }
+                let observation = crate::source::inspect(std::path::Path::new(workspace), budget);
                 observation
                     .source_id
                     .map(|source_id| Measurement {
