@@ -18,12 +18,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "superseded",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
-  "superseded_by": null,
-  "disposal_reason": null,
+  "superseded_by": "01a219ff-5da1-7ac1-90a3-33d337c8b9e5",
+  "disposal_reason": "Third duplicate of the launcher-stop item; canonical is WinB's w-33d337c8b9e5 (Fable-WinB #44). Coder3 copied this item's verification detail onto the canonical item: exact commit, Windows Job supervisor, descendant cleanup, terminal stopped summary, retained source observations, and foreground/POSIX behaviour unchanged. One implementation, owner Engram::Codex-WinB-Coder3.",
   "completion": null
 }

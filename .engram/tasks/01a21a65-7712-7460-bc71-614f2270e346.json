@@ -1,0 +1,30 @@
+{
+  "id": "01a21a65-7712-7460-bc71-614f2270e346",
+  "external_ref": null,
+  "title": "Correct task-sync recovery commands and import wording that W45's round-3 review flagged",
+  "outcome": "Correct task-sync recovery commands and import wording that W45's round-3 review flagged",
+  "acceptance": [
+    "The saved-basis recovery command that a task-sync folder import refusal prints (src/task_sync/data_worktree.rs) keeps a non-default --branch, so an import started with --branch planning-data names that branch in its remedy",
+    "The inventory-root mismatch refusal an ordinary folder import reaches (VerifiedTaskDelta::require_root, src/task_sync/git/delta/verified.rs) names `--rebuild --basis OWN_EXPORT/project.json` with this host's saved export envelope, not a bare --rebuild that import refuses",
+    "docs/features/git-task-sync.md states that only the legacy Written route re-reads this host's exported tasks; an ordinary import adopts them through own-export confirmation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

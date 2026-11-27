@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-evaluation-on-engram-2026-11-09",
+    "revision_id": "09355e21311340b7956be30ed546d7b5",
+    "previous": "46515bc853f4496c93dc6dba9b646754",
+    "body_sha256": "4a0b9c8b7434897282253999c671fef80c859ff063c8475e7626e66eacef3da0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T00:24:14.391882600Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 07:06Z, via Asistant 43498a6e #748, verbatim: „Wlącz dla Engram.” Scope per Asistant: Engram only, independent evaluator, other projects unchanged. Applied by Engram::Fable at 07:07:38Z on the Central store, project github.com/grlap/Engram: allowed_modes [independent_session], mechanical_basis asserted, require_source_freshness false, epoch 8, policy 44a3d711. Engram has no store on any other host. So on Engram `done` needs an independent evaluation, and where this differs, it replaces \"evaluation is off\" in rules-greg-control section 3, rules-greg-broken-evaluation-not-blocker-2026-11-01 and rules-authority-and-landing for this project only. Other projects stay off until his word. Basis: proof w-46e8594c7e7e, one run each way on a test-bound criterion.\n\nWINDOWS B (rev 2, Engram::Fable, 2026-11-27). The WinB Engram store (C:\\Users\\Greg\\.engram, created under „Tak dla Engram na Window B.” #2124) did not receive this policy at set-up: it read epoch 1, allowed_modes []. At Fable's request (relay #58), Fable-WinB (WinB session-27) applied the same policy at 00:23:01.519Z: allowed_modes [independent_session], mechanical_basis asserted, require_source_freshness false, epoch 2, policy c86b1755. This carries out the same word; it is not a new grant. Every new Engram host store needs the same policy before its first evaluated done."
+}

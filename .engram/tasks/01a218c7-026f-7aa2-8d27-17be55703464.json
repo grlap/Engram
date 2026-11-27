@@ -13,7 +13,8 @@
   "kind": "task",
   "priority": 1,
   "labels": [
-    "greg-directed"
+    "greg-directed",
+    "ready-to-land"
   ],
   "assigned_to": null,
   "deferred_until": null,

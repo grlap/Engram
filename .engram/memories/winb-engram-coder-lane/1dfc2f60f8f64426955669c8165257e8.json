@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "winb-engram-coder-lane",
+    "revision_id": "1dfc2f60f8f64426955669c8165257e8",
+    "previous": "bd0b42981900478c83c35e9b63b7dd2b",
+    "body_sha256": "5582e9961b507dee060522a65fec7831d01b1479eb1f0e8ecc185463260df496",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T00:21:33.185013500Z"
+    }
+  },
+  "body": "Windows B Engram coding lane. Rev 2 by Engram::Fable, 2026-11-27: rev 1's slot and FULL lines were stale, and winb-engram-lane-procedure (rev 5 or later) governs every WinB Engram coder.\nNative session-13 (Engram::Codex-WinB-Coder) runs Codex gpt-6.2-sol at high reasoning effort. Its workdir is C:\\GitHub\\Personal\\Engram-runner. The WinB-local Engram store exchanges task and memory text through engram-data. Claims stay local to Windows B, so this lane takes only items named by Engram::Fable or Engram::Fable-WinB (WinB session-27).\nFor every cargo job, send START to Fable-WinB, wait for its named grant, then send END. This follows the WinB cargo budget, TermAl memory winb-cargo-budget-2026-11-26.\nStrict Clippy and FULL run on WinB in the granted slot. A WinB FULL counts with equal weight. If a FULL stops only at Clippy, Greg's #1396 practice applies: run the remaining stages as focused legs on the same commit."
+}

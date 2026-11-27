@@ -11,9 +11,10 @@
   "acceptance_bindings": [],
   "evaluation_mode": null,
   "kind": "bug",
-  "priority": 3,
+  "priority": 1,
   "labels": [
     "cutover",
+    "gate",
     "review-followup",
     "testing"
   ],

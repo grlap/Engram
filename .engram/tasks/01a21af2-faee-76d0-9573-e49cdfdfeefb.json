@@ -1,0 +1,29 @@
+{
+  "id": "01a21af2-faee-76d0-9573-e49cdfdfeefb",
+  "external_ref": null,
+  "title": "Show how to choose a publication-safe Git identity before manual task-sync commits",
+  "outcome": "The engram-use skill shows operators how to choose and verify their project's approved Git author, committer and signing settings before creating manual task-sync commits.",
+  "acceptance": [
+    "The guidance applies to first-host publication, manual export refresh and manual reconciliation commits, and gives a usable per-command example scoped to the data worktree.",
+    "Operators can check the actual author and committer identity before committing, including any environment override, and understand which identity and signing details the destination may expose. The guidance grants no extra publication or configuration authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "disclosure",
+    "docs",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
