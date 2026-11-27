@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-act-holds-2026-11-12",
+    "revision_id": "c73a6661d8aa4ce9ae2291ecddd97df6",
+    "previous": "b0a7317f4f5140bdbd92886d27ee8f42",
+    "body_sha256": "38265988a5b784c05c2749e1b6855335c0059ab87ac38a062401e6888a0ffeab",
+    "retiring_target": {
+      "kind": "local",
+      "work_id": "01a1d134-0092-7331-a385-761908cf1e2a",
+      "work_ref": "w-761908cf1e2a"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T03:33:59.956646900Z"
+    }
+  },
+  "body": "GREG-ACT HOLDS, shared by Engram and TermAl. This is an addition to item 8 of rules-waits-and-wakes, which is at its size limit.\nAgreed: 2026-11-12, both coordinators concurred (Termal::Fable2 ebe242f7 #7690; Engram::Fable #7691). Tracked as Engram w-761908cf1e2a and TermAl w-bebbae70639c.\nWhy: all lanes sat idle on 2026-11-12 from 17:35Z to 19:15Z. Asistant had told Greg: „To nadal zapowiedź — na razie niczego nie zatrzymuj. Zespół prześle polecenia i sygnał ‘restart now’ po sprawdzeniu paczki oraz wyciszeniu hostów.” Greg waited for that signal as told. The signal and the instructions went only to Advisor and never reached his conversation with Asistant (Asistant #1006). That was OUR communication failure, not Greg's. Nobody checked at the deadline. Greg (Asistant #1003): „nie ma bledow, znaczy ze agenci sie sa utknieci na bledach / jest blad komunikacji, nikt nie podjal pracy”.\nTEXT, verbatim: No drain or hold for a Greg act (restart or cutover) starts until Greg himself has replied that he is ready, through Engram::Asistant; sending the request starts no hold. Any drain or hold that waits on a Greg act then has an absolute deadline: the agreed start plus 15 minutes. Each coordinator sets a real scheduled wake for that deadline in its own session (Claude CronCreate one-shot or the Codex equivalent). If the session restarts, it sets the wake again on recovery. On waking, it checks the actual host state: process start times, installed binary hash, backup and log directories. If the act has not started, it lifts the hold, tells every waiting session to resume, and tells Greg through Asistant. Every request for a Greg act goes through Engram::Asistant (his direct channel) as well as Advisor, says in plain words that Greg must perform it and when, and asks him to reply „zaczynam” when he starts.\n\nREV 3 (2026-11-13 03:56Z). Both coordinators concur: Engram::Fable in ebe242f7 #7760, Termal::Fable2 in #7762. The change follows Greg's no-watcher word (Asistant #1068) and Kimi #232. The deadline wake is a one-shot wake for a fixed-time named event (rules-push-handoff point 6), set only after Greg's „zaczynam”. It never recurs, never polls, and nothing else depends on it. Independent work is never blocked while waiting. Resume or lift the hold on the first concrete event: Greg's reply, the act's completion signal, or the deadline wake finding no evidence that the act started. Why keep it: after „zaczynam” other work really is held, and Greg's act sends no completion signal. Without this wake, the silent idle of 17:35–19:15Z on 2026-11-12 would return. Greg may overrule it.\n\nREV 4 (2026-11-21). WHERE A HOLD LIVES. Agreed by Engram::Fable and Termal::Fable2 (ebe242f7 #8458/#8459); it replaces the cancelled TermAl w-ddb9097937b9. A hold that must outlive a message is a blocker on the item it holds (`update --blocked` with its text, then `unblock`); mail only points to it. A hold with no item blocker has no force once its stated review time has passed. Why: the Mac runner enforced the ENGRAM ROLLBACK HOLD (Opus2 #561, 2026-11-12) a week after both coordinators ended it (#7794/#7795, 2026-11-13), because the hold lived only in mail and a local file. No new mechanism.\n\nREV 5 (2026-11-27 03:35Z). Both coordinators concur: Termal::Fable2 proposed it in ebe242f7 #8977, and Engram::Fable concurred in #8978. The wake check in TEXT now reads \"it checks the actual host state: the host-lifecycle record (GET /api/diagnostics/host-lifecycle), the installed binary hash, backup and log directories\". That replaces \"process start times, installed binary hash, backup and log directories\", because Greg has since banned process listings, start times and mtimes. This narrows the rule; it doesn't widen it. The deadline stays the agreed start plus 15 minutes."
+}

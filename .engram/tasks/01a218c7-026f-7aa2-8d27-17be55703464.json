@@ -5,7 +5,7 @@
   "outcome": "Teach the engram-use skill the one-command `engram task-sync sync`",
   "acceptance": [
     "The engram-use skill's task-sync section leads with `engram task-sync sync` as the ordinary routine for an enrolled host: its prerequisites (data worktree initialized and one import done), defaults (`--remote origin`, `--branch engram-data`), `--no-push` with a disclosure review before publishing, what it does on a fast-forward, a divergent merge and one rejected push, and when it stops (Git conflict, held or refused import) with the retry rule of repeating the same command with all its options after resolving the reported issue. The section tells operators to coordinate one writer at a time per local data folder, states that the remote may be public, and rules out force-push, rebase and blind retry.",
-    "The skill states, as the shipped docs do, that a branch holding project memories still uses the explicit export and import commands with `--include-memories`, and keeps the existing manual steps only for that case, for first-host publishing, joining a host and recovery, without restating behaviour the command does not have. It also states that live claims, delivery state and private scratch stay local, and that conflict-free committed task-file deletions retire task IDs.",
+    "The skill explains automatic exchange for an enrolled memory-profile branch, deliberate first opt-in with `sync --include-memories`, and the `--include-memories` flag for explicit export/import on such branches. It keeps manual steps for first-host publishing, joining, previews and recovery. Live claims, delivery state and private scratch stay local, and conflict-free committed task-file deletions retire IDs.",
     "Every statement in the changed skill text matches docs/features/git-task-sync.md and the shipped command; the link check passes and the Markdown-only change gets the two-reviewer review"
   ],
   "acceptance_bindings": [],
@@ -13,8 +13,7 @@
   "kind": "task",
   "priority": 1,
   "labels": [
-    "greg-directed",
-    "ready-to-land"
+    "greg-directed"
   ],
   "assigned_to": null,
   "deferred_until": null,

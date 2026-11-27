@@ -1,0 +1,29 @@
+{
+  "id": "01a21b33-b668-7042-bf77-fd9785fee542",
+  "external_ref": null,
+  "title": "Find and fix the STATUS_HEAP_CORRUPTION crash of the engram library test binary on Windows B",
+  "outcome": "Find and fix the STATUS_HEAP_CORRUPTION crash of the engram library test binary on Windows B",
+  "acceptance": [
+    "The crashing test (or tests) is identified by a bounded diagnostic run, and the root cause of the 0xc0000374 heap corruption is recorded with evidence",
+    "The defect is fixed in code (not by skipping, ignoring or loosening a test), and the ordinary Rust test stage passes on Windows B with the default runner settings on the fixed commit",
+    "If the cause is in a dependency or the platform, the item records the evidence and the concrete fix or upgrade taken"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
