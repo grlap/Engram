@@ -1,0 +1,30 @@
+{
+  "id": "01a21bf4-9ad7-7890-8e37-a45a8cba7e4c",
+  "external_ref": null,
+  "title": "Order reported lifecycle disposals by the local parent chain so a refused same-root move can't abort the import",
+  "outcome": "Order reported lifecycle disposals by the local parent chain so a refused same-root move can't abort the import",
+  "acceptance": [
+    "A behavioural regression test reproduces Codex's case: held R→A→P→M→C with M completed and C optional and open; the folder moves M under R (refused) and cancels P and C, with P's UUID sorting before C's. The import completes with C then P cancelled, or refuses only the affected task by name, instead of aborting with 'reported disposal lost admission'",
+    "Reported completions and disposals are applied in the order of the admitted local hierarchy, as folder removals are",
+    "A behaviour test supersedes onto a replacement this store already holds ended (cancelled locally first): the supersession is Applied, verify_all is healthy and the export equals the resolved tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": "Engram::Opus-WinB-Coder4",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
