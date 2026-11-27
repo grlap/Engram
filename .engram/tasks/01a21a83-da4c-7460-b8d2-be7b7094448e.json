@@ -1,0 +1,27 @@
+{
+  "id": "01a21a83-da4c-7460-b8d2-be7b7094448e",
+  "external_ref": null,
+  "title": "Pass evaluate's absolute deadline into the source observer instead of a remaining duration",
+  "outcome": "Pass evaluate's absolute deadline into the source observer instead of a remaining duration",
+  "acceptance": [
+    "The live source read made inside an evaluate submission (registered_commit_currency.rs and the imported-evidence fallback in applicability.rs) ends no later than the submission's absolute deadline, even when the observer reads the clock later than its caller"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

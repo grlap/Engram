@@ -1,0 +1,27 @@
+{
+  "id": "01a21a84-6f9e-7db3-bfb8-a53f0bdb1dab",
+  "external_ref": null,
+  "title": "Document evaluate's shared one-minute deadline and its busy refusals in shipped and feature docs",
+  "outcome": "Document evaluate's shared one-minute deadline and its busy refusals in shipped and feature docs",
+  "acceptance": [
+    "docs/shipped.md and docs/features/acceptance-evaluation.md state that an evaluate submission's waits (store opens, the shared connection, source reads and the writer) share one deadline of at least one minute; that no write begins and nothing commits after it, the refusal being a busy store that records nothing; and that an exact resend owing nothing answers from a read"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
