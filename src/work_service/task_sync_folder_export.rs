@@ -323,47 +323,44 @@ impl LocalWorkService {
         }
         let proof = confirmation.as_ref().map(|(proof, _)| proof);
         let (plan, memory_bytes, memory_files, clear_capability_staging, publish_memories) =
-            match memories {
-                Some(memories) => {
-                    let (plan, mut captured) = self
-                        .read_store_at(now)?
-                        .plan_task_sync_folder_export_with_memory_confirmation(
-                            &self.project_id,
-                            profile,
-                            rebuild,
-                            memories.selected,
-                            memories.resolutions,
-                            proof,
-                        )?;
-                    withhold_targets_held_out(
-                        &plan,
-                        data,
+            if let Some(memories) = memories {
+                let (mut plan, mut captured) = self
+                    .read_store_at(now)?
+                    .plan_task_sync_folder_export_with_memory_confirmation(
                         &self.project_id,
+                        profile,
+                        rebuild,
                         memories.selected,
-                        &mut captured,
+                        memories.resolutions,
+                        proof,
                     )?;
-                    let admitted = (memories.admit)(captured)?;
-                    (
-                        plan,
-                        Some(admitted.bytes),
-                        admitted.files,
-                        admitted.clear_capability_staging,
-                        Some(admitted.publish),
-                    )
-                }
-                None => (
-                    self.read_store_at(now)?
-                        .plan_task_sync_folder_export_with_confirmation(
-                            &self.project_id,
-                            profile,
-                            rebuild,
-                            proof,
-                        )?,
-                    None,
-                    BTreeMap::new(),
-                    None,
-                    None,
-                ),
+                return_named_removals(&mut plan, data, &self.project_id)?;
+                withhold_targets_held_out(
+                    &plan,
+                    data,
+                    &self.project_id,
+                    memories.selected,
+                    &mut captured,
+                )?;
+                let admitted = (memories.admit)(captured)?;
+                (
+                    plan,
+                    Some(admitted.bytes),
+                    admitted.files,
+                    admitted.clear_capability_staging,
+                    Some(admitted.publish),
+                )
+            } else {
+                let mut plan = self
+                    .read_store_at(now)?
+                    .plan_task_sync_folder_export_with_confirmation(
+                        &self.project_id,
+                        profile,
+                        rebuild,
+                        proof,
+                    )?;
+                return_named_removals(&mut plan, data, &self.project_id)?;
+                (plan, None, BTreeMap::new(), None, None)
             };
         let (planned, parent_paths) = if plan.complete {
             let (route, mut files, tree, task_bytes) = self.complete(&plan, data, rebuild)?;
@@ -1177,7 +1174,8 @@ impl LocalWorkService {
     /// whose planning changed here too gets this host's version instead. A
     /// held task whose file is gone from the folder is restored from the
     /// commit the last import recorded; one absent there too was removed by
-    /// that host.
+    /// that host, and stays out unless a task this rebuild writes names it,
+    /// when the plan already counts it conflicted.
     fn complete(
         &self,
         plan: &FolderExportPlan,
@@ -1639,6 +1637,80 @@ fn path(id: WorkId) -> String {
     format!("tasks/{}.json", id.0)
 }
 
+/// On a rebuild, a held task another host removed, which this host kept
+/// because it worked on it, goes back into the folder with this host's
+/// version once a task the rebuild writes names it: the removal is held again
+/// at every import, so the folder could otherwise never carry that reference.
+/// The returned task is written and superseded like a conflicted held one,
+/// and so is any removed task a returned one names in turn.
+fn return_named_removals(
+    plan: &mut FolderExportPlan,
+    data: &DataWorktree,
+    project: &ProjectId,
+) -> Result<()> {
+    let Some((_, head)) = plan.head.as_ref().filter(|_| plan.complete) else {
+        return Ok(());
+    };
+    // The rebuild names the missing commit itself.
+    let Some(source) = head.source.as_ref() else {
+        return Ok(());
+    };
+    let folder = data.checkout.join(".engram");
+    let mut missing = Vec::new();
+    for &id in head.pending.keys() {
+        if !plan.conflicted.contains(&id) && !folder.join(path(id)).try_exists()? {
+            missing.push(id);
+        }
+    }
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let removed = task_sync::git::read_tasks_at(
+        &data.checkout,
+        project,
+        &source.commit,
+        missing,
+        GIT_DEADLINE,
+    )?
+    .into_iter()
+    .filter(|(_, document)| document.is_none())
+    .map(|(id, _)| id)
+    .collect::<BTreeSet<_>>();
+    let references = |document: &TaskDocument| {
+        document
+            .parent_id
+            .into_iter()
+            .chain(document.prerequisites.iter().copied())
+            .chain(document.superseded_by)
+            .collect::<Vec<_>>()
+    };
+    // Every task the rebuild writes with this host's version: one not held,
+    // and a held one whose planning changed here too.
+    let mut to_return = plan
+        .changes
+        .iter()
+        .filter(|(id, _)| !head.pending.contains_key(*id) || plan.conflicted.contains(*id))
+        .filter_map(|(_, document)| document.as_ref())
+        .flat_map(references)
+        .filter(|id| removed.contains(id))
+        .collect::<Vec<_>>();
+    let mut returned = BTreeSet::new();
+    while let Some(id) = to_return.pop() {
+        if let Some(Some(document)) = plan.changes.get(&id)
+            && returned.insert(id)
+        {
+            to_return.extend(
+                references(document)
+                    .into_iter()
+                    .filter(|id| removed.contains(id)),
+            );
+        }
+    }
+    plan.conflicted.extend(&returned);
+    plan.held_owed.retain(|id| !returned.contains(id));
+    Ok(())
+}
+
 /// A memory key whose historical task target the last import holds while the
 /// folder this export writes lacks that task's file, as when another host's
 /// removal of it is held, is withheld whole: a receiving host could not
@@ -1813,12 +1885,46 @@ impl LocalWorkService {
                 .transpose()?;
             written.insert(task_id(relative)?, document);
         }
+        // A task this export writes that names a task whose removal the last
+        // import held. That removal is held again at every import, and no
+        // local command takes every such reference out of a document; a
+        // rebuild writes this host's version of the removed task back.
+        let naming_removed = written
+            .iter()
+            .filter_map(|(id, document)| document.as_ref().map(|document| (*id, document)))
+            .flat_map(|(id, document)| {
+                let removed = |target: &WorkId| matches!(held_documents.get(target), Some(None));
+                let parent = document
+                    .parent_id
+                    .filter(removed)
+                    .map(|target| format!("{} is under {}", id.0, target.0));
+                let prerequisites = document
+                    .prerequisites
+                    .iter()
+                    .filter(move |target| removed(target))
+                    .map(move |target| format!("{} waits on {}", id.0, target.0));
+                let replacement = document
+                    .superseded_by
+                    .filter(removed)
+                    .map(|target| format!("{} is replaced by {}", id.0, target.0));
+                parent.into_iter().chain(prerequisites).chain(replacement)
+            })
+            .collect::<Vec<_>>();
         self.read_store_at(now)?
             .check_task_sync_folder_beside_held(&self.project_id, profile, &held_documents, &written)
             .map_err(|error| {
+                let generic = "resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and write this host's version with `engram task-sync export --rebuild`";
+                let remedy = if naming_removed.is_empty() {
+                    generic.to_owned()
+                } else {
+                    format!(
+                        "a task this host changed names a task another host removed, whose removal every import holds again because this host worked on it ({}); run this export again with `--rebuild` added, which writes this host's version of that task back into the folder beside them, then commit and publish it. For any other inconsistency, {generic}",
+                        naming_removed.join("; ")
+                    )
+                };
                 TaskSyncRefusal::InvalidGraph
                     .invalid(format!(
-                        "this export, together with the tasks the last import held, would publish an inconsistent task graph ({error}); resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and write this host's version with `engram task-sync export --rebuild`"
+                        "this export, together with the tasks the last import held, would publish an inconsistent task graph ({error}); {remedy}"
                     ))
                     .into()
             })
