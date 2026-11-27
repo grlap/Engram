@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "task-sync-multihost-procedure",
+    "revision_id": "4102428e69fd4308bc60d382a2c3a2f4",
+    "previous": "6d20f4c3b656462da16479842f4f6bfb",
+    "body_sha256": "017f6d17c99aed36c927ee2be5210e43285173605554400d0d4fb285fe761464",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.2-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T13:22:00.270880Z"
+    }
+  },
+  "body": "MULTI-HOST engram-data PROCEDURE for memory-capable branches, with Central, Windows B and later DL560 exporting to the same branch. Source: Sol 11330's read-only assessments of bc0628b6 (11d80e0b #1373 and #1374, 2026-11-26 18:20Z and 18:28Z), citing src/task_sync/directory.rs:83-94, src/work_service/task_sync_folder_import.rs:144-155 and :389-397, src/storage/work/task_sync/folder_import.rs:340-348, src/work_service/task_sync_folder_export.rs:876-940 and :985-997, src/work_service/task_sync_sync.rs:351-363, src/bin_support/task_sync.rs:676-745, and docs/features/task-planning-text.md:144-157.\n- SUPPORTED: enrolled stores may alternate exports when they share the project, the note selection and the memory profile. project.json's position, object_kind and object_id are the EXPORTER's local feed cut; a peer overwriting it doesn't break the recipient's incremental basis, which comes from its own recorded head and SQLite cut.\n- EACH LEG:\n  1. Require a clean committed data worktree, fetch, fast-forward if possible.\n  2. IMPORT the incoming tip: `engram task-sync import .engram-data/.engram --include-memories --json`. A held or refused task or a partial memory result stops before export.\n  3. ORDINARY export with `--include-memories`, NEVER a routine --rebuild. A routine --rebuild is recorded as Unbound and leaves NO admitted comparison basis, which is what broke TermAl's Central import of WinB's commit on 2026-11-26. If nothing changed, skip the commit.\n  4. Review, commit the exact output, and CONFIRM it with an ordinary combined import while that commit is still HEAD, before any merge or push.\n  5. Push fast-forward only.\n- DIVERGED: keep both parents. If ONLY project.json conflicts and both envelopes agree on project, notes and memory capability, keep the merging host's (--ours) envelope intact. Resolve task and memory conflicts explicitly, never through the envelope. Commit the merge and import it before pushing.\n- RECOVERY, after an Unbound rebuild:\n  1. Keep the peer tip.\n  2. Run ONE fresh `export --include-memories --rebuild` on top of it. Save its new project.json privately, check that the peer's files stay byte-identical, and commit without publishing.\n  3. `import --rebuild --basis OWN_SAVED/project.json --include-memories`, dry run first.\n  Use the recipient's OWN saved envelope, never the peer's.\n- NOTES do not sync: every exporter is notes-disabled; see w-8b8b95107bd8. A Windows host needs `.engram/** text eol=lf` (bug w-b534c27ad852) or the export refuses after a fetch.\n- ROUTINE: On builds containing the w-bd4bfba779a7 landing (`9ebd6275`), `engram task-sync sync --no-push --json` exchanges tasks and project memories when the enrolled data branch already advertises the memory profile. First opt-in uses `--include-memories`; a host fetching the enabling commit adopts that profile and exports eligible memories in the same run. Review the outgoing commits before pushing the exact reviewed tip. The manual steps above remain available for preview and recovery.\n- Engram's Central routine already uses ordinary export and has an admitted incremental basis: a dry-run import at b70029e6 gave route \"incremental\", changed false. It adds steps 2 and 4: import a peer's tip before exporting, and confirm its own commit."
+}

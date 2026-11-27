@@ -1,0 +1,29 @@
+{
+  "id": "01a21d36-cfbd-7632-9492-db68f828cac3",
+  "external_ref": null,
+  "title": "Cover every reference a task-sync rebuild follows to bring back a removed task, and read the old commit once per rebuild",
+  "outcome": "Cover every reference a task-sync rebuild follows to bring back a removed task, and read the old commit once per rebuild",
+  "acceptance": [
+    "A two-host CLI test shows `export --rebuild` writing back a held removal named (a) by a held task whose planning changed here, (b) as a replacement by a completed or superseded task, and (c) by another returned removed task (a chain of two), each ending in a clean import, export and push on the rebuilding host",
+    "One rebuild export reads the last import's commit for missing held tasks once and shares the result across return selection, memory withholding and restoration"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

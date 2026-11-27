@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-6",
+    "revision_id": "c04a888bca164817b00561ba0fd99666",
+    "previous": null,
+    "body_sha256": "77461c3dd6720f3082334d1cc9742cb603f031163ed55983884ce0f985834ca3",
+    "retiring_target": {
+      "kind": "external",
+      "project": "termal",
+      "reference": "w-a29561736a4b"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T13:24:06.777613700Z"
+    }
+  },
+  "body": "CANONICAL, continued from termal-host-workarounds through -5 (which is full): live TermAl host workarounds for Engram agents (Engram::Fable, 2026-11-27).\n\nCLAUDE LAUNCHES DON'T SETTLE (2026-11-27 13:24Z, Fable2 #9029; TermAl w-a29561736a4b, P1, front of the WinB queue). This extends the PowerShell entry in -5. The Bash tool doesn't settle either: a Claude session's background launcher row ends by task_notification without a locator, so even a Bash background FULL stays \"received\". Case: Coder4's w-aedc run test-ea8f9fba, which passed 12/12. The cost is native credit only: its independent evaluation was still admitted and recorded 3/3 (record 90389634). Until w-a295 lands, prefer a Codex holder's FOREGROUND launch for an evaluation-critical FULL, which settles today. If an evaluation is refused for lack of a registered check, the broken-procedure rule applies. Retire this when w-a295 lands."
+}
