@@ -1,0 +1,29 @@
+{
+  "id": "01a21b01-6658-7f22-abae-aedc1cb982d2",
+  "external_ref": null,
+  "title": "Import a superseded or cancelled task's lifecycle change in task-folder sync instead of refusing it as unsupported_fields",
+  "outcome": "Import a superseded or cancelled task's lifecycle change in task-folder sync instead of refusing it as unsupported_fields",
+  "acceptance": [
+    "An incremental task-folder import applies a peer's supersede (lifecycle, superseded_by, disposal_reason) or cancellation of an existing task the importing store holds open and unclaimed, instead of refusing it as unsupported_fields; a task with live local execution is refused by name with the reason",
+    "An exact replay of the same folder changes nothing, and the export/import round trip between two stores leaves both with the same lifecycle, replacement link and reason",
+    "A behaviour test reproduces the 2026-11-27 case: store A supersedes an open task, exports; store B imports and shows it superseded by the same replacement"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
