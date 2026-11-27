@@ -12,7 +12,8 @@
   "kind": "bug",
   "priority": 3,
   "labels": [
-    "area-storage"
+    "area-storage",
+    "ready-to-land"
   ],
   "assigned_to": "greg/codex",
   "deferred_until": null,

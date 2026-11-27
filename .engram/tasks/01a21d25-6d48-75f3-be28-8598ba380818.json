@@ -1,0 +1,28 @@
+{
+  "id": "01a21d25-6d48-75f3-be28-8598ba380818",
+  "external_ref": null,
+  "title": "Give a working remedy on the host that removed a task when another host's rebuild returns it",
+  "outcome": "Give a working remedy on the host that removed a task when another host's rebuild returns it",
+  "acceptance": [
+    "When host A's `task-sync export --rebuild` returns a task that host B removed and retired, B's import names a remedy that the next command accepts, both for the refused return and for every task held or refused because it names the returned task",
+    "A two-host CLI test follows B's printed remedies through to a clean import, export and push on both hosts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
