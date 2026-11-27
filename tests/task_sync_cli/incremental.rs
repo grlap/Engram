@@ -1178,6 +1178,410 @@ fn task_sync_cli_ordinary_exchange_names_an_exit_for_every_conflict() {
     }
 }
 
+/// The id of the task titled `title` in the folder `host` last exported.
+fn exported_id(host: &Host, title: &str) -> engram::WorkId {
+    directory::read_folder(&host.folder())
+        .unwrap()
+        .tree
+        .tasks
+        .into_iter()
+        .find(|task| task.title == title)
+        .unwrap()
+        .id
+}
+
+/// Hosts A and B, both enrolled on the planning `plan` adds on A, which A
+/// published to their shared remote `origin`.
+fn published_on_a(root: &Path, plan: impl FnOnce(&Host)) -> (Host, Host) {
+    let a = Host::new(root, "a");
+    let b = Host::new(root, "b");
+    let remote = root.join("data.git");
+    fs::create_dir(&remote).unwrap();
+    data_worktree::git(&remote, &["init", "--bare"]);
+    for host in [&a, &b] {
+        host.git(&["remote", "add", "origin", remote.to_str().unwrap()]);
+    }
+    plan(&a);
+    assert_eq!(a.receipt("export", &[])["route"], "bootstrap");
+    let a_basis = root.join("a-basis.json");
+    fs::copy(a.folder().join("project.json"), &a_basis).unwrap();
+    a.commit("Publish planning from A");
+    a.receipt("import", &["--basis", a_basis.to_str().unwrap()]);
+    push(&a);
+    b.merge_from(&a);
+    b.receipt("import", &["--empty-basis"]);
+    (a, b)
+}
+
+/// Publish `host`'s data branch to the shared remote, fast-forward only.
+fn push(host: &Host) {
+    host.git(&["push", "origin", "HEAD:refs/heads/engram-data"]);
+    let remote = host.checkout().parent().unwrap().join("data.git");
+    let tip = data_worktree::git(&remote, &["rev-parse", "refs/heads/engram-data"]);
+    assert_eq!(String::from_utf8(tip).unwrap().trim(), host.head());
+}
+
+/// The arguments of the backticked command starting with `program` that
+/// `message` prints, without the program itself.
+fn printed_command(message: &str, program: &str) -> Vec<String> {
+    let printed = message
+        .split('`')
+        .find(|part| part.starts_with(program))
+        .unwrap_or_else(|| panic!("{message}"));
+    printed[program.len()..]
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A task held because this host works on it is read again at every import.
+/// A works on `held`, so B's `held_change` waits on A as held. A then makes
+/// its `unpublished` change and, before exporting it, takes B's Newcomer
+/// under `newcomer_parent`: the import refuses and names the set-aside, which
+/// A runs exactly as printed. The tasks `held_change` changed, named by their
+/// titles after it, stay held for A's unpublished planning while the rest of
+/// that import applies; after the export and the revert, releasing `held`
+/// lets them in. Returns Newcomer and the held tasks.
+fn run_printed_set_aside(
+    a: &Host,
+    b: &Host,
+    held: engram::WorkId,
+    held_change: impl FnOnce(&Host) -> Vec<&'static str>,
+    unpublished: impl FnOnce(&Host),
+    newcomer_parent: engram::WorkId,
+) -> (engram::WorkId, Vec<engram::WorkId>) {
+    a.work(&["claim", &held.0.to_string()]);
+    let waiting = held_change(b);
+    assert_eq!(b.receipt("export", &[])["written"], waiting.len());
+    let waiting = waiting
+        .into_iter()
+        .map(|title| exported_id(b, title))
+        .collect::<Vec<_>>();
+    b.commit("Change planning under A's work on B");
+    a.merge_from(b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    unpublished(a);
+    b.work(&["add", "Newcomer", "--under", &newcomer_parent.0.to_string()]);
+    assert_eq!(b.receipt("export", &[])["written"], 1);
+    let newcomer = exported_id(b, "Newcomer");
+    b.commit("Add Newcomer on B");
+    let before_merge = a.head();
+    a.merge_from(b);
+    let merged = a.head();
+    let (code, message) = a.refusal("import", &[]);
+    assert_eq!(code, "task_sync_divergent_planning");
+
+    let aside = set_aside_as_printed(a, &message, &before_merge);
+    let imported = a.sync("import", &[]);
+    assert_eq!(
+        imported.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    let imported: Value = serde_json::from_slice(&imported.stdout).unwrap();
+    let still_held = imported["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|task| task["status"] == "held")
+        .map(|task| {
+            (
+                task["task"].as_str().unwrap().to_owned(),
+                task["reason"].clone(),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        still_held,
+        waiting
+            .iter()
+            .map(|id| (id.0.to_string(), Value::from("local_planning_unpublished")))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    );
+    assert_eq!(a.receipt("export", &[])["written"], 1);
+    a.commit("Publish A's planning");
+    a.git(&["revert", "--no-edit", &aside]);
+    a.work(&[
+        "update",
+        &held.0.to_string(),
+        "--release",
+        "--reason",
+        "B's planning is taken",
+    ]);
+    assert_eq!(a.receipt("import", &[])["route"], "incremental");
+    // The branch only moved forward, both hosts' changes are here, and the
+    // result publishes by fast-forward.
+    a.git(&["merge-base", "--is-ancestor", &merged, "HEAD"]);
+    assert_eq!(a.title(newcomer), "Newcomer");
+    push(a);
+    b.merge_from(a);
+    assert_eq!(b.receipt("import", &[])["route"], "incremental");
+    (newcomer, waiting)
+}
+
+/// The set-aside command a divergence refusal prints, run exactly as given:
+/// it sets aside what the other host added since this host's last import,
+/// which the commit before the merge holds. Returns the set-aside commit.
+fn set_aside_as_printed(host: &Host, message: &str, before_merge: &str) -> String {
+    let restore = printed_command(message, "git ");
+    assert!(
+        restore.contains(&format!("--source={before_merge}")),
+        "{message}"
+    );
+    host.git(&restore.iter().map(String::as_str).collect::<Vec<_>>());
+    host.git(&["commit", "-m", "Set the other host's planning aside"]);
+    host.head()
+}
+
+#[test]
+fn task_sync_cli_the_printed_set_aside_works_beside_a_held_task() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        let parent = a.add_ref("Parent");
+        a.work(&["add", "Sibling", "--under", &parent]);
+        a.work(&["add", "Held", "--under", &parent]);
+    });
+    let (parent, sibling, held) = (
+        exported_id(&a, "Parent"),
+        exported_id(&a, "Sibling"),
+        exported_id(&a, "Held"),
+    );
+    run_printed_set_aside(
+        &a,
+        &b,
+        held,
+        |b| {
+            b.work(&[
+                "update",
+                &held.0.to_string(),
+                "--title",
+                "Held, edited on B",
+            ]);
+            vec!["Held, edited on B"]
+        },
+        |a| {
+            a.work(&[
+                "update",
+                &sibling.0.to_string(),
+                "--title",
+                "Sibling, edited on A",
+            ]);
+        },
+        parent,
+    );
+    assert_eq!(a.title(held), "Held, edited on B");
+    assert_eq!(a.title(sibling), "Sibling, edited on A");
+    assert_eq!(b.title(sibling), "Sibling, edited on A");
+}
+
+/// A prerequisite this host dropped and has not exported still joins the
+/// held task to its dependent in the graph the last import recorded.
+#[test]
+fn task_sync_cli_the_printed_set_aside_works_beside_a_dropped_prerequisite() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        let held = a.add_ref("Held");
+        let dependent = a.add_ref("Dependent");
+        a.work(&["update", &dependent, "--after", &held]);
+    });
+    let (held, dependent) = (exported_id(&a, "Held"), exported_id(&a, "Dependent"));
+    run_printed_set_aside(
+        &a,
+        &b,
+        held,
+        |b| {
+            b.work(&[
+                "update",
+                &held.0.to_string(),
+                "--title",
+                "Held, edited on B",
+            ]);
+            vec!["Held, edited on B"]
+        },
+        |a| {
+            a.work(&[
+                "update",
+                &dependent.0.to_string(),
+                "--drop-after",
+                &held.0.to_string(),
+            ]);
+        },
+        dependent,
+    );
+    assert_eq!(a.title(held), "Held, edited on B");
+    let prerequisites = |host: &Host| {
+        SqliteStore::open(project_database_path(
+            &host.home,
+            &ProjectId(PROJECT.into()),
+        ))
+        .unwrap()
+        .work_prerequisites(dependent)
+        .unwrap()
+        .len()
+    };
+    assert_eq!((prerequisites(&a), prerequisites(&b)), (0, 0));
+}
+
+/// A task added under the held task waits with it, and so does one added
+/// under that addition, which this host's graph would otherwise lack.
+#[test]
+fn task_sync_cli_the_printed_set_aside_keeps_additions_under_a_held_task_together() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        let parent = a.add_ref("Parent");
+        a.work(&["add", "Sibling", "--under", &parent]);
+        a.work(&["add", "Held", "--under", &parent]);
+    });
+    let (parent, sibling, held) = (
+        exported_id(&a, "Parent"),
+        exported_id(&a, "Sibling"),
+        exported_id(&a, "Held"),
+    );
+    let (_, added) = run_printed_set_aside(
+        &a,
+        &b,
+        held,
+        |b| {
+            let output = work(
+                &b.home,
+                &b.marker,
+                &["add", "Child", "--under", &held.0.to_string(), "--json"],
+            );
+            let child: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let child = child["work"]["short_ref"].as_str().unwrap();
+            b.work(&["add", "Grandchild", "--under", child]);
+            vec!["Child", "Grandchild"]
+        },
+        |a| {
+            a.work(&[
+                "update",
+                &sibling.0.to_string(),
+                "--title",
+                "Sibling, edited on A",
+            ]);
+        },
+        parent,
+    );
+    let titles = added.iter().map(|id| a.title(*id)).collect::<Vec<_>>();
+    assert_eq!(titles, ["Child", "Grandchild"]);
+    assert_eq!(b.title(sibling), "Sibling, edited on A");
+}
+
+/// A task this host changed and has not exported is never held back with a
+/// held task: when the other host links it to a held addition, the import
+/// still refuses, and this host's change stays.
+#[test]
+fn task_sync_cli_a_link_to_a_held_addition_from_planning_changed_here_refuses() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        let parent = a.add_ref("Parent");
+        a.work(&["add", "Linked", "--under", &parent]);
+        a.work(&["add", "Held", "--under", &parent]);
+    });
+    let (linked, held) = (exported_id(&a, "Linked"), exported_id(&a, "Held"));
+    a.work(&["claim", &held.0.to_string()]);
+    let output = work(
+        &b.home,
+        &b.marker,
+        &["add", "Child", "--under", &held.0.to_string(), "--json"],
+    );
+    let child: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let child = child["work"]["short_ref"].as_str().unwrap().to_owned();
+    assert_eq!(b.receipt("export", &[])["written"], 1);
+    b.commit("Add Child under Held on B");
+    a.merge_from(&b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    a.work(&[
+        "update",
+        &linked.0.to_string(),
+        "--title",
+        "Linked, renamed on A",
+    ]);
+    b.work(&["update", &linked.0.to_string(), "--after", &child]);
+    assert_eq!(b.receipt("export", &[])["written"], 1);
+    b.commit("Make Linked wait on Child on B");
+    a.merge_from(&b);
+    let (code, _) = a.refusal("import", &[]);
+    assert_eq!(code, "task_sync_divergent_planning");
+    assert_eq!(a.title(linked), "Linked, renamed on A");
+}
+
+/// A removal another host made stays held once this host has worked on the
+/// task. When this host also makes another task name it, every refusal on
+/// the printed path names an exit the next step takes: the set-aside, then
+/// this host's own version, through to an import and a push.
+#[test]
+fn task_sync_cli_the_printed_set_aside_works_beside_a_held_removal() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        let parent = a.add_ref("Parent");
+        a.work(&["add", "Linked", "--under", &parent]);
+        a.work(&["add", "Removed", "--under", &parent]);
+    });
+    let (parent, linked, removed) = (
+        exported_id(&a, "Parent"),
+        exported_id(&a, "Linked"),
+        exported_id(&a, "Removed"),
+    );
+
+    // A works on Removed; B removes it, so A holds the removal.
+    a.work(&["claim", &removed.0.to_string()]);
+    fs::remove_file(b.folder().join("tasks").join(format!("{}.json", removed.0))).unwrap();
+    b.commit("Remove Removed on B");
+    b.receipt("import", &[]);
+    a.merge_from(&b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    // A makes Linked wait on Removed and, before exporting it, takes B's
+    // new child of Parent: the import refuses and names the set-aside.
+    a.work(&[
+        "update",
+        &linked.0.to_string(),
+        "--after",
+        &removed.0.to_string(),
+    ]);
+    b.work(&["add", "Newcomer", "--under", &parent.0.to_string()]);
+    assert_eq!(b.receipt("export", &[])["written"], 1);
+    let newcomer = exported_id(&b, "Newcomer");
+    b.commit("Add Newcomer on B");
+    let before_merge = a.head();
+    a.merge_from(&b);
+    let merged = a.head();
+    let (code, message) = a.refusal("import", &[]);
+    assert_eq!(code, "task_sync_divergent_planning");
+    let aside = set_aside_as_printed(&a, &message, &before_merge);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    // The export refuses Linked naming the held removal and names this
+    // host's version as the exit; run as printed, it publishes.
+    let (code, message) = a.refusal("export", &[]);
+    assert_eq!(code, "task_sync_invalid_graph");
+    let export = printed_command(&message, "engram task-sync export");
+    a.receipt(
+        "export",
+        &export.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    a.commit("Publish A's version");
+    a.git(&["revert", "--no-edit", &aside]);
+    assert_eq!(a.receipt("import", &[])["route"], "incremental");
+    a.git(&["merge-base", "--is-ancestor", &merged, "HEAD"]);
+    assert_eq!(a.title(newcomer), "Newcomer");
+    assert_eq!(a.title(removed), "Removed");
+    let prerequisites =
+        SqliteStore::open(project_database_path(&a.home, &ProjectId(PROJECT.into())))
+            .unwrap()
+            .work_prerequisites(linked)
+            .unwrap()
+            .into_iter()
+            .map(|item| item.work_id)
+            .collect::<Vec<_>>();
+    assert_eq!(prerequisites, [removed]);
+    push(&a);
+}
+
 #[test]
 fn task_sync_cli_complete_import_keeps_a_retained_local_task_owed_to_the_export() {
     let fixture = test_support::temp_home().unwrap();

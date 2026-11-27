@@ -334,7 +334,19 @@ not applied here is lost. To keep the other host's version instead, undo the
 local change and import again. Resolve
 why each other task was held here, for example by releasing the claim, then
 import again: every import reads the held tasks again at its incoming commit,
-so a partial first import retries incrementally too. A complete import also
+so a partial first import retries incrementally too. A held task whose own
+planning is unchanged but whose component, in this host's planning or in the
+graph the last import recorded, holds local planning no export has published
+yet stays held as `local_planning_unpublished`, together with any other held
+task that names it, and the rest of the import applies; export and commit
+that planning, and the next import retries them. Only tasks already held are
+held this way, and when the rest would not form a valid graph without them the
+import refuses as before. So the set-aside a divergence refusal names gets
+past its own import beside a held task. A removal another host made is held
+for good once this host has worked on the task; when a task this host changed
+names such a task, the export refuses and names the exits that work:
+`export --rebuild` writes this host's version, which keeps the task and lists
+the removal as superseded, or the reference is dropped here before exporting. A complete import also
 records, as owed to the next export, every local task it kept that the folder
 leaves out or holds differently.
 

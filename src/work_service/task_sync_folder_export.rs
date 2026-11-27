@@ -1813,12 +1813,36 @@ impl LocalWorkService {
                 .transpose()?;
             written.insert(task_id(relative)?, document);
         }
+        // A task this export writes that names a task whose removal the last
+        // import held: another import holds that removal again, so only this
+        // host's own version, or dropping the reference, resolves it.
+        let naming_removed = written
+            .iter()
+            .filter_map(|(id, document)| document.as_ref().map(|document| (id, document)))
+            .flat_map(|(id, document)| {
+                document
+                    .parent_id
+                    .into_iter()
+                    .chain(document.prerequisites.iter().copied())
+                    .chain(document.superseded_by)
+                    .filter(|target| matches!(held_documents.get(target), Some(None)))
+                    .map(move |target| format!("{} names {}", id.0, target.0))
+            })
+            .collect::<Vec<_>>();
         self.read_store_at(now)?
             .check_task_sync_folder_beside_held(&self.project_id, profile, &held_documents, &written)
             .map_err(|error| {
+                let remedy = if naming_removed.is_empty() {
+                    "resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and write this host's version with `engram task-sync export --rebuild`".to_owned()
+                } else {
+                    format!(
+                        "{}, a task another host removed while this host holds it, and every import holds that removal again: write this host's version with `engram task-sync export --rebuild`, which keeps the task and lists the removal as superseded, or drop that reference here and export again",
+                        naming_removed.join("; ")
+                    )
+                };
                 TaskSyncRefusal::InvalidGraph
                     .invalid(format!(
-                        "this export, together with the tasks the last import held, would publish an inconsistent task graph ({error}); resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and write this host's version with `engram task-sync export --rebuild`"
+                        "this export, together with the tasks the last import held, would publish an inconsistent task graph ({error}); {remedy}"
                     ))
                     .into()
             })
