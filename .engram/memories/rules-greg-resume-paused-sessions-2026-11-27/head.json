@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-resume-paused-sessions-2026-11-27",
+  "head": {
+    "state": "active",
+    "chain": [
+      "ce8dcd0e139345029dabd54fab9fe067"
+    ]
+  }
+}

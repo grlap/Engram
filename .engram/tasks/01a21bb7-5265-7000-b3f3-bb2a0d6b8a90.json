@@ -1,0 +1,29 @@
+{
+  "id": "01a21bb7-5265-7000-b3f3-bb2a0d6b8a90",
+  "external_ref": null,
+  "title": "Let a caller replay an attributed note with its own idempotency key",
+  "outcome": "Let a caller replay an attributed note with its own idempotency key",
+  "acceptance": [
+    "An attributed note call that carries a caller-supplied idempotency key returns the same note locator on an identical retry and appends no second note",
+    "The keyed note keeps the non-holder observation route: a project-bound non-holder may still note open or blocked work, and a completed item still accepts a late note",
+    "The same key with different note content is refused with a stated reason instead of appending"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "termal-request"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

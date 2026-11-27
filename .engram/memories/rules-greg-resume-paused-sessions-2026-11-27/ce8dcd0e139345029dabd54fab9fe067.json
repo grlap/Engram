@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-resume-paused-sessions-2026-11-27",
+    "revision_id": "ce8dcd0e139345029dabd54fab9fe067",
+    "previous": null,
+    "body_sha256": "036ff14216e8d58e11857eec61db6eb9d12a39dfb816a3af08985706eeaaf11e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-27T06:17:55.437406200Z"
+    }
+  },
+  "body": "GREG, 2026-11-27 about 06:17Z, relayed by Engram::Asistant (mailbox 43498a6e #2178, message b8bd2540), verbatim: „moga wznawiac sesje jak chca, jak przestana niech utworza nowa i mnie poinformuja”. It covers both projects, including Coder3 on Windows B.\nRULE:\n- Teams may resume a session whose queue was paused (for example by a provider refusal) on their own, with no per-session approval. Use TermAl's single-session queue resume.\n- If resuming doesn't help, create a new session for the work and inform Greg through Asistant.\n- Asistant's conditions: never work around a provider refusal. Report a repeated refusal with its reason. Don't move a refused action elsewhere just to get past the control.\nContext: on 2026-11-27, provider refusals paused TermAl's Sol-edfd (04:01Z), Engram::Fable-WinB (session-27) and Engram::Codex-WinB-Coder3 (session-22). Before this word Greg approved each resume one by one (#2173 „Tak możemy spróbować…”, #2176 „tak, wznawiaj”)."
+}
