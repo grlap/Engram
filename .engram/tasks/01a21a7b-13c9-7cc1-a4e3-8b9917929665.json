@@ -1,0 +1,27 @@
+{
+  "id": "01a21a7b-13c9-7cc1-a4e3-8b9917929665",
+  "external_ref": null,
+  "title": "Record evaluate's deadline refusals as admission refusals in transaction diagnostics",
+  "outcome": "Record evaluate's deadline refusals as admission refusals in transaction diagnostics",
+  "acceptance": [
+    "With transaction diagnostics on, an evaluate write refused because its operation deadline passed (before BEGIN, at writer acquisition, or before COMMIT) is recorded as an admission refusal, not as nothing or as an acquired-then-rolled-back transaction"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
