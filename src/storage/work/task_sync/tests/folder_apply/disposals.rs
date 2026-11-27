@@ -57,6 +57,107 @@ fn native_dispose(
 }
 
 #[test]
+fn a_refused_move_does_not_reorder_a_parents_disposal_before_its_held_descendant() {
+    // Held R -> A -> P -> M -> C, with M completed and C optional and open.
+    // The folder moves M under R, which this store refuses, and cancels P
+    // and C. By the folder's hierarchy P and C are both two levels deep and
+    // P's id sorts first; by the hierarchy this store keeps, C is two levels
+    // below P and must end first.
+    let id = |n: u128| WorkId(uuid::Uuid::from_u128(n));
+    let (r_id, a_id, p_id, m_id, c_id) = (id(1), id(2), id(3), id(4), id(5));
+    let make = |task_id: WorkId, title: &str, parent: Option<WorkId>| {
+        let mut task = document(title, parent);
+        task.id = task_id;
+        task
+    };
+    let mut m = make(m_id, "m", Some(p_id));
+    m.lifecycle = WorkLifecycle::Completed;
+    m.completion = Some(SharedCompletion {
+        summary: "done elsewhere".into(),
+        completed_at: at(2),
+        actor: SharedActor::from_actor(&actor("reported-author")),
+    });
+    let mut c = make(c_id, "c", Some(m_id));
+    c.child_requirement = ChildRequirement::Optional;
+    let mut tasks = vec![
+        make(r_id, "r", None),
+        make(a_id, "a", Some(r_id)),
+        make(p_id, "p", Some(a_id)),
+        m,
+        c,
+    ];
+    tasks.sort_by_key(|task| task.id.0);
+    let tree = TaskTree {
+        project: ProjectDocument {
+            format: FORMAT.into(),
+            project_id: project(),
+            notes_included: false,
+        },
+        tasks,
+    };
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &tree, "enrol", 5).unwrap();
+
+    let resolved = cancelled(
+        &cancelled(
+            &edited(&tree, m_id, |task| task.parent_id = Some(r_id)),
+            p_id,
+            "Dropped elsewhere",
+        ),
+        c_id,
+        "Dropped elsewhere",
+    );
+    let result = exchange(&mut store, &resolved, "refused-move", 6).unwrap();
+    assert_eq!(
+        status(&result, m_id),
+        (
+            TaskSyncTaskStatus::Refused,
+            Some("unsupported_fields".into())
+        )
+    );
+    for task in [c_id, p_id] {
+        assert_eq!(status(&result, task), (TaskSyncTaskStatus::Applied, None));
+        assert_eq!(
+            query::load_work_item(&store.connection, task)
+                .unwrap()
+                .lifecycle,
+            WorkLifecycle::Cancelled
+        );
+    }
+    assert_eq!(
+        query::load_work_item(&store.connection, m_id)
+            .unwrap()
+            .parent_id,
+        Some(p_id)
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn a_supersession_onto_a_replacement_this_store_already_ended_applies() {
+    let (mut store, fixture) = enrolled();
+    // This store cancels the second child before the peer's supersession of
+    // the first by it arrives; the merged folder carries both.
+    native_dispose(&mut store, fixture.second, None, "Ended here", 6);
+    let resolved = superseded(
+        &exported(&store),
+        fixture.first,
+        fixture.second,
+        "Replaced elsewhere",
+    );
+    let result = exchange(&mut store, &resolved, "onto-ended", 7).unwrap();
+    assert_eq!(
+        status(&result, fixture.first),
+        (TaskSyncTaskStatus::Applied, None)
+    );
+    let first = query::load_work_item(&store.connection, fixture.first).unwrap();
+    assert_eq!(first.lifecycle, WorkLifecycle::Superseded);
+    assert_eq!(first.superseded_by, Some(fixture.second));
+    assert_eq!(exported(&store), resolved);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
 fn a_peer_cancellation_and_supersession_apply_as_disposals_and_an_exact_repeat_changes_nothing() {
     let (mut store, fixture) = enrolled();
     let origins = durable(&store);
