@@ -161,17 +161,18 @@ for (const platform of ["win32", "linux"]) {
     { skip: !supported, timeout: 120_000 }, async () => {
       await repository(async (root) => {
         const fixture = rustWrapperFixture(root, platform);
-        const invoke = (args) => {
+        const invoke = (args, env = fixture.env) => {
           if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
           const result = spawnSync(fixture.command, [...fixture.args, ...args],
-            { cwd: root, env: fixture.env, encoding: "utf8", windowsHide: true });
+            { cwd: root, env, encoding: "utf8", windowsHide: true });
           const calls = existsSync(fixture.callsPath) ? json(fixture.callsPath) : [];
           return { result, calls };
         };
         const assertCalls = (args, expected) => {
           const { result, calls } = invoke(args);
           assert.equal(result.status, 0, result.stderr);
-          assert.deepEqual(calls, expected.map((args) => ({ args, cwd: root, threads: "2" })));
+          assert.deepEqual(calls, expected.map((args) => ({ args, cwd: root, threads: "2",
+            ...(platform === "win32" ? { jobs: "2" } : {}) })));
         };
         assertCalls([], rustPhaseCalls(platform));
         for (const phase of ["ordinary", "scale-claims", "scale-roots", "scale-planning"]) {
@@ -180,6 +181,55 @@ for (const platform of ["win32", "linux"]) {
         // Cargo arguments select their own tests, so no isolated pass follows.
         assertCalls(["--lib", "contract", "--", "--exact"], [["--", "cargo", "test", "--lib", "contract", "--", "--exact"]]);
         assertCalls(["--PHASE", "ordinary"], [["--", "cargo", "test", "--PHASE", "ordinary"]]);
+        if (platform === "win32") {
+          const defaults = { ...fixture.env };
+          delete defaults.ENGRAM_TEST_THREADS;
+          const { result, calls } = invoke(["--phase", "ordinary"], defaults);
+          assert.equal(result.status, 0, result.stderr);
+          const threads = calls[0].threads;
+          assert.ok(Number(threads) >= 1 && Number(threads) <= 4);
+          assert.deepEqual(calls.map(({ jobs, threads }) => [jobs, threads]), [["2", threads], ["2", threads]]);
+          assert.match(result.stdout, new RegExp(`build jobs=2, test threads=${threads}`));
+
+          const overrides = { ...fixture.env, CARGO_BUILD_JOBS: "3", ENGRAM_TEST_THREADS: "5", RUST_TEST_THREADS: "6" };
+          const overridden = invoke(["--phase", "scale-roots"], overrides);
+          assert.equal(overridden.result.status, 0, overridden.result.stderr);
+          assert.deepEqual(overridden.calls.map(({ jobs, threads }) => [jobs, threads]), [["3", "5"]]);
+          assert.match(overridden.result.stdout, /build jobs=3, test threads=5/u);
+
+          for (const flags of [["-j7", "--", "--test-threads=8"], ["--jobs", "7", "--", "--test-threads", "8"]]) {
+            const selected = invoke(flags, overrides);
+            assert.equal(selected.result.status, 0, selected.result.stderr);
+            assert.deepEqual(selected.calls[0].args, ["--", "cargo", "test", ...flags]);
+            assert.match(selected.result.stdout, /build jobs=7, test threads=8/u);
+          }
+          const literal = invoke(["--lib", "--", "--", "--test-threads=0"], overrides);
+          assert.equal(literal.result.status, 0, literal.result.stderr);
+          assert.equal(literal.calls[0].threads, "5");
+          assert.deepEqual(literal.calls[0].args, ["--", "cargo", "test", "--lib", "--", "--", "--test-threads=0"]);
+
+          const cargoConfig = invoke(["--config", "build.jobs=8"], defaults);
+          assert.equal(cargoConfig.result.status, 0, cargoConfig.result.stderr);
+          assert.match(cargoConfig.result.stdout, /build jobs=resolved by Cargo \(--config; CARGO_BUILD_JOBS=2\)/u);
+          const clustered = invoke(["-qj7"], defaults);
+          assert.equal(clustered.result.status, 0, clustered.result.stderr);
+          assert.match(clustered.result.stdout, /build jobs=resolved by Cargo \(short options; CARGO_BUILD_JOBS=2\)/u);
+          for (const flags of [["--list", "--test-threads=2147483648"], ["--help", "--test-threads=0"]]) {
+            const passthrough = invoke(["--lib", "--", ...flags], overrides);
+            assert.equal(passthrough.result.status, 0, passthrough.result.stderr);
+            assert.equal(passthrough.calls[0].threads, "5");
+            assert.deepEqual(passthrough.calls[0].args, ["--", "cargo", "test", "--lib", "--", ...flags]);
+          }
+          const invalidEnvironment = invoke(["--phase", "ordinary"], { ...defaults, ENGRAM_TEST_THREADS: "0" });
+          assert.equal(invalidEnvironment.result.status, 2);
+          assert.match(invalidEnvironment.result.stderr, /test thread count must be a positive integer/u);
+          assert.deepEqual(invalidEnvironment.calls, []);
+          for (const jobs of ["default", "-1"]) {
+            const selected = invoke([`--jobs=${jobs}`], defaults);
+            assert.equal(selected.result.status, 0, selected.result.stderr);
+            assert.ok(selected.result.stdout.includes(`build jobs=resolved by Cargo (jobs setting=${jobs})`));
+          }
+        }
         // A failed ordinary run ends the phase before any isolated pass.
         {
           if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
@@ -244,6 +294,26 @@ for (const platform of ["win32", "linux"]) {
       });
     });
 }
+
+test("FULL launcher bounds Windows Cargo jobs in non-Rust stages", { timeout: 120_000 }, async () => {
+  await repository(async (root) => {
+    const { env: defaults } = rustWrapperFixture(root, process.platform);
+    const probe = stage("jobs-env", `console.log(JSON.stringify(Object.entries(process.env)
+      .filter(([key]) => key.toUpperCase() === "CARGO_BUILD_JOBS")))`);
+    const cases = [
+      { full: true, expected: process.platform === "win32" ? [["CARGO_BUILD_JOBS", "2"]] : [] },
+      { full: true, inherited: { Cargo_Build_Jobs: "5" }, expected: [["Cargo_Build_Jobs", "5"]] },
+      { full: false, expected: [] },
+    ];
+    for (const { full, inherited, expected } of cases) {
+      const childEnv = { ...defaults, ...inherited };
+      const runDir = await createRun({ root, full, stages: [probe] }, childEnv);
+      const result = await executeRun(runDir, childEnv);
+      assert.equal(result.state, "passed", await summarize(runDir));
+      assert.deepEqual(json(logPath(runDir, result.stages[0])), expected);
+    }
+  });
+});
 
 test("clean pass retains logs and summarizes without passing-test lists", async () => {
   await repository(async (root) => {

@@ -126,7 +126,7 @@ function rustWrapperFixture(root, platform) {
     import { existsSync, readFileSync, writeFileSync } from 'node:fs';
     const args = process.argv.slice(2);
     const calls = existsSync(process.env.PHASE_CALLS) ? JSON.parse(readFileSync(process.env.PHASE_CALLS, 'utf8')) : [];
-    calls.push({ args, cwd: process.cwd(), threads: process.env.RUST_TEST_THREADS });
+    calls.push({ args, cwd: process.cwd(), threads: process.env.RUST_TEST_THREADS, jobs: process.env.CARGO_BUILD_JOBS });
     writeFileSync(process.env.PHASE_CALLS, JSON.stringify(calls));
     console.log('     Running unittests src/lib.rs (target/debug/deps/fixture)');
     if (process.env.PHASE_ISOLATED_EMPTY && args.includes('data_branch::task_exchange_windows_')) {
@@ -161,8 +161,11 @@ function rustWrapperFixture(root, platform) {
     console.log('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s');
   `);
   const runner = requiredStages(platform)[3];
-  return { callsPath, command: runner.command, args: runner.args.slice(0, -2),
-    env: { ...env, ENGRAM_TEST_THREADS: "2", PHASE_CALLS: callsPath } };
+  const fixtureEnv = { ...env, ENGRAM_TEST_THREADS: "2", PHASE_CALLS: callsPath };
+  for (const key of Object.keys(fixtureEnv)) {
+    if (["CARGO_BUILD_JOBS", "RUST_TEST_THREADS"].includes(key.toUpperCase())) delete fixtureEnv[key];
+  }
+  return { callsPath, command: runner.command, args: runner.args.slice(0, -2), env: fixtureEnv };
 }
 
 

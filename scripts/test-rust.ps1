@@ -20,27 +20,74 @@ if ($cargoArgs.Count -gt 0) {
     }
 }
 $previousTestThreads = $env:RUST_TEST_THREADS
+$previousBuildJobs = $env:CARGO_BUILD_JOBS
 
-# Eight threads measured fastest of 4, 8, 12 and 24 on a 24-core host; see
-# docs/development.md. Use fewer where fewer processors are available.
+# Keep Windows commit demand bounded. Cargo and libtest still receive any
+# explicit command-line options through the ordinary phase's passthrough.
+$buildJobs = if ($previousBuildJobs) { $previousBuildJobs } else { "2" }
 $testThreads = if ($env:ENGRAM_TEST_THREADS) {
     $env:ENGRAM_TEST_THREADS
 } elseif ($env:RUST_TEST_THREADS) {
     $env:RUST_TEST_THREADS
 } else {
-    [string][Math]::Min(8, [Environment]::ProcessorCount)
+    [string][Math]::Min(4, [Environment]::ProcessorCount)
+}
+
+$jobsOverride = $null
+$hasCargoConfig = $false
+$hasPossibleClusteredJobs = $false
+$reportedTestThreads = $testThreads
+$inTestArgs = $false
+for ($i = 0; $i -lt $cargoArgs.Count; $i++) {
+    $arg = $cargoArgs[$i]
+    if (-not $inTestArgs) {
+        if ($arg -ceq "--") {
+            $inTestArgs = $true
+        } elseif ($arg -cin @("-j", "--jobs") -and $i + 1 -lt $cargoArgs.Count) {
+            $jobsOverride = $cargoArgs[++$i]
+        } elseif ($arg -cmatch '^(?:-j=?|--jobs=)(.+)$') {
+            $jobsOverride = $Matches[1]
+        } elseif ($arg -ceq "--config" -and $i + 1 -lt $cargoArgs.Count) {
+            $hasCargoConfig = $true
+            $i++
+        } elseif ($arg.StartsWith("--config=", [StringComparison]::Ordinal)) {
+            $hasCargoConfig = $true
+        } elseif ($arg -cmatch '^-[a-zA-Z]+j') {
+            # A short-option cluster can contain -j, but Cargo knows which
+            # preceding options consume a value.
+            $hasPossibleClusteredJobs = $true
+        }
+    } elseif ($arg -ceq "--") {
+        break
+    } elseif ($arg -ceq "--test-threads" -and $i + 1 -lt $cargoArgs.Count) {
+        $reportedTestThreads = $cargoArgs[++$i]
+    } elseif ($arg -cmatch '^--test-threads=(.+)$') {
+        $reportedTestThreads = $Matches[1]
+    }
+}
+
+$selectedBuildJobs = if ($jobsOverride) { $jobsOverride } else { $buildJobs }
+$reportedBuildJobs = if ($hasPossibleClusteredJobs) {
+    "resolved by Cargo (short options; CARGO_BUILD_JOBS=$buildJobs)"
+} elseif ($hasCargoConfig -and -not $jobsOverride) {
+    "resolved by Cargo (--config; CARGO_BUILD_JOBS=$buildJobs)"
+} elseif ($selectedBuildJobs -cnotmatch '^[1-9][0-9]*$') {
+    "resolved by Cargo (jobs setting=$selectedBuildJobs)"
+} else {
+    $selectedBuildJobs
 }
 
 $parsedTestThreads = 0
 if (-not [int]::TryParse($testThreads, [ref]$parsedTestThreads) -or $parsedTestThreads -le 0) {
-    Write-Error "ENGRAM_TEST_THREADS must be a positive integer; got '$testThreads'."
+    [Console]::Error.WriteLine("The test thread count must be a positive integer; got '$testThreads'.")
     exit 2
 }
 
 Push-Location $repoRoot
 try {
+    $env:CARGO_BUILD_JOBS = $buildJobs
     $env:RUST_TEST_THREADS = $testThreads
-    Write-Output "Rust test gate: fd soft limit=n/a (Windows), test threads=$testThreads"
+    Write-Output "Rust test gate: fd soft limit=n/a (Windows), build jobs=$reportedBuildJobs, test threads=$reportedTestThreads"
 
     foreach ($phase in $phases) {
         switch ($phase) {
@@ -85,6 +132,7 @@ try {
         }
     }
 } finally {
+    $env:CARGO_BUILD_JOBS = $previousBuildJobs
     $env:RUST_TEST_THREADS = $previousTestThreads
     Pop-Location
 }

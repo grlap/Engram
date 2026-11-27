@@ -229,9 +229,16 @@ fixture; unavailable privilege fails setup explicitly. The non-Unicode
 filename producer fixture runs on Windows and non-Apple Unix targets; APFS
 requires valid UTF-8 filenames, so that fixture is not built on Apple targets.
 
-The default is eight test threads, or the number of available processors on a
-host with fewer, or four on a host that reports no usable count. It comes from
-one measurement, of the unit-test binary on a
+The Windows Rust gate defaults to two Cargo build jobs and four test threads
+(fewer test threads when fewer processors are available) to reduce peak
+system commit during a full run. The Windows full launcher also sets the
+build job default for its other stages. This takes precedence over
+`build.jobs` in Cargo configuration files. Set `CARGO_BUILD_JOBS` to
+override the Windows build default.
+
+The Unix wrappers default to eight test threads, or the number of available
+processors on a host with fewer, or four when they cannot determine the count.
+The eight-thread setting comes from one measurement of the unit-test binary on a
 quiet 24-core Windows host: 68 s at four threads, 42 s at eight, 59 s at
 twelve and 119 s at twenty-four, while total processor time rose from 242 s to
 2210 s. Rebuilding the bundled SQLite without memory-status tracking, which
@@ -239,7 +246,9 @@ was tried and not adopted, removed that rise in processor time and part of the
 extra wall time (38 s at eight threads, 66 s at twenty-four), but wall time
 still rose past eight threads, so the cause is only partly known. Other hosts
 and the other test binaries were not measured. Set `ENGRAM_TEST_THREADS` or
-`RUST_TEST_THREADS` to use another count.
+`RUST_TEST_THREADS` to use another count on any host. The Windows Rust
+wrapper also accepts Cargo's `--jobs` and libtest's `--test-threads` in
+passthrough invocations and logs the selected counts.
 
 The shell entry point tries to raise the file-descriptor soft limit to 16384,
 or to the hard limit when that is lower. When the host refuses, it asks for
