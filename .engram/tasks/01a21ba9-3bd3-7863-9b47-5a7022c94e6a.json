@@ -1,0 +1,28 @@
+{
+  "id": "01a21ba9-3bd3-7863-9b47-5a7022c94e6a",
+  "external_ref": null,
+  "title": "Waive a lapsed holder as a root contributor when an import reports a child's completion",
+  "outcome": "Waive a lapsed holder as a root contributor when an import reports a child's completion",
+  "acceptance": [
+    "When a folder import reports the completion of a non-root child whose local claim had lapsed, the root execution records an attributed waiver for that holder (or otherwise accounts for it), so the open root's own completion does not stop at MissingContribution",
+    "A behaviour test covers a lapsed claim on a child whose completion is then imported, followed by the root's completion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

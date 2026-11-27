@@ -1,0 +1,28 @@
+{
+  "id": "01a21ba9-47f1-7852-a3f7-3c049f386a99",
+  "external_ref": null,
+  "title": "Let a folder addition use open-descendant capacity freed since a root's tasks were imported",
+  "outcome": "Let a folder addition use open-descendant capacity freed since a root's tasks were imported",
+  "acceptance": [
+    "A folder import that adds a child under a root whose imported tasks once reached the open-descendant limit, but which now holds fewer open descendants because some ended, admits the addition instead of refusing it as origin_graph over the open-descendant limit",
+    "The import-origin history check still refuses additions that would close a cycle through the original origin structure"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
