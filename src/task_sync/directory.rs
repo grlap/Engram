@@ -658,7 +658,7 @@ pub(crate) fn require_no_capability_staging(
 ) -> Result<()> {
     if capability_staging_at(&data.checkout.join(".engram"))? {
         return Err(TaskSyncRefusal::IncrementalBasisUnavailable
-            .invalid("memory capability staging is pending; run `engram task-sync export --include-memories --memory-recovery-basis OWN_EXPORT` before continuing. Add `--rebuild` to replace an unfinished combined export")
+            .invalid("memory capability staging is pending; rerun the export with the same directory, branch and notes options, using `--include-memories` and `--memory-recovery-basis OWN_EXPORT` before continuing. Add `--rebuild` to replace an unfinished combined export")
             .into());
     }
     Ok(())

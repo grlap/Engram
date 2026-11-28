@@ -45,7 +45,7 @@ pub(crate) fn require_no_pending_publication(data: &DataWorktree) -> Result<()> 
             })
         }) {
             return Err(crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged
-                .invalid("memory publication staging is pending; finish with `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT`")
+                .invalid("memory publication staging is pending; export this data directory on the same branch with this host's original notes settings and alias. Use `--rebuild`, `--include-memories` and `--memory-recovery-basis OWN_EXPORT`")
                 .into());
         }
     }

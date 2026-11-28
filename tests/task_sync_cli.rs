@@ -54,10 +54,8 @@ fn assert_export_commit_first(output: &Output) {
         refusal["error"]["code"],
         "task_sync_incremental_basis_unavailable"
     );
-    assert_eq!(
-        refusal["error"]["details"]["reason"],
-        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export"
-    );
+    let reason = refusal["error"]["details"]["reason"].as_str().unwrap();
+    assert!(reason.contains("commit the exported folder"), "{reason}");
 }
 
 fn source_identity(root: &Path) -> Option<engram::source::SourceId> {

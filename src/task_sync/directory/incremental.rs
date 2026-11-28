@@ -270,7 +270,7 @@ impl FolderWrite {
             return import_interrupted_root(true);
         }
         moved(&format!(
-            "preserve the current tip and exported files, {}, then run `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT`",
+            "preserve the current tip and exported files, {}, then export this data directory on the same branch with this host's original notes settings and alias. Use `--rebuild`, `--include-memories` and `--memory-recovery-basis OWN_EXPORT`",
             self.restore_original_basis()
         ))
     }

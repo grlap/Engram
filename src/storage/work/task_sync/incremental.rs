@@ -471,7 +471,7 @@ fn plan_folder_export(
     // this host's own and may differ from the one an enrolment recorded.
     if head.profile.include_notes != profile.include_notes {
         return Err(TaskSyncRefusal::DivergentPlanning.invalid(
-            "this export's note selection differs from the one the shared folder was recorded with; run `engram task-sync export --rebuild` to write the complete folder under it",
+            "this export's note selection differs from the one the shared folder was recorded with; run this export again with `--rebuild` added to write the complete folder under it",
         ));
     }
     // The alias this host last exported under is written into its notes and
@@ -481,13 +481,13 @@ fn plan_folder_export(
         && profile.origin_machine.as_ref() != Some(previous)
     {
         return Err(TaskSyncRefusal::DivergentPlanning.invalid(format!(
-            "this export's origin-machine alias ({}) differs from the one this host exported the shared folder under ({previous}); export with `--origin-machine {previous}`, or run `engram task-sync export --rebuild` to write the complete folder under the new alias",
+            "this export's origin-machine alias ({}) differs from the one this host exported the shared folder under ({previous}); export with `--origin-machine {previous}`, or run this export again with `--rebuild` added to write the complete folder under the new alias",
             profile.origin_machine.as_deref().unwrap_or("none")
         )));
     }
     if let Err(reason) = anchored(store, &feed, &head.cut, cut.position) {
         return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(format!(
-            "{}; run `engram task-sync export --rebuild` to write the complete folder and record it afresh",
+            "{}; run this export again with `--rebuild` added to write the complete folder and record it afresh",
             reason?
         )));
     }
@@ -516,7 +516,7 @@ fn plan_folder_export(
     .collect::<Vec<_>>();
     if !conflicting.is_empty() {
         return Err(TaskSyncRefusal::ImportConflict.invalid(format!(
-            "a task held by the last import changed here too, so this host's version and the other host's held one conflict: {}. Apply the held edits from the folder to this host's planning first, then `engram task-sync export --rebuild` writes this host's version over the held one and lists it as superseded; a held edit not applied here is lost. To keep the other host's version as it is, undo the local change and import again",
+            "a task held by the last import changed here too, so this host's version and the other host's held one conflict: {}. Apply the held edits from the folder to this host's planning first, then run this export again with `--rebuild` added. That writes this host's version over the held one and lists it as superseded; a held edit not applied here is lost. To keep the other host's version as it is, undo the local change and import again",
             conflicting.join(", ")
         )));
     }

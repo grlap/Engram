@@ -46,10 +46,8 @@ fn task_sync_export_requires_the_fixed_data_folder_even_when_other_parent_exists
         blocked["error"]["code"],
         "task_sync_incremental_basis_unavailable"
     );
-    assert_eq!(
-        blocked["error"]["details"]["reason"],
-        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export"
-    );
+    let reason = blocked["error"]["details"]["reason"].as_str().unwrap();
+    assert!(reason.contains("commit the exported folder"), "{reason}");
     let data = fixture.root.join(".engram-data");
     data_worktree::git(
         &data,

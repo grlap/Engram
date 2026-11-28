@@ -269,6 +269,7 @@ pub struct WorkAttributionDefaults {
 /// Immutable host context for one CLI or MCP work-service connection.
 pub struct LocalWorkService {
     database: PathBuf,
+    task_sync_cli_prefix: Option<String>,
     project_id: ProjectId,
     actor_id: String,
     actor_context: Option<String>,
@@ -296,6 +297,7 @@ impl Clone for LocalWorkService {
     fn clone(&self) -> Self {
         Self {
             database: self.database.clone(),
+            task_sync_cli_prefix: self.task_sync_cli_prefix.clone(),
             project_id: self.project_id.clone(),
             actor_id: self.actor_id.clone(),
             actor_context: self.actor_context.clone(),

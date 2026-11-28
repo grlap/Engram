@@ -51,6 +51,15 @@ pub(crate) fn emit_anyhow_error(error: &anyhow::Error) {
     emit_lines(&anyhow_error_lines(error));
 }
 
+/// Task-sync refusals can embed a literal retry command with quoted paths.
+pub(crate) fn emit_task_sync_error(error: &anyhow::Error) {
+    let lines: Vec<_> = error
+        .chain()
+        .map(|cause| format!("error: {}", terminal_error_command(&cause.to_string())))
+        .collect();
+    emit_lines(&lines);
+}
+
 pub(crate) fn emit_work_text_refusal(
     message: &str,
     focus_change: Option<&str>,

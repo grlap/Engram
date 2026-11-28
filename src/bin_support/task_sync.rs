@@ -378,11 +378,12 @@ pub(crate) async fn run(
     database: PathBuf,
     project: ProjectId,
     project_file: &Path,
+    home: &Path,
     args: TaskSyncArgs,
 ) -> Result<ExitCode> {
     Box::pin(engram::operation_time::observe(
         "task-sync command",
-        run_observed(database, project, project_file, args),
+        run_observed(database, project, project_file, home, args),
     ))
     .await
 }
@@ -391,6 +392,7 @@ async fn run_observed(
     database: PathBuf,
     project: ProjectId,
     project_file: &Path,
+    home: &Path,
     args: TaskSyncArgs,
 ) -> Result<ExitCode> {
     if args.settings_action().is_some() {
@@ -412,7 +414,8 @@ async fn run_observed(
         args.source_skill.clone(),
         args.actor_context.clone(),
         attribution.defaults,
-    );
+    )
+    .with_task_sync_cli_selection(&std::path::absolute(home)?, project_file);
     if let TaskSyncCommand::SetupPrepare {
         repository,
         branch,
@@ -916,7 +919,7 @@ fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
     }
     if partial {
         eprintln!(
-            "Partial task import: each held task keeps the incoming bytes in the folder, and an export leaves them in place. Resolve why it was held here, for example by releasing the claim, then import again: every import reads the held tasks again at the commit it imports. A task held as local_planning_changed was also changed here: apply its held edits to this host's planning first, because `engram task-sync export --rebuild` writes this host's version over the held one and lists it as superseded. Applied changes remain applied; --dry-run writes nothing."
+            "Partial task import: each held task keeps the incoming bytes in the folder, and an ordinary export leaves them in place. Resolve why it was held here, for example by releasing the claim, then import again: every import reads the held tasks again at the commit it imports. For a task held as local_planning_changed, follow the recovery instructions next to that task. Applied changes remain applied; --dry-run writes nothing."
         );
         ExitCode::from(PARTIAL_IMPORT_EXIT)
     } else {

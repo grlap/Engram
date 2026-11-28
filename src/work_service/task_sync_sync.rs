@@ -128,7 +128,7 @@ impl LocalWorkService {
         }
         // Finish a prior commit whose import did not complete. The same import
         // owner also refuses unresolved planning before a new publication.
-        self.import_sync_folder(&data, basis.memory_capable, &on_retirement)?;
+        self.import_sync_folder(&data, &profile, basis.memory_capable, &on_retirement)?;
         let mut sync_memories = basis.memory_capable;
         let mut withheld_memories = self
             .export_sync_folder(&mut data, &profile, sync_memories, &on_retirement)
@@ -162,7 +162,7 @@ impl LocalWorkService {
                     self.require_sync_memory_publication(&data, incoming, local)?;
                     admitted = Some((incoming.clone(), local.to_owned()));
                 }
-                self.import_sync_folder(&data, sync_memories, &on_retirement)?;
+                self.import_sync_folder(&data, &profile, sync_memories, &on_retirement)?;
             }
             // Check the committed tips before enabling the profile so an
             // opt-in cannot hide a merge that discarded an established one.
@@ -223,6 +223,7 @@ impl LocalWorkService {
     fn import_sync_folder(
         &self,
         data: &DataWorktree,
+        profile: &ExportProfile,
         include_memories: bool,
         on_retirement: &impl Fn(&ImportOutcome),
     ) -> Result<()> {
@@ -269,7 +270,10 @@ impl LocalWorkService {
                 task.task.0,
                 task.reason.as_deref().unwrap_or("reason unavailable")
             )?;
-            if let Some(detail) = &task.detail {
+            if task.reason.as_deref() == Some("local_planning_changed") {
+                let detail = self.held_planning_rebuild_detail(data, profile, include_memories);
+                write!(task_issues, " {detail}")?;
+            } else if let Some(detail) = &task.detail {
                 write!(task_issues, " {}", super::terminal_error_line(detail))?;
             }
             task_issues.push('\n');
@@ -291,12 +295,9 @@ impl LocalWorkService {
             )?;
         }
         let separate_import = if include_memories {
-            String::new()
+            ""
         } else {
-            format!(
-                "To retry the import separately, use `engram task-sync import DIRECTORY` with the data folder at {} and the same branch. ",
-                super::terminal_error_command(&data.checkout.join(".engram").to_string_lossy())
-            )
+            "To retry the import separately, run task-sync import with the same Engram home, project file, data directory and branch. "
         };
         bail!(
             "{unapplied}Resolve the listed issues. {separate_import}Rerun your original `engram task-sync sync` \
@@ -311,6 +312,12 @@ impl LocalWorkService {
         include_memories: bool,
         on_retirement: &impl Fn(&ImportOutcome),
     ) -> Result<Vec<WithheldKey>> {
+        let rebuild_context = || {
+            let recovery = self.folder_rebuild_guidance(data, profile, include_memories);
+            format!(
+                "If the export refusal calls for a rebuild, {recovery}. Put any additional recovery options named in the refusal before the positional data directory or its `--` separator"
+            )
+        };
         let withheld = if include_memories {
             let fence = memory_directory::publication_lock(data)?;
             let basis = memory_directory::committed(data, &self.project_id)?;
@@ -325,10 +332,12 @@ impl LocalWorkService {
                 None,
                 &mut admitted,
             )?;
-            self.export_task_sync_data_folder(data, profile, false, Some(export), Utc::now())?;
+            self.export_task_sync_data_folder(data, profile, false, Some(export), Utc::now())
+                .with_context(rebuild_context)?;
             admitted.context("memory capture missing")?.withheld
         } else {
-            self.export_task_sync_data_folder(data, profile, false, None, Utc::now())?;
+            self.export_task_sync_data_folder(data, profile, false, None, Utc::now())
+                .with_context(rebuild_context)?;
             Vec::new()
         };
         if data.folder_changes_admitted(include_memories)?.is_empty() {
@@ -337,7 +346,7 @@ impl LocalWorkService {
         stage_folder(data).await?;
         data.commit_folder("Export project task data").await?;
         // Confirm this export while its single-parent commit is still HEAD.
-        self.import_sync_folder(data, include_memories, on_retirement)?;
+        self.import_sync_folder(data, profile, include_memories, on_retirement)?;
         Ok(withheld)
     }
 }

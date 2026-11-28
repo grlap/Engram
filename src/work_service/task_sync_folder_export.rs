@@ -408,7 +408,7 @@ impl LocalWorkService {
                     .any(|path| path.starts_with("tasks/") && !files.contains_key(path))
                 {
                     return Err(changed_folder(
-                        "the data folder has an uncommitted task deletion: restore or commit it and import the folder, or run `engram task-sync export --rebuild` to replace it",
+                        "the data folder has an uncommitted task deletion: restore or commit it and import the folder, or run this export again with `--rebuild` added to replace it",
                     ));
                 }
                 require_unoccupied(data, &tree, memory_bytes.is_some())?;
@@ -504,7 +504,7 @@ impl LocalWorkService {
                     return Err(rebuild_combined_export());
                 }
                 return Err(changed_folder(
-                    "the last export has no retained commit proof: commit its files and import the committed folder, or export with --rebuild",
+                    "the last export has no retained commit proof: commit its files and import the committed folder, or run this export again with `--rebuild` added",
                 ));
             }
             let parent_paths = ExportParentPaths::read(
@@ -962,7 +962,7 @@ impl LocalWorkService {
             .collect::<BTreeMap<_, _>>();
         if postimages.len() != paths.len() {
             return Err(changed_folder(
-                "the retained export proof is incomplete; run `engram task-sync export --rebuild`",
+                "the retained export proof is incomplete; export this data directory on the same branch with `--rebuild` and this host's original export options, including the notes alias and memory opt-in if selected",
             ));
         }
         if !task_sync::git::matches_export_commit(
@@ -1119,7 +1119,7 @@ impl LocalWorkService {
     ) -> Result<OwnedExportSlot> {
         let malformed = || {
             OwnedExportSlot::RebuildRequired(changed_folder(
-                "preserve the malformed proof and run `engram task-sync export --rebuild`",
+                "preserve the malformed proof. Export this data directory on the same branch with `--rebuild` and this host's original export options, including the notes alias and memory opt-in if selected",
             ))
         };
         let owner = self.folder_write_owner()?;
@@ -1162,9 +1162,10 @@ impl LocalWorkService {
             if write.writes_memories()? {
                 rebuild_combined_export()
             } else {
-                changed_folder(
-                    "the retained export has no recorded head. Run `engram task-sync export --rebuild` to replace the interrupted write",
-                )
+                let recovery = self.folder_rebuild_guidance(data, &planned.profile, false);
+                changed_folder(&format!(
+                    "the retained export has no recorded head. To replace the interrupted write, {recovery}"
+                ))
             },
         ))
     }
@@ -1320,15 +1321,105 @@ fn same_parent(data: &DataWorktree, write: &FolderWrite) -> bool {
     }
 }
 
+fn command_argument(value: &str) -> Option<String> {
+    let quoted = crate::shell::argument(value);
+    // A command surrounded by backticks must keep both its arguments and
+    // the command boundaries intact when it is rendered to the terminal.
+    (!quoted.contains('`') && super::terminal_error_command(&quoted) == quoted).then_some(quoted)
+}
+
+impl LocalWorkService {
+    /// Preserve the CLI's resolved store and project in task-sync retry guidance.
+    #[must_use]
+    pub fn with_task_sync_cli_selection(mut self, home: &Path, project_file: &Path) -> Self {
+        self.task_sync_cli_prefix = home
+            .to_str()
+            .and_then(command_argument)
+            .zip(project_file.to_str().and_then(command_argument))
+            .map(|(home, project_file)| {
+                format!("engram --home={home} --project-file={project_file}")
+            });
+        self
+    }
+
+    /// Spell out the export profile when the caller did not invoke export directly.
+    fn folder_rebuild_command(
+        &self,
+        data: &DataWorktree,
+        profile: &ExportProfile,
+        include_memories: bool,
+    ) -> Option<String> {
+        if profile.include_notes && profile.origin_machine.is_none() {
+            return None;
+        }
+        let prefix = self.task_sync_cli_prefix.as_deref()?;
+        let directory = command_argument(data.checkout.join(".engram").to_str()?)?;
+        let branch = command_argument(
+            data.reference
+                .strip_prefix("refs/heads/")
+                .unwrap_or(&data.reference),
+        )?;
+        let mut command = format!("{prefix} task-sync export --rebuild --branch={branch}");
+        if profile.include_notes {
+            command.push_str(" --include-notes");
+        }
+        if let Some(alias) = profile.origin_machine.as_deref() {
+            command.push_str(&format!(" --origin-machine={}", command_argument(alias)?));
+        }
+        if include_memories {
+            command.push_str(" --include-memories");
+        }
+        command.push_str(&format!(" -- {directory}"));
+        Some(command)
+    }
+
+    pub(super) fn folder_rebuild_guidance(
+        &self,
+        data: &DataWorktree,
+        profile: &ExportProfile,
+        include_memories: bool,
+    ) -> String {
+        if let Some(command) = self.folder_rebuild_command(data, profile, include_memories) {
+            return format!("run `{command}`");
+        }
+        let mut guidance = String::from(
+            "run task-sync export with `--rebuild` and reuse the selected Engram home, project file, data directory and branch",
+        );
+        if profile.include_notes {
+            guidance.push_str(
+                ". Use `--include-notes` and supply this host's alias with `--origin-machine`",
+            );
+        } else if profile.origin_machine.is_some() {
+            guidance.push_str(". Reuse this host's `--origin-machine` setting");
+        }
+        if include_memories {
+            guidance.push_str(". Keep `--include-memories`");
+        }
+        guidance
+    }
+
+    pub(super) fn held_planning_rebuild_detail(
+        &self,
+        data: &DataWorktree,
+        profile: &ExportProfile,
+        include_memories: bool,
+    ) -> String {
+        let recovery = self.folder_rebuild_guidance(data, profile, include_memories);
+        format!(
+            "this host changed the task's planning while another host's edit was held. Apply the held edits to this host's planning first, then {recovery}. The rebuild writes this host's version over the held one and any held edit not applied here is lost."
+        )
+    }
+}
+
 fn commit_export_first() -> anyhow::Error {
     changed_folder(
-        "commit the exported folder, then run `engram task-sync export` again, or rerun with `--rebuild` to replace the uncommitted export",
+        "commit the exported folder, then run the same export again, or run it with `--rebuild` added to replace the uncommitted export",
     )
 }
 
 fn rebuild_combined_export() -> anyhow::Error {
     changed_folder(
-        "the combined export is unfinished; run `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT` using the retained pre-export folder",
+        "the combined export is unfinished; export this data directory on the same branch with this host's original notes settings and alias. Use `--rebuild`, `--include-memories` and `--memory-recovery-basis OWN_EXPORT` pointing to the retained pre-export folder",
     )
 }
 
@@ -1376,7 +1467,7 @@ fn require_unoccupied(data: &DataWorktree, tree: &TaskTree, memories: bool) -> R
     }
     Err(TaskSyncRefusal::DestinationOccupied
         .invalid(
-            "the data folder already holds shared planning this host has not imported: import it first (`engram task-sync import --basis OWN_EXPORT/project.json`, or `--empty-basis` for an empty store), or replace it with `engram task-sync export --rebuild`",
+            "the data folder already holds shared planning this host has not imported: import it first (`engram task-sync import --basis OWN_EXPORT/project.json`, or `--empty-basis` for an empty store), or run this export again with `--rebuild` added to replace it",
         )
         .into())
 }
@@ -1395,7 +1486,7 @@ fn export_base(
     let moved = || {
         if recovering {
             return changed_folder(
-                "restore the admitted tip and retry recovery, or run `engram task-sync export --rebuild --include-memories --memory-recovery-basis OWN_EXPORT` to replace your output after preserving newer changes",
+                "restore the admitted tip and retry recovery, or rerun the export with the same directory, branch and notes options, using `--rebuild`, `--include-memories` and `--memory-recovery-basis OWN_EXPORT` to replace your output after preserving newer changes",
             );
         }
         let expected = match pending.and_then(|write| write.parent.as_ref()) {
@@ -1475,7 +1566,7 @@ fn export_base(
         }
         FolderDisk::Unbound if recovering => Err(rebuild_combined_export()),
         FolderDisk::Unbound => Err(changed_folder(
-            "the last import or export has no committed comparison basis: commit the shared folder and import with `--rebuild --basis BASIS/project.json`, or export with `--rebuild`",
+            "the last import or export has no committed comparison basis: commit the shared folder and import with `--rebuild --basis BASIS/project.json`, or run this export again with `--rebuild` added",
         )),
         _ => Err(moved()),
     }
@@ -1492,10 +1583,9 @@ fn export_basis_mismatch(
     } else {
         ""
     };
-    let rebuild = format!("`engram task-sync export --rebuild{memory_flag}`");
     if observed == expected {
         return changed_folder(&format!(
-            "the data folder differs from the last export at HEAD {}; run `engram task-sync import{memory_flag}` first, or {rebuild} to replace the shared folder",
+            "the data folder differs from the last export at HEAD {}; run `engram task-sync import{memory_flag}` first, or run this export again with `--rebuild` added to replace the shared folder",
             observed.unwrap_or("(unborn)"),
         ));
     }
@@ -1518,15 +1608,15 @@ fn export_basis_mismatch(
             .is_ok()
         {
             return changed_folder(&format!(
-                "{reason}; run `engram task-sync import{memory_flag}` first, or {rebuild} to replace the shared folder"
+                "{reason}; run `engram task-sync import{memory_flag}` first, or run this export again with `--rebuild` added to replace the shared folder"
             ));
         }
         return changed_folder(&format!(
-            "{reason}; restore the data branch to {expected} and retry, or run {rebuild} to replace the shared folder"
+            "{reason}; restore the data branch to {expected} and retry, or run this export again with `--rebuild` added to replace the shared folder"
         ));
     }
     changed_folder(&format!(
-        "{reason}; run {rebuild} to replace the shared folder"
+        "{reason}; run this export again with `--rebuild` added to replace the shared folder"
     ))
 }
 
@@ -1913,7 +2003,7 @@ impl LocalWorkService {
         self.read_store_at(now)?
             .check_task_sync_folder_beside_held(&self.project_id, profile, &held_documents, &written)
             .map_err(|error| {
-                let generic = "resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and write this host's version with `engram task-sync export --rebuild`";
+                let generic = "resolve the held tasks first, for example by releasing their claims and importing again, or apply their held edits here and run this export again with `--rebuild` added to write this host's version";
                 let remedy = if naming_removed.is_empty() {
                     generic.to_owned()
                 } else {

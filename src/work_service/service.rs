@@ -181,6 +181,7 @@ impl LocalWorkService {
         let (actor_context, actor_context_normalized) = normalize_actor_context(actor_context);
         Self {
             database,
+            task_sync_cli_prefix: None,
             project_id,
             actor_id,
             actor_context,

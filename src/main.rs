@@ -1310,13 +1310,21 @@ async fn run_cli() -> Result<ExitCode> {
             )?;
         }
         Command::TaskSync(args) => {
-            return Box::pin(bin_support::task_sync::run(
+            let result = Box::pin(bin_support::task_sync::run(
                 database,
                 project_id,
                 &project_file,
+                &home,
                 args,
             ))
             .await;
+            return match result {
+                Ok(code) => Ok(code),
+                Err(error) => {
+                    bin_support::terminal_errors::emit_task_sync_error(&error);
+                    Ok(bin_support::control::failure_exit_code(&error))
+                }
+            };
         }
         Command::Mcp {
             actor_id,

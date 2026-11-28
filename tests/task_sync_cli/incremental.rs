@@ -1009,7 +1009,7 @@ fn task_sync_cli_ordinary_exchange_retries_held_tasks_keeps_local_edits_and_refu
     assert!(
         message.contains("does not match the admitted export basis")
             && message.contains("run `engram task-sync import` first")
-            && message.contains("`engram task-sync export --rebuild`"),
+            && message.contains("`--rebuild`"),
         "{message}"
     );
     assert_eq!(a.receipt("import", &[])["route"], "incremental");
@@ -1179,14 +1179,12 @@ fn task_sync_cli_ordinary_exchange_names_an_exit_for_every_conflict() {
         (&task["status"], &task["reason"]),
         (&"held".into(), &"local_planning_changed".into())
     );
+    let detail = task["detail"].as_str().unwrap();
     let (code, message) = a.refusal("export", &[]);
     assert_eq!(code, "task_sync_import_conflict");
     assert!(message.contains("--rebuild"), "{message}");
-    let rebuilt = a.receipt("export", &["--rebuild"]);
-    assert_eq!(
-        (&rebuilt["route"], &rebuilt["superseded"]),
-        (&"rebuild".into(), &serde_json::json!([reference(other)]))
-    );
+    let rebuilt = run_printed_rebuild(root, detail);
+    assert!(String::from_utf8_lossy(&rebuilt.stderr).contains(&reference(other)));
     assert_eq!(a.task_file(other)["title"], "Other, edited on A");
     a.commit("Keep A's version of Other");
     a.receipt("import", &[]);
@@ -1284,6 +1282,121 @@ fn printed_command(message: &str, program: &str) -> Vec<String> {
         .split_whitespace()
         .map(str::to_owned)
         .collect()
+}
+
+fn printed_export(message: &str) -> &str {
+    message
+        .split('`')
+        .find(|part| part.starts_with("engram ") && part.contains(" task-sync export "))
+        .unwrap_or_else(|| panic!("{message}"))
+}
+
+/// Execute the printed shell command from outside the selected project and
+/// without a default home, replacing only the executable with the test binary.
+#[track_caller]
+fn run_printed_rebuild(cwd: &Path, message: &str) -> Output {
+    let command = printed_export(message);
+    let binary = engram::shell::quote(env!("CARGO_BIN_EXE_engram"));
+    let args = command.strip_prefix("engram ").unwrap();
+    let mut shell = if cfg!(windows) {
+        let mut shell = Command::new("powershell.exe");
+        shell.args(["-NoProfile", "-NonInteractive", "-Command"]);
+        shell.arg(format!("& {binary} {args}; exit $LASTEXITCODE"));
+        shell
+    } else {
+        let mut shell = Command::new("sh");
+        shell.args(["-c", &format!("exec {binary} {args}")]);
+        shell
+    };
+    let result = shell
+        .current_dir(cwd)
+        .env_remove("ENGRAM_HOME")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{command}: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    result
+}
+
+fn sync_rebuild_refusal(root: &Path) -> (Host, String, String, String) {
+    fs::create_dir(root).unwrap();
+    let (a, b, source) = noted_exchange(root);
+    let source = source.0.to_string();
+    let remote = root.join("data.git");
+    fs::create_dir(&remote).unwrap();
+    data_worktree::git(&remote, &["init", "--bare"]);
+    a.git(&["remote", "add", "origin", remote.to_str().unwrap()]);
+
+    a.work(&["claim", &source]);
+    b.work(&["update", &source, "--title", "Edited on B"]);
+    b.receipt("export", &NOTES_B);
+    b.commit("Edit the held task on B");
+    a.merge_from(&b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+    a.work(&["update", &source, "--title", "Edited on A"]);
+    let import = a.sync("import", &[]);
+    assert_eq!(import.status.code(), Some(3));
+    let result: Value = serde_json::from_slice(&import.stdout).unwrap();
+    let task = result["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["task"] == source && task["reason"] == "local_planning_changed")
+        .unwrap();
+    let import_detail = task["detail"].as_str().unwrap().to_owned();
+
+    let sync = command(&a.home, &a.marker)
+        .args(["task-sync", "sync", "--no-push"])
+        .output()
+        .unwrap();
+    assert!(!sync.status.success());
+    let sync_detail = String::from_utf8(sync.stderr).unwrap();
+    (a, source, import_detail, sync_detail)
+}
+
+#[test]
+fn task_sync_cli_printed_sync_rebuild_keeps_store_and_notes_profile() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, source, import_detail, sync_detail) =
+        sync_rebuild_refusal(&fixture.path().join("checkout  with  spaces"));
+    assert_eq!(printed_export(&import_detail), printed_export(&sync_detail));
+
+    a.work(&["update", &source, "--title", "Edited on B"]);
+    let rebuilt = run_printed_rebuild(fixture.path(), &sync_detail);
+    let rebuilt: Value = serde_json::from_slice(&rebuilt.stdout).unwrap();
+    assert_eq!(rebuilt["route"], "rebuild");
+    assert_eq!(rebuilt["notes_included"], true);
+    assert_eq!(rebuilt["superseded"], serde_json::json!([source]));
+}
+
+#[test]
+fn task_sync_cli_rebuild_guidance_reuses_paths_that_terminal_escaping_would_change() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, source, import_detail, sync_detail) =
+        sync_rebuild_refusal(&fixture.path().join("checkout-\u{fe0f}-with-selector"));
+    for detail in [&import_detail, &sync_detail] {
+        assert!(
+            detail.contains(
+                "reuse the selected Engram home, project file, data directory and branch"
+            ),
+            "{detail}"
+        );
+        for option in ["--rebuild", "--include-notes", "--origin-machine"] {
+            assert!(detail.contains(option), "{detail}");
+        }
+        assert!(!detail.contains("`engram --home="), "{detail}");
+        assert!(!detail.contains("\\u{fe0f}"), "{detail}");
+    }
+
+    a.work(&["update", &source, "--title", "Edited on B"]);
+    let mut retry = NOTES_A.to_vec();
+    retry.push("--rebuild");
+    let rebuilt = a.receipt("export", &retry);
+    assert_eq!(rebuilt["route"], "rebuild");
+    assert_eq!(rebuilt["superseded"], serde_json::json!([source]));
 }
 
 /// A task held because this host works on it is read again at every import.
@@ -1696,6 +1809,80 @@ fn task_sync_cli_the_printed_set_aside_works_beside_a_held_removal() {
     assert_eq!(b.receipt("export", &[])["written"], 1);
     b.commit("Add Later on B");
     push(&b);
+}
+
+#[test]
+fn task_sync_cli_retries_the_printed_import_conflict_remedy_with_notes() {
+    let fixture = test_support::temp_home().unwrap();
+    let root = fixture.path();
+    let a = Host::new(root, "a");
+    let b = Host::new(root, "b");
+    let remote = root.join("data.git");
+    fs::create_dir(&remote).unwrap();
+    data_worktree::git(&remote, &["init", "--bare"]);
+    a.git(&["remote", "add", "origin", remote.to_str().unwrap()]);
+
+    let source = a.add_ref("Source");
+    let target = a.add_ref("Target");
+    a.receipt("export", &NOTES_A);
+    let basis = root.join("a-basis.json");
+    fs::copy(a.folder().join("project.json"), &basis).unwrap();
+    let (source_id, target_id) = (exported_id(&a, "Source"), exported_id(&a, "Target"));
+    a.commit("Publish Source and Target");
+    a.receipt("import", &["--basis", basis.to_str().unwrap()]);
+    push(&a);
+    b.merge_from(&a);
+    b.receipt("import", &["--empty-basis"]);
+
+    a.work(&["claim", &target]);
+    a.work(&["claim", &source]);
+    a.work(&["note", "Work on Source started on A"]);
+    b.work(&["update", &source, "--title", "Source, edited on B"]);
+    b.receipt("export", &NOTES_B);
+    b.commit("Edit Source on B");
+    fs::remove_file(
+        b.folder()
+            .join("tasks")
+            .join(format!("{}.json", target_id.0)),
+    )
+    .unwrap();
+    b.commit("Remove Target on B");
+    a.merge_from(&b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    a.work(&["update", &source, "--after", &target]);
+    let (code, message) = a.refusal("export", &NOTES_A);
+    assert_eq!(code, "task_sync_import_conflict", "{message}");
+    let added = message
+        .split('`')
+        .find(|part| part.starts_with("--"))
+        .unwrap_or_else(|| panic!("{message}"));
+
+    // Apply the held edit before replacing the held version. Retry the same
+    // export, keeping its notes profile and the machine alias.
+    a.work(&["update", &source, "--title", "Source, edited on B"]);
+    let mut retry = NOTES_A.to_vec();
+    retry.push(added);
+    let rebuilt = a.receipt("export", &retry);
+    assert_eq!(rebuilt["route"], "rebuild");
+    assert!(
+        rebuilt["superseded"]
+            .as_array()
+            .unwrap()
+            .contains(&source_id.0.to_string().into())
+    );
+    let published_source = a.task_file(source_id);
+    assert_eq!(published_source["title"], "Source, edited on B");
+    assert_eq!(
+        published_source["prerequisites"],
+        serde_json::json!([target_id.0.to_string()])
+    );
+    assert_eq!(a.task_file(target_id)["title"], "Target");
+    a.commit("Publish reconciled Source and restore Target");
+    a.receipt("import", &[]);
+    let exported = a.receipt("export", &NOTES_A);
+    assert_eq!(exported["written"], 0);
+    push(&a);
 }
 
 #[test]

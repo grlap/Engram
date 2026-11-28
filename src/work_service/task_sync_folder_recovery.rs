@@ -1374,10 +1374,7 @@ fn a_combined_export_is_unfinished_until_the_memory_writer_succeeds() {
     let mut retry = combined_export();
     retry.recovery_basis_matches = Some(true);
     let error = export(retry).unwrap_err();
-    assert_basis_refusal(
-        &error,
-        "export --rebuild --include-memories --memory-recovery-basis",
-    );
+    assert_basis_refusal(&error, "--memory-recovery-basis");
     assert_eq!(owned_write(&a.service, &data).unwrap(), unfinished);
     assert_eq!(fs::read(&staging).unwrap(), b"{");
     exchange.git(&["check-ignore", "--", &stage_path]);
@@ -2189,7 +2186,7 @@ fn an_own_commit_must_have_the_exact_exported_postimages() {
         .unwrap_err();
     let message = format!("{refusal:#}");
     assert!(
-        message.contains("engram task-sync import") && message.contains("export --rebuild"),
+        message.contains("engram task-sync import") && message.contains("`--rebuild`"),
         "{message}"
     );
     assert_eq!(
@@ -2442,7 +2439,7 @@ fn an_exact_export_requires_its_recorded_parent_and_no_extra_path() {
             .unwrap_err();
         assert_basis_refusal(&error, "engram task-sync import");
         assert!(
-            format!("{error:#}").contains("export --rebuild"),
+            format!("{error:#}").contains("`--rebuild`"),
             "{mismatch}: {error:#}"
         );
         assert_eq!(
@@ -2489,7 +2486,6 @@ fn export_names_the_basis_and_remedy_when_data_head_is_rewound() {
     );
     let message = error.to_string();
     assert!(message.contains(&format!("restore the data branch to {expected_commit}")));
-    assert!(message.contains("`engram task-sync export --rebuild`"));
     assert!(!message.contains("ahead"));
     assert!(!message.contains("`engram task-sync import`"));
     assert_eq!(
@@ -2497,6 +2493,16 @@ fn export_names_the_basis_and_remedy_when_data_head_is_rewound() {
         basis
     );
     assert!(owned_write(service, &rewound).is_none());
+
+    exchange.git(&["reset", "--hard", expected_commit]);
+    let restored = exchange.data();
+    assert_eq!(
+        service
+            .export_task_sync_data_folder(&restored, &profile(), false, None, now())
+            .unwrap()
+            .route,
+        "unchanged"
+    );
 }
 
 #[test]
@@ -2522,7 +2528,7 @@ fn a_byte_identical_rebuild_keeps_the_admitted_basis_without_a_new_write() {
             _ => {}
         }
         if slot != "empty" {
-            assert_basis_refusal(&export(false).unwrap_err(), "export --rebuild");
+            assert_basis_refusal(&export(false).unwrap_err(), "`--rebuild`");
         }
         let result = export(true).unwrap();
         assert_eq!(
@@ -3125,10 +3131,7 @@ fn an_identical_combined_rebuild_needs_its_original_parent_to_finish() {
         .prepare_folder_import(&data, None, false, false, now())
         .err()
         .unwrap();
-    assert_basis_refusal(
-        &pending,
-        "export --rebuild --include-memories --memory-recovery-basis",
-    );
+    assert_basis_refusal(&pending, "--memory-recovery-basis");
     assert_eq!(proof.retained_bytes(&data).unwrap(), before);
     assert_eq!(payload(), original);
 
@@ -3219,16 +3222,13 @@ fn a_slot_with_no_recorded_head_requires_explicit_rebuild() {
         a.service
             .export_task_sync_data_folder(&data, &profile(), rebuild, None, now())
     };
-    assert_basis_refusal(
-        &export(false).unwrap_err(),
-        "engram task-sync export --rebuild",
-    );
+    assert_basis_refusal(&export(false).unwrap_err(), "--rebuild");
     for dry_run in [false, true] {
         let refused = a
             .service
             .import_task_sync_data_folder(&data, None, false, dry_run, None, now())
             .unwrap_err();
-        assert_basis_refusal(&refused, "engram task-sync export --rebuild");
+        assert_basis_refusal(&refused, "--rebuild");
     }
     assert_eq!(orphan.retained_bytes(&data).unwrap(), before);
     assert_eq!(fs::read(envelope).unwrap(), bytes);

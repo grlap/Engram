@@ -22,10 +22,13 @@ fn assert_combined_rebuild(output: &Output) {
     let error = &refusal["error"];
     assert_eq!(error["code"], "task_sync_incremental_basis_unavailable");
     let reason = error["details"]["reason"].as_str().unwrap();
-    assert!(
-        reason.contains("export --rebuild --include-memories --memory-recovery-basis"),
-        "{reason}"
-    );
+    for option in [
+        "`--rebuild`",
+        "`--include-memories`",
+        "--memory-recovery-basis",
+    ] {
+        assert!(reason.contains(option), "{reason}");
+    }
     assert!(!reason.contains("commit the exported folder"), "{reason}");
 }
 
@@ -844,7 +847,7 @@ fn memory_sync_cli_rebuilds_when_loose_head_staging_blocks_exact_confirmation() 
         &["add", "--", ".engram/project.json", ".engram/tasks"],
     );
     git(data, &["commit", "-m", "Commit the task output alone"]);
-    let mut args = vec![
+    let args = [
         "--include-memories",
         "--memory-recovery-basis",
         retained.to_str().unwrap(),
@@ -858,8 +861,17 @@ fn memory_sync_cli_rebuilds_when_loose_head_staging_blocks_exact_confirmation() 
     git(data, &["branch", "preserve-exact-task-output"]);
     git(data, &["reset", "--mixed", "HEAD^"]);
     assert_eq!(files(&folder), before);
-    args.push("--rebuild");
-    let recovered = success(sync_output(&home, &marker, "export", &folder, &args));
+    let refusal = refusal_json(&refused);
+    let reason = refusal["error"]["details"]["reason"].as_str().unwrap();
+    let mut retry = vec!["--json"];
+    for option in reason.split('`').filter(|part| part.starts_with("--")) {
+        if let Some(flag) = option.strip_suffix(" OWN_EXPORT") {
+            retry.extend([flag, retained.to_str().unwrap()]);
+        } else {
+            retry.push(option);
+        }
+    }
+    let recovered = success(sync_output(&home, &marker, "export", &folder, &retry));
     let receipt: Value = serde_json::from_slice(&recovered.stdout).unwrap();
     assert_eq!(receipt["route"], "rebuild");
     assert_eq!(receipt["task_count"], 2);

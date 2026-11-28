@@ -186,6 +186,20 @@ impl LocalWorkService {
                 .or_else(|| incoming_basis.profile.origin_machine.clone()),
             ..head.profile.clone()
         };
+        let export_profile = recorded
+            .as_ref()
+            .map_or_else(|| lookup.clone(), |(_, head)| head.profile.clone());
+        let guide_conflicts = |result: &mut TaskSyncImportResult| {
+            for task in &mut result.tasks {
+                if task.reason.as_deref() == Some("local_planning_changed") {
+                    task.detail = Some(self.held_planning_rebuild_detail(
+                        data,
+                        &export_profile,
+                        memories.is_some(),
+                    ));
+                }
+            }
+        };
         if automatic
             && recorded
                 .as_ref()
@@ -202,7 +216,7 @@ impl LocalWorkService {
         let incremental = !rebuild && basis.is_none() && !rewritten && import_basis.is_some();
         if incremental {
             let (id, head) = recorded.context("incremental import without a head")?;
-            let receipt = self.import_incremental(
+            let mut receipt = self.import_incremental(
                 data,
                 &id,
                 &head,
@@ -215,6 +229,7 @@ impl LocalWorkService {
                 confirmation,
                 now,
             )?;
+            guide_conflicts(&mut receipt.result);
             report_retirements(memories, &receipt.memories, dry_run);
             recovery.finish(data)?;
             return Ok(receipt);
@@ -338,6 +353,8 @@ impl LocalWorkService {
         {
             recovery.finish(data)?;
         }
+        let mut result = outcome.tasks;
+        guide_conflicts(&mut result);
         Ok(FolderImportReceipt {
             // `complete` is an explicit basis chosen over a head the
             // incremental route could have continued from.
@@ -348,7 +365,7 @@ impl LocalWorkService {
             } else {
                 "enrol"
             },
-            result: outcome.tasks,
+            result,
             memories: outcome.memories,
             memory_partial: outcome.memory_partial,
         })

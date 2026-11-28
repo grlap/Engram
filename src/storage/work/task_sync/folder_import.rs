@@ -381,7 +381,7 @@ fn apply_on(
             status: TaskSyncTaskStatus::Held,
             reason: Some("local_planning_changed".into()),
             detail: Some(
-                "this host changed the task's planning while another host's edit was held: apply the held edits to this host's planning first, because `engram task-sync export --rebuild` writes this host's version over the held one and any held edit not applied here is lost".into(),
+                "this host changed the task's planning while another host's edit was held. Apply the held edits to this host's planning before replacing the shared version so those edits are preserved".into(),
             ),
         });
     }
