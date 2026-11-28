@@ -272,8 +272,8 @@ impl LocalWorkService {
             }
             Some(_) => {}
         }
-        // Explicit replacement plans against the admitted worktree and does
-        // not adopt or replay the previous proof.
+        // A rebuild may replace the retained write, but it can still use
+        // the exact published commit as its comparison basis.
         let (previous_write, discard_unrecorded) = if rebuild {
             match self.owned_export_slot(data, now)? {
                 OwnedExportSlot::Inactive => (None, false),
@@ -284,7 +284,22 @@ impl LocalWorkService {
             (None, false)
         };
         let (pending, confirmation) = match if rebuild {
-            RetainedExport::None
+            if let Some((write, id, head)) = &previous_write
+                && !recovering
+                && write.published
+                && !same_parent(data, write)
+                && !head.rebuild_needs_complete_import()
+                && &head.profile == profile
+                && self
+                    .read_store_at(now)?
+                    .task_sync_folder_cut_is_continuous(&self.project_id, &head.cut)?
+                && let Some(proof) =
+                    self.prove_export_commit(data, &dirty, write, id, head, rebuild)?
+            {
+                RetainedExport::Confirm(proof, write.owner.clone())
+            } else {
+                RetainedExport::None
+            }
         } else {
             self.inspect_retained_export(data, profile, &dirty, recovering, now)?
         } {
@@ -927,7 +942,7 @@ impl LocalWorkService {
         }
         if !head.rebuild_needs_complete_import()
             && head.profile.include_notes == profile.include_notes
-            && let Some(proof) = self.prove_export_commit(data, dirty, &write, &id, &head)?
+            && let Some(proof) = self.prove_export_commit(data, dirty, &write, &id, &head, false)?
         {
             return Ok(RetainedExport::Confirm(proof, write.owner));
         }
@@ -941,6 +956,7 @@ impl LocalWorkService {
         write: &FolderWrite,
         id: &ObjectId,
         head: &FolderHead,
+        replacing_write: bool,
     ) -> Result<Option<FolderExportConfirmation>> {
         let (Some(commit), Some(parent), Some(paths)) = (
             data.head_commit().filter(|_| dirty.is_empty()),
@@ -961,6 +977,10 @@ impl LocalWorkService {
             .map(|(path, bytes)| (path.as_str(), bytes.as_deref()))
             .collect::<BTreeMap<_, _>>();
         if postimages.len() != paths.len() {
+            // A replacement can proceed without an incomplete commit proof.
+            if replacing_write {
+                return Ok(None);
+            }
             return Err(changed_folder(
                 "the retained export proof is incomplete; run `engram task-sync export --rebuild`",
             ));
@@ -1048,7 +1068,9 @@ impl LocalWorkService {
         }
         if basis.is_none() && !rebuild {
             let dirty = data.folder_changes_admitted(true)?;
-            if let Some(proof) = self.prove_export_commit(data, &dirty, &write, &id, &head)? {
+            if let Some(proof) =
+                self.prove_export_commit(data, &dirty, &write, &id, &head, false)?
+            {
                 return Ok(FolderImportRecovery {
                     confirmation: Some(proof),
                     owner: if dry_run { None } else { write.owner },

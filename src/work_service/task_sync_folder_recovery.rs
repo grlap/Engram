@@ -3243,6 +3243,51 @@ fn a_slot_with_no_recorded_head_requires_explicit_rebuild() {
 }
 
 #[test]
+fn a_rebuild_replaces_a_stale_feed_cut_even_with_an_exact_export_commit() {
+    let exchange = Exchange::new(2);
+    let a = &exchange.a;
+    let service = &a.service;
+    let ids = exchange.ids();
+    a.rename(&ids[..1], "Commit this export");
+    service
+        .export_task_sync_data_folder(&exchange.data(), &profile(), false, None, now())
+        .unwrap();
+    exchange.commit("Commit the exact retained export");
+    let data = exchange.data();
+
+    // Keep the Git write exact and current, but replace its saved anchor
+    // with one that does not occur on this SQLite project feed.
+    let mut write = owned_write(service, &data).unwrap();
+    let (id, mut head) = service
+        .task_sync_folder_head(&profile(), now())
+        .unwrap()
+        .unwrap();
+    head.previous = Some(id);
+    head.cut.anchor.as_mut().unwrap().object_id = crate::ObjectId::mint();
+    let stale = head.cut.clone();
+    let stale_head = service.record_task_sync_folder_head(&head, now()).unwrap();
+    write.head = serde_json::to_value(&head).unwrap();
+    write.head_id = Some(stale_head);
+    write.retain(&data).unwrap();
+
+    let refused = service
+        .export_task_sync_data_folder(&data, &profile(), false, None, now())
+        .unwrap_err();
+    assert_basis_refusal(&refused, "prepared feed anchor differs");
+    a.rename(&ids[1..], "Write this during the rebuild");
+    let rebuilt = service
+        .export_task_sync_data_folder(&data, &profile(), true, None, now())
+        .unwrap();
+    assert_eq!((rebuilt.route, rebuilt.written), ("rebuild", 1));
+    let (_, head) = service
+        .task_sync_folder_head(&profile(), now())
+        .unwrap()
+        .unwrap();
+    assert_ne!(head.cut, stale);
+    assert!(matches!(head.disk, crate::storage::FolderDisk::Unbound));
+}
+
+#[test]
 fn a_refused_rebuild_keeps_the_only_retained_proof() {
     let exchange = Exchange::new(2);
     let service = &exchange.a.service;

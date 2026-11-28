@@ -335,6 +335,19 @@ impl SqliteStore {
         })
     }
 
+    /// A rebuild can reuse a proved Git commit only if its saved SQLite
+    /// cut still belongs to this feed. Confirmation rechecks in its transaction.
+    pub(crate) fn task_sync_folder_cut_is_continuous(
+        &self,
+        project: &ProjectId,
+        previous: &ExportCut,
+    ) -> Result<bool, StoreError> {
+        self.work_read_snapshot(|store| {
+            let head = super::producing_origin::cut_on(&store.connection, project)?;
+            cut_is_continuous(&store.connection, project, previous, head.position)
+        })
+    }
+
     pub(crate) fn task_sync_folder_import_basis(
         &self,
         head: &super::folder_head::FolderHead,
@@ -698,7 +711,22 @@ pub(super) fn require_continuous(
     previous: &ExportCut,
     head: i64,
 ) -> Result<(), StoreError> {
-    let continuous = previous.position >= 0
+    if cut_is_continuous(connection, project, previous, head)? {
+        Ok(())
+    } else {
+        Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
+            "the folder head's cut is not on this store's project feed; import the complete folder with `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`",
+        ))
+    }
+}
+
+fn cut_is_continuous(
+    connection: &rusqlite::Connection,
+    project: &ProjectId,
+    previous: &ExportCut,
+    head: i64,
+) -> Result<bool, StoreError> {
+    Ok(previous.position >= 0
         && previous.position <= head
         && match &previous.anchor {
             None => previous.position == 0,
@@ -717,14 +745,7 @@ pub(super) fn require_continuous(
                         |row| row.get::<_, bool>(0),
                     )?
             }
-        };
-    if continuous {
-        Ok(())
-    } else {
-        Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
-            "the folder head's cut is not on this store's project feed; import the complete folder with `engram task-sync import --rebuild --basis OWN_EXPORT/project.json`",
-        ))
-    }
+        })
 }
 
 /// Whether `previous` lies on the feed: at or behind the head, with the
