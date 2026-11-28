@@ -272,8 +272,8 @@ impl LocalWorkService {
             }
             Some(_) => {}
         }
-        // Explicit replacement plans against the admitted worktree and does
-        // not adopt or replay the previous proof.
+        // A rebuild may replace the retained write, but it can still use
+        // the exact published commit as its comparison basis.
         let (previous_write, discard_unrecorded) = if rebuild {
             match self.owned_export_slot(data, now)? {
                 OwnedExportSlot::Inactive => (None, false),
@@ -284,7 +284,18 @@ impl LocalWorkService {
             (None, false)
         };
         let (pending, confirmation) = match if rebuild {
-            RetainedExport::None
+            if let Some((write, id, head)) = &previous_write
+                && !recovering
+                && write.published
+                && !same_parent(data, write)
+                && !head.rebuild_needs_complete_import()
+                && &head.profile == profile
+                && let Some(proof) = self.prove_export_commit(data, &dirty, write, id, head)?
+            {
+                RetainedExport::Confirm(proof, write.owner.clone())
+            } else {
+                RetainedExport::None
+            }
         } else {
             self.inspect_retained_export(data, profile, &dirty, recovering, now)?
         } {
