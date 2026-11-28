@@ -1699,6 +1699,44 @@ fn task_sync_cli_the_printed_set_aside_works_beside_a_held_removal() {
 }
 
 #[test]
+fn task_sync_cli_rebuild_keeps_the_proven_export_commit_beside_a_held_removal() {
+    let fixture = test_support::temp_home().unwrap();
+    let (a, b) = published_on_a(fixture.path(), |a| {
+        a.add_ref("Linked");
+        a.add_ref("Removed");
+    });
+    let linked = exported_id(&a, "Linked").0.to_string();
+    let removed = exported_id(&a, "Removed").0.to_string();
+
+    a.work(&["claim", &removed]);
+    fs::remove_file(b.folder().join("tasks").join(format!("{removed}.json"))).unwrap();
+    b.commit("Remove the task on B");
+    b.receipt("import", &[]);
+    a.merge_from(&b);
+    assert_eq!(a.sync("import", &[]).status.code(), Some(3));
+
+    a.work(&["add", "Unrelated"]);
+    assert_eq!(a.receipt("export", &[])["written"], 1);
+    a.commit("Commit A's unrelated export without importing it");
+
+    a.work(&["update", &linked, "--after", &removed]);
+    let (code, message) = a.refusal("export", &[]);
+    assert_eq!(code, "task_sync_invalid_graph");
+    let rebuild = message
+        .split('`')
+        .find(|part| *part == "--rebuild")
+        .unwrap_or_else(|| panic!("{message}"));
+    let rebuilt = a.receipt("export", &[rebuild]);
+    assert_eq!(rebuilt["superseded"], serde_json::json!([removed]));
+    a.commit("Commit the prescribed rebuild");
+
+    a.receipt("import", &[]);
+    a.work(&["add", "After the rebuild"]);
+    assert_eq!(a.receipt("export", &[])["written"], 1);
+    a.commit("Commit A's next ordinary export");
+    push(&a);
+}
+#[test]
 fn task_sync_cli_complete_import_keeps_a_retained_local_task_owed_to_the_export() {
     let fixture = test_support::temp_home().unwrap();
     let root = fixture.path();
