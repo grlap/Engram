@@ -24,18 +24,7 @@
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
-  "blockers": [
-    {
-      "blocker_id": "01a21d57-e2ef-7e62-b3fb-d026f33e3d20",
-      "kind": "manual",
-      "detail": "Start this land-then-fix follow-up from origin/master after the w-c39164e2c07b fix is published there. The landed round-7 behavior is the implementation and regression base.",
-      "created_by": {
-        "actor_id": "dev/codex",
-        "actor_kind": "agent"
-      },
-      "created_at": "2026-11-27T14:10:28.713063700Z"
-    }
-  ],
+  "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
   "completion": null
