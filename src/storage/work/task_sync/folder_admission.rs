@@ -142,6 +142,19 @@ impl<'a> Prospective<'a> {
         chain
     }
 
+    /// How many ancestors the task has in the planning this destination
+    /// holds, which is the hierarchy every admitted change keeps: a folder
+    /// never moves a held task. A task this store does not hold has none.
+    fn current_depth(&self, id: WorkId) -> usize {
+        let mut depth = 0_usize;
+        let mut cursor = self.current.get(&id).and_then(|task| task.parent_id);
+        while let Some(parent) = cursor {
+            depth += 1;
+            cursor = self.current.get(&parent).and_then(|task| task.parent_id);
+        }
+        depth
+    }
+
     fn resolved_task(&self, id: WorkId) -> Result<&'a TaskDocument, StoreError> {
         self.resolved.get(&id).copied().ok_or_else(|| {
             StoreError::InvalidWorkProjection("a planned task is missing from the folder".into())
@@ -954,18 +967,7 @@ pub(super) fn apply_on(
     relations::apply_additions(transaction, plan, actor, now)?;
     let mut ordered = removals
         .into_iter()
-        .map(|id| {
-            let mut depth = 0_usize;
-            let mut cursor = prospective.current.get(&id).and_then(|task| task.parent_id);
-            while let Some(parent) = cursor {
-                depth += 1;
-                cursor = prospective
-                    .current
-                    .get(&parent)
-                    .and_then(|task| task.parent_id);
-            }
-            (std::cmp::Reverse(depth), id)
-        })
+        .map(|id| (std::cmp::Reverse(prospective.current_depth(id)), id))
         .collect::<Vec<_>>();
     ordered.sort_by_key(|&(depth, id)| (depth, id.0));
     for (_, id) in ordered {
@@ -976,7 +978,9 @@ pub(super) fn apply_on(
     }
     // Children end before their parent, whether completed, cancelled or
     // superseded, after the removals admission already counted as ended; no
-    // local child seal is fabricated.
+    // local child seal is fabricated. The order follows the hierarchy this
+    // store holds: a folder's move is never applied, so an incoming parent
+    // link the destination refused must not reorder a parent before its child.
     let mut outcomes = plan
         .tasks
         .iter()
@@ -986,7 +990,7 @@ pub(super) fn apply_on(
             _ => None,
         })
         .collect::<Vec<_>>();
-    outcomes.sort_by_key(|(id, _)| (std::cmp::Reverse(prospective.ancestors(*id).len()), id.0));
+    outcomes.sort_by_key(|(id, _)| (std::cmp::Reverse(prospective.current_depth(*id)), id.0));
     for (id, completed) in outcomes {
         let task = prospective.resolved_task(id)?;
         if completed {

@@ -460,7 +460,9 @@ changes, the task is refused as `open_descendants`. That is judged once the
 mixed graph is otherwise valid, so an addition the graph checks refuse never
 holds its ancestor's disposal. Admitted removals run
 first, then descendants are disposed before their ancestors, in one
-transaction. The replacement may be a task the same folder adds, and a
+transaction. That order follows the hierarchy this destination holds, since
+a folder's move of a held task is refused, so a refused move never puts a
+parent's disposal before its child's. The replacement may be a task the same folder adds, and a
 disposal admitted so far frees its open-descendant capacity for that
 addition. Like a relation change, a replacement link is checked against the
 durable graph, including retired work: a supersession that would close a
@@ -608,7 +610,7 @@ block removal. The remaining graph is validated even with no additions.
 Old prerequisites and blockers are removed first, then additions are restored,
 scalar edits and new relations apply, children-before-parents removals follow,
 and reported completions and disposals finish the transaction, children
-before parents. Removal retains the task row, original parent/root
+before parents in the destination's own hierarchy. Removal retains the task row, original parent/root
 and relations, import origins, notes/activity and all prior records. The
 event carries the importing actor and time, with every runtime snapshot
 absent. It creates no claim, run, root execution, grant, contributor, waiver
